@@ -47,6 +47,7 @@ let connectionStatus: ConnectionStatus | null = null
 let stopMemeDropClient: (() => void) | null = null
 let shortcutStatus: ShortcutStatus[] = []
 let overlayKeepAliveTimer: ReturnType<typeof setInterval> | null = null
+let isQuitting = false
 
 type AppConfigFile = {
   discord?: Record<string, unknown>
@@ -303,6 +304,11 @@ const createControlWindow = () => {
     syncConnectionStatus()
     syncShortcutStatus()
   })
+  controlWindow.on('close', () => {
+    if (!isQuitting) {
+      app.quit()
+    }
+  })
   controlWindow.on('closed', () => {
     controlWindow = null
   })
@@ -384,6 +390,10 @@ if (hasInstanceLock) app.whenReady().then(() => {
 
   registerGlobalShortcuts()
   startOrRestartMemeDropClient()
+})
+
+app.on('before-quit', () => {
+  isQuitting = true
 })
 
 app.on('will-quit', () => {
