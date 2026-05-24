@@ -35,7 +35,6 @@ const configSavedMessage = ref<string | null>(null)
 const isSavingConfig = ref(false)
 const unsubscribers: Array<() => void> = []
 
-const isDev = import.meta.env.DEV
 const DISPLAY_MS = 9000
 let queueTimer: number | undefined
 let syncingState = false
@@ -409,7 +408,6 @@ const getMediaKind = (drop: Drop | null) => {
       </div>
 
       <button
-        v-if="isDev"
         type="button"
         class="mt-auto w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
         @click="triggerTestDrop"
