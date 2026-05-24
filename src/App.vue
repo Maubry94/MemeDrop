@@ -20,6 +20,7 @@ type YouTubePlayer = {
   getPlayerState: () => number
   playVideo: () => void
   setVolume: (volume: number) => void
+  stopVideo?: () => void
 }
 type YouTubeApi = {
   Player: new (
@@ -79,6 +80,7 @@ let youtubeStateTimer: number | undefined
 let youtubeApiPromise: Promise<YouTubeApi> | null = null
 let youtubePlayer: YouTubePlayer | null = null
 let youtubePlayerDropId: string | null = null
+let advancingDropId: string | null = null
 let syncingState = false
 
 const activeDrop = computed(() => queue.value[0] ?? null)
@@ -152,10 +154,15 @@ const loadYouTubeApi = () => {
   return youtubeApiPromise
 }
 
-const destroyYouTubePlayer = () => {
-  youtubePlayer?.destroy()
+const resetYouTubePlayer = () => {
+  youtubePlayer?.stopVideo?.()
   youtubePlayer = null
   youtubePlayerDropId = null
+}
+
+const destroyYouTubePlayer = () => {
+  youtubePlayer?.destroy()
+  resetYouTubePlayer()
 }
 
 const startYouTubeStatePolling = () => {
@@ -166,8 +173,9 @@ const startYouTubeStatePolling = () => {
       return
     }
 
-    if (youtubePlayer?.getPlayerState() === 0) {
-      advanceQueue()
+    const dropId = activeDrop.value?.id
+    if (dropId && youtubePlayer?.getPlayerState() === 0) {
+      advanceQueue(dropId)
     }
   }, 1000)
 }
@@ -194,7 +202,7 @@ const initializeYouTubePlayer = async () => {
     return
   }
 
-  destroyYouTubePlayer()
+  resetYouTubePlayer()
 
   const dropId = activeDrop.value.id
   const api = await loadYouTubeApi()
@@ -213,7 +221,7 @@ const initializeYouTubePlayer = async () => {
       },
       onStateChange: (event) => {
         if (event.data === api.PlayerState.ENDED && activeKind.value === 'youtube') {
-          advanceQueue()
+          advanceQueue(dropId)
         }
       },
     },
@@ -243,8 +251,8 @@ const handleYouTubeMessage = (event: MessageEvent) => {
         ? message.info
         : message?.info?.playerState ?? message?.data
 
-    if (playerState === 0 && activeKind.value === 'youtube') {
-      advanceQueue()
+    if (playerState === 0 && activeKind.value === 'youtube' && activeDrop.value?.id) {
+      advanceQueue(activeDrop.value.id)
       return
     }
 
@@ -281,11 +289,26 @@ const clearQueueTimer = () => {
   }
 }
 
-const advanceQueue = () => {
+const advanceQueue = (expectedDropId?: string) => {
+  const currentDrop = activeDrop.value
+  if (!currentDrop) {
+    return
+  }
+
+  if (expectedDropId && currentDrop.id !== expectedDropId) {
+    return
+  }
+
+  if (advancingDropId === currentDrop.id) {
+    return
+  }
+
+  advancingDropId = currentDrop.id
   clearQueueTimer()
   clearYouTubeStateTimer()
-  destroyYouTubePlayer()
+  resetYouTubePlayer()
   queue.value.shift()
+  advancingDropId = null
   scheduleCurrentDrop()
 }
 
@@ -535,8 +558,8 @@ const getMediaKind = (drop: Drop | null): MediaKind => {
               playsinline
               class="max-h-[60vh] w-full rounded-2xl object-contain"
               @loadedmetadata="applyDropVolume"
-              @ended="advanceQueue"
-              @error="advanceQueue"
+              @ended="() => advanceQueue()"
+              @error="() => advanceQueue()"
             />
             <audio
               v-else-if="activeKind === 'audio'"
@@ -546,8 +569,8 @@ const getMediaKind = (drop: Drop | null): MediaKind => {
               autoplay
               controls
               @loadedmetadata="applyDropVolume"
-              @ended="advanceQueue"
-              @error="advanceQueue"
+              @ended="() => advanceQueue()"
+              @error="() => advanceQueue()"
             />
           </div>
 
