@@ -330,16 +330,6 @@ const getMediaKind = (drop: Drop | null) => {
               @ended="advanceQueue"
               @error="advanceQueue"
             />
-            <div v-else class="rounded-2xl bg-slate-900/70 p-6 text-center">
-              <p class="text-sm text-slate-200">Fichier reçu.</p>
-              <a
-                :href="activeDrop?.url"
-                target="_blank"
-                class="mt-2 inline-flex text-sm font-semibold text-sky-300 hover:text-sky-200"
-              >
-                Ouvrir le fichier
-              </a>
-            </div>
           </div>
 
           <div v-if="activeDrop?.caption || activeDrop?.author" class="mt-4 space-y-3">

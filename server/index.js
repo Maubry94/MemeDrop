@@ -1,5 +1,12 @@
 import http from 'node:http'
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js'
+import {
+  Client,
+  GatewayIntentBits,
+  MessageFlags,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+} from 'discord.js'
 import WebSocket, { WebSocketServer } from 'ws'
 import { config as loadEnv } from 'dotenv'
 
@@ -9,6 +16,23 @@ const PORT = Number(process.env.PORT ?? 3010)
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN
 const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID
 const MEMEDROP_SERVER_KEY = process.env.MEMEDROP_SERVER_KEY ?? ''
+const SUPPORTED_EXTENSIONS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'mp4',
+  'webm',
+  'mov',
+  'mkv',
+  'mp3',
+  'wav',
+  'ogg',
+  'flac',
+  'm4a',
+])
 
 const clients = new Set()
 let discordStatus = 'starting'
@@ -30,6 +54,21 @@ const broadcastDrop = (drop) => {
       client.send(payload)
     }
   }
+}
+
+const isSupportedAttachment = (attachment) => {
+  const contentType = attachment.contentType?.toLowerCase() ?? ''
+
+  if (
+    contentType.startsWith('image/') ||
+    contentType.startsWith('video/') ||
+    contentType.startsWith('audio/')
+  ) {
+    return true
+  }
+
+  const extension = attachment.name?.split('.').pop()?.toLowerCase()
+  return Boolean(extension && SUPPORTED_EXTENSIONS.has(extension))
 }
 
 const registerSlashCommands = async (token, guildId, clientId) => {
@@ -115,35 +154,42 @@ if (!DISCORD_BOT_TOKEN || !DISCORD_GUILD_ID) {
       return
     }
 
-    const attachment = interaction.options.getAttachment('fichier')
-    const caption = interaction.options.getString('legende')
-
-    if (!attachment) {
-      await interaction.reply({
-        content: 'Pas de fichier fourni.',
-        ephemeral: true,
+    try {
+      await interaction.deferReply({
+        flags: MessageFlags.Ephemeral,
       })
-      return
+
+      const attachment = interaction.options.getAttachment('fichier')
+      const caption = interaction.options.getString('legende')
+
+      if (!attachment) {
+        await interaction.editReply('Pas de fichier fourni.')
+        return
+      }
+
+      if (!isSupportedAttachment(attachment)) {
+        await interaction.editReply('Format non supporté. Envoie une image, une vidéo ou un son.')
+        return
+      }
+
+      broadcastDrop({
+        id: attachment.id,
+        url: attachment.url,
+        contentType: attachment.contentType ?? null,
+        fileName: attachment.name ?? null,
+        caption: caption || null,
+        author: interaction.user.username ?? null,
+        authorAvatarUrl: interaction.user.displayAvatarURL({
+          extension: 'png',
+          size: 128,
+        }),
+        createdAt: new Date().toISOString(),
+      })
+
+      await interaction.editReply('Drop envoyé !')
+    } catch (error) {
+      console.error('Erreur lors du traitement de /drop:', error)
     }
-
-    broadcastDrop({
-      id: attachment.id,
-      url: attachment.url,
-      contentType: attachment.contentType ?? null,
-      fileName: attachment.name ?? null,
-      caption: caption || null,
-      author: interaction.user.username ?? null,
-      authorAvatarUrl: interaction.user.displayAvatarURL({
-        extension: 'png',
-        size: 128,
-      }),
-      createdAt: new Date().toISOString(),
-    })
-
-    await interaction.reply({
-      content: 'Drop envoyé !',
-      ephemeral: true,
-    })
   })
 
   discord.on('error', (error) => {
