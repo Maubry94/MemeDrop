@@ -3,6 +3,7 @@ export type Drop = {
   url: string
   contentType: string | null
   fileName: string | null
+  youtubeVideoId?: string | null
   caption: string | null
   author: string | null
   authorAvatarUrl: string | null

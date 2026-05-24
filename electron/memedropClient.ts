@@ -106,6 +106,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
         const message = JSON.parse(data.toString()) as ServerMessage
 
         if (message.type === 'drop' && isDrop(message.drop)) {
+          console.log(`Drop reçu du serveur MemeDrop: ${message.drop.id}`)
           onDrop(message.drop)
         }
       } catch (error) {

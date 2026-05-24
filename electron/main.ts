@@ -285,9 +285,9 @@ const createOverlayWindow = () => {
 const createControlWindow = () => {
   controlWindow = new BrowserWindow({
     width: 360,
-    height: 620,
+    height: 600,
     minWidth: 320,
-    minHeight: 560,
+    minHeight: 600,
     resizable: true,
     minimizable: true,
     maximizable: false,

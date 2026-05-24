@@ -10,6 +10,7 @@ import type {
 
 type OverlayPosition = 'full' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 type AppView = 'overlay' | 'control'
+type MediaKind = 'none' | 'image' | 'video' | 'audio' | 'youtube' | 'file'
 
 const STORAGE_KEYS = {
   position: 'memedrop.overlay.position',
@@ -29,6 +30,7 @@ const dropsEnabled = ref(true)
 const queue = ref<Drop[]>([])
 const videoElement = ref<HTMLVideoElement | null>(null)
 const audioElement = ref<HTMLAudioElement | null>(null)
+const youtubeIframe = ref<HTMLIFrameElement | null>(null)
 const connectionStatus = ref<ConnectionStatus | null>(null)
 const shortcutStatus = ref<ShortcutStatus[]>([])
 const serverConfig = ref<ServerConfig>({
@@ -46,6 +48,36 @@ let syncingState = false
 const activeDrop = computed(() => queue.value[0] ?? null)
 const hasDrop = computed(() => Boolean(activeDrop.value) && dropsEnabled.value)
 const normalizedDropVolume = computed(() => Math.min(Math.max(dropVolume.value, 0), 100) / 100)
+const youtubeEmbedUrl = computed(() => {
+  if (!activeDrop.value?.youtubeVideoId) {
+    return ''
+  }
+
+  const params = new URLSearchParams({
+    autoplay: '1',
+    controls: '0',
+    disablekb: '1',
+    enablejsapi: '1',
+    fs: '0',
+    iv_load_policy: '3',
+    modestbranding: '1',
+    playsinline: '1',
+    rel: '0',
+  })
+
+  return `https://www.youtube.com/embed/${activeDrop.value.youtubeVideoId}?${params.toString()}`
+})
+
+const sendYouTubeCommand = (func: string, args: unknown[] = []) => {
+  youtubeIframe.value?.contentWindow?.postMessage(
+    JSON.stringify({
+      event: 'command',
+      func,
+      args,
+    }),
+    'https://www.youtube.com',
+  )
+}
 
 const applyDropVolume = () => {
   if (videoElement.value) {
@@ -54,6 +86,39 @@ const applyDropVolume = () => {
 
   if (audioElement.value) {
     audioElement.value.volume = normalizedDropVolume.value
+  }
+
+  sendYouTubeCommand('setVolume', [Math.round(normalizedDropVolume.value * 100)])
+}
+
+const handleYouTubeLoad = () => {
+  applyDropVolume()
+  sendYouTubeCommand('addEventListener', ['onStateChange'])
+  sendYouTubeCommand('playVideo')
+}
+
+const handleYouTubeMessage = (event: MessageEvent) => {
+  if (
+    event.origin !== 'https://www.youtube.com' ||
+    event.source !== youtubeIframe.value?.contentWindow
+  ) {
+    return
+  }
+
+  try {
+    const message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
+    const playerState =
+      typeof message?.info === 'number' ? message.info : message?.info?.playerState
+
+    if (playerState === 0 && activeKind.value === 'youtube') {
+      advanceQueue()
+    }
+
+    if (message?.event === 'onReady' || message?.event === 'initialDelivery') {
+      handleYouTubeLoad()
+    }
+  } catch {
+    // YouTube can send non-JSON messages; they are not useful here.
   }
 }
 
@@ -94,7 +159,7 @@ const scheduleCurrentDrop = () => {
     return
   }
 
-  if (['video', 'audio'].includes(activeKind.value)) {
+  if (['video', 'audio', 'youtube'].includes(activeKind.value)) {
     return
   }
 
@@ -235,6 +300,9 @@ onMounted(async () => {
     if (!isOverlayView.value || !dropsEnabled.value) {
       return
     }
+    if (getMediaKind(drop) === 'file') {
+      return
+    }
     enqueue(drop)
   })
 
@@ -262,20 +330,23 @@ onMounted(async () => {
   if (unsubStatus) unsubscribers.push(unsubStatus)
   if (unsubShortcutStatus) unsubscribers.push(unsubShortcutStatus)
   if (unsubOverlay) unsubscribers.push(unsubOverlay)
+  window.addEventListener('message', handleYouTubeMessage)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('storage', handleStorage)
+  window.removeEventListener('message', handleYouTubeMessage)
   clearQueueTimer()
   unsubscribers.forEach((unsubscribe) => unsubscribe())
 })
 
-const getMediaKind = (drop: Drop | null) => {
+const getMediaKind = (drop: Drop | null): MediaKind => {
   if (!drop) {
     return 'none'
   }
 
   const type = drop.contentType?.toLowerCase() ?? ''
+  if (type === 'video/youtube' || drop.youtubeVideoId) return 'youtube'
   if (type.startsWith('image/')) return 'image'
   if (type.startsWith('video/')) return 'video'
   if (type.startsWith('audio/')) return 'audio'
@@ -306,6 +377,16 @@ const getMediaKind = (drop: Drop | null) => {
               :src="activeDrop?.url"
               :alt="activeDrop?.caption ?? 'MemeDrop image'"
               class="max-h-[60vh] w-full rounded-2xl object-contain"
+            />
+            <iframe
+              v-else-if="activeKind === 'youtube'"
+              ref="youtubeIframe"
+              :key="`youtube-${activeDrop?.id}`"
+              :src="youtubeEmbedUrl"
+              allow="autoplay; encrypted-media; picture-in-picture"
+              allowfullscreen
+              class="aspect-video max-h-[60vh] w-full rounded-2xl border-0 bg-black"
+              @load="handleYouTubeLoad"
             />
             <video
               v-else-if="activeKind === 'video'"
