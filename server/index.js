@@ -133,6 +133,10 @@ if (!DISCORD_BOT_TOKEN || !DISCORD_GUILD_ID) {
       fileName: attachment.name ?? null,
       caption: caption || null,
       author: interaction.user.username ?? null,
+      authorAvatarUrl: interaction.user.displayAvatarURL({
+        extension: 'png',
+        size: 128,
+      }),
       createdAt: new Date().toISOString(),
     })
 

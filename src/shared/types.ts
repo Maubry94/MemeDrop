@@ -5,6 +5,7 @@ export type Drop = {
   fileName: string | null
   caption: string | null
   author: string | null
+  authorAvatarUrl: string | null
   createdAt: string
 }
 

@@ -188,6 +188,7 @@ const triggerTestDrop = async () => {
     fileName: 'test.gif',
     caption: 'Drop de test (dev)',
     author: 'MemeDrop',
+    authorAvatarUrl: null,
     createdAt: new Date().toISOString(),
   })
 }
@@ -341,13 +342,25 @@ const getMediaKind = (drop: Drop | null) => {
             </div>
           </div>
 
-          <div v-if="activeDrop?.caption || activeDrop?.author" class="mt-4 space-y-1">
-            <p v-if="activeDrop?.caption" class="text-base font-semibold text-slate-100">
+          <div v-if="activeDrop?.caption || activeDrop?.author" class="mt-4 space-y-3">
+            <p v-if="activeDrop?.caption" class="text-2xl font-semibold text-slate-100">
               {{ activeDrop?.caption }}
             </p>
-            <p v-if="activeDrop?.author" class="text-xs text-slate-300">
-              Envoyé par {{ activeDrop?.author }}
-            </p>
+            <div v-if="activeDrop?.author" class="flex items-center gap-3 text-base text-slate-300">
+              <img
+                v-if="activeDrop?.authorAvatarUrl"
+                :src="activeDrop.authorAvatarUrl"
+                :alt="`Avatar Discord de ${activeDrop.author}`"
+                class="h-10 w-10 shrink-0 rounded-full border border-white/20 bg-slate-800 object-cover"
+              />
+              <div
+                v-else
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-slate-800 text-sm font-semibold text-slate-200"
+              >
+                {{ activeDrop.author.slice(0, 1).toUpperCase() }}
+              </div>
+              <span>Envoyé par {{ activeDrop.author }}</span>
+            </div>
           </div>
         </div>
       </div>
