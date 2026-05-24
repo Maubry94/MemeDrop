@@ -13,6 +13,7 @@ type AppView = 'overlay' | 'control'
 
 const STORAGE_KEYS = {
   position: 'memedrop.overlay.position',
+  volume: 'memedrop.overlay.volume',
 }
 
 const viewParam = new URLSearchParams(window.location.search).get('view')
@@ -23,8 +24,11 @@ const isControlView = computed(() => view === 'control')
 const overlayPosition = ref<OverlayPosition>(
   (localStorage.getItem(STORAGE_KEYS.position) as OverlayPosition) ?? 'full',
 )
+const dropVolume = ref(Number(localStorage.getItem(STORAGE_KEYS.volume) ?? '80'))
 const dropsEnabled = ref(true)
 const queue = ref<Drop[]>([])
+const videoElement = ref<HTMLVideoElement | null>(null)
+const audioElement = ref<HTMLAudioElement | null>(null)
 const connectionStatus = ref<ConnectionStatus | null>(null)
 const shortcutStatus = ref<ShortcutStatus[]>([])
 const serverConfig = ref<ServerConfig>({
@@ -41,6 +45,17 @@ let syncingState = false
 
 const activeDrop = computed(() => queue.value[0] ?? null)
 const hasDrop = computed(() => Boolean(activeDrop.value) && dropsEnabled.value)
+const normalizedDropVolume = computed(() => Math.min(Math.max(dropVolume.value, 0), 100) / 100)
+
+const applyDropVolume = () => {
+  if (videoElement.value) {
+    videoElement.value.volume = normalizedDropVolume.value
+  }
+
+  if (audioElement.value) {
+    audioElement.value.volume = normalizedDropVolume.value
+  }
+}
 
 const overlayClasses = computed(() => {
   switch (overlayPosition.value) {
@@ -178,14 +193,22 @@ const triggerTestDrop = async () => {
 }
 
 const handleStorage = (event: StorageEvent) => {
-  if (event.key !== STORAGE_KEYS.position) {
-    return
+  if (event.key === STORAGE_KEYS.position) {
+    overlayPosition.value = (event.newValue as OverlayPosition) ?? 'bottom-right'
   }
-  overlayPosition.value = (event.newValue as OverlayPosition) ?? 'bottom-right'
+
+  if (event.key === STORAGE_KEYS.volume) {
+    dropVolume.value = Number(event.newValue ?? '80')
+  }
 }
 
 watch(overlayPosition, (value) => {
   localStorage.setItem(STORAGE_KEYS.position, value)
+})
+
+watch(dropVolume, (value) => {
+  localStorage.setItem(STORAGE_KEYS.volume, String(value))
+  applyDropVolume()
 })
 
 watch(dropsEnabled, async (value) => {
@@ -285,20 +308,24 @@ const getMediaKind = (drop: Drop | null) => {
             />
             <video
               v-else-if="activeKind === 'video'"
+              ref="videoElement"
               :key="`video-${activeDrop?.id}`"
               :src="activeDrop?.url"
               autoplay
               playsinline
               class="max-h-[60vh] w-full rounded-2xl object-contain"
+              @loadedmetadata="applyDropVolume"
               @ended="advanceQueue"
               @error="advanceQueue"
             />
             <audio
               v-else-if="activeKind === 'audio'"
+              ref="audioElement"
               :key="`audio-${activeDrop?.id}`"
               :src="activeDrop?.url"
               autoplay
               controls
+              @loadedmetadata="applyDropVolume"
               @ended="advanceQueue"
               @error="advanceQueue"
             />
@@ -360,6 +387,21 @@ const getMediaKind = (drop: Drop | null) => {
           <option value="bottom-left">Bas gauche</option>
           <option value="bottom-right">Bas droite</option>
         </select>
+      </label>
+
+      <label class="flex flex-col gap-2 text-xs text-slate-300">
+        <span class="flex items-center justify-between gap-2">
+          Volume des drops
+          <span class="text-[11px] text-slate-400">{{ dropVolume }}%</span>
+        </span>
+        <input
+          v-model.number="dropVolume"
+          type="range"
+          min="0"
+          max="100"
+          step="5"
+          class="w-full accent-sky-400"
+        />
       </label>
 
       <form class="flex flex-col gap-3" @submit.prevent="saveServerConfig">
