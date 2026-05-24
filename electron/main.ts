@@ -1,7 +1,15 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import http from 'node:http'
 import { config as loadEnv } from 'dotenv'
 import { startMemeDropClient } from './memedropClient'
 import type {
@@ -48,6 +56,8 @@ let stopMemeDropClient: (() => void) | null = null
 let shortcutStatus: ShortcutStatus[] = []
 let overlayKeepAliveTimer: ReturnType<typeof setInterval> | null = null
 let isQuitting = false
+let rendererServer: http.Server | null = null
+let rendererServerUrl: string | null = null
 
 type AppConfigFile = {
   discord?: Record<string, unknown>
@@ -230,6 +240,84 @@ const registerGlobalShortcuts = () => {
   syncShortcutStatus()
 }
 
+const getContentType = (filePath: string) => {
+  const extension = path.extname(filePath).toLowerCase()
+
+  switch (extension) {
+    case '.html':
+      return 'text/html; charset=utf-8'
+    case '.js':
+    case '.mjs':
+      return 'text/javascript; charset=utf-8'
+    case '.css':
+      return 'text/css; charset=utf-8'
+    case '.png':
+      return 'image/png'
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.svg':
+      return 'image/svg+xml'
+    case '.ico':
+      return 'image/x-icon'
+    case '.json':
+      return 'application/json; charset=utf-8'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
+const startRendererServer = () =>
+  new Promise<string>((resolve, reject) => {
+    if (rendererServerUrl) {
+      resolve(rendererServerUrl)
+      return
+    }
+
+    rendererServer = http.createServer((request, response) => {
+      const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1')
+      const requestedPath = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname
+      const filePath = path.normalize(path.join(RENDERER_DIST, decodeURIComponent(requestedPath)))
+
+      if (!filePath.startsWith(RENDERER_DIST)) {
+        response.writeHead(403)
+        response.end()
+        return
+      }
+
+      try {
+        const stat = statSync(filePath)
+
+        if (!stat.isFile()) {
+          response.writeHead(404)
+          response.end()
+          return
+        }
+
+        response.writeHead(200, {
+          'content-type': getContentType(filePath),
+        })
+        createReadStream(filePath).pipe(response)
+      } catch {
+        response.writeHead(404)
+        response.end()
+      }
+    })
+
+    rendererServer.once('error', reject)
+    rendererServer.listen(0, 'localhost', () => {
+      const address = rendererServer?.address()
+
+      if (!address || typeof address === 'string') {
+        reject(new Error('Adresse du serveur renderer invalide.'))
+        return
+      }
+
+      rendererServerUrl = `http://localhost:${address.port}`
+      resolve(rendererServerUrl)
+    })
+  })
+
 const loadView = (window: BrowserWindow, view: 'overlay' | 'control') => {
   if (VITE_DEV_SERVER_URL) {
     const url = new URL(VITE_DEV_SERVER_URL)
@@ -238,9 +326,13 @@ const loadView = (window: BrowserWindow, view: 'overlay' | 'control') => {
     return
   }
 
-  window.loadFile(path.join(RENDERER_DIST, 'index.html'), {
-    query: { view },
-  })
+  if (!rendererServerUrl) {
+    throw new Error('Le serveur renderer MemeDrop n’est pas démarré.')
+  }
+
+  const url = new URL(rendererServerUrl)
+  url.searchParams.set('view', view)
+  window.loadURL(url.toString())
 }
 
 const createOverlayWindow = () => {
@@ -285,9 +377,9 @@ const createOverlayWindow = () => {
 const createControlWindow = () => {
   controlWindow = new BrowserWindow({
     width: 360,
-    height: 600,
+    height: 620,
     minWidth: 320,
-    minHeight: 600,
+    minHeight: 620,
     resizable: true,
     minimizable: true,
     maximizable: false,
@@ -349,9 +441,12 @@ if (!hasInstanceLock) {
   })
 }
 
-if (hasInstanceLock) app.whenReady().then(() => {
+if (hasInstanceLock) app.whenReady().then(async () => {
   loadAppEnv()
   Menu.setApplicationMenu(null)
+  if (!VITE_DEV_SERVER_URL) {
+    await startRendererServer()
+  }
   screen.on('display-added', keepOverlayAboveFullscreen)
   screen.on('display-removed', keepOverlayAboveFullscreen)
   screen.on('display-metrics-changed', keepOverlayAboveFullscreen)
@@ -398,6 +493,9 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   stopOverlayKeepAlive()
+  rendererServer?.close()
+  rendererServer = null
+  rendererServerUrl = null
   globalShortcut.unregisterAll()
   stopMemeDropClient?.()
   stopMemeDropClient = null

@@ -11,6 +11,38 @@ import type {
 type OverlayPosition = 'full' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 type AppView = 'overlay' | 'control'
 type MediaKind = 'none' | 'image' | 'video' | 'audio' | 'youtube' | 'file'
+type YouTubePlayerEvent = {
+  data: number
+  target: YouTubePlayer
+}
+type YouTubePlayer = {
+  destroy: () => void
+  getPlayerState: () => number
+  playVideo: () => void
+  setVolume: (volume: number) => void
+}
+type YouTubeApi = {
+  Player: new (
+    element: HTMLIFrameElement,
+    options: {
+      events: {
+        onReady?: (event: YouTubePlayerEvent) => void
+        onStateChange?: (event: YouTubePlayerEvent) => void
+      }
+    },
+  ) => YouTubePlayer
+  PlayerState: {
+    ENDED: number
+    PLAYING: number
+  }
+}
+
+declare global {
+  interface Window {
+    YT?: YouTubeApi
+    onYouTubeIframeAPIReady?: () => void
+  }
+}
 
 const STORAGE_KEYS = {
   position: 'memedrop.overlay.position',
@@ -43,6 +75,10 @@ const unsubscribers: Array<() => void> = []
 
 const DISPLAY_MS = 9000
 let queueTimer: number | undefined
+let youtubeStateTimer: number | undefined
+let youtubeApiPromise: Promise<YouTubeApi> | null = null
+let youtubePlayer: YouTubePlayer | null = null
+let youtubePlayerDropId: string | null = null
 let syncingState = false
 
 const activeDrop = computed(() => queue.value[0] ?? null)
@@ -61,6 +97,7 @@ const youtubeEmbedUrl = computed(() => {
     fs: '0',
     iv_load_policy: '3',
     modestbranding: '1',
+    origin: window.location.origin,
     playsinline: '1',
     rel: '0',
   })
@@ -79,6 +116,62 @@ const sendYouTubeCommand = (func: string, args: unknown[] = []) => {
   )
 }
 
+const clearYouTubeStateTimer = () => {
+  if (youtubeStateTimer) {
+    window.clearInterval(youtubeStateTimer)
+    youtubeStateTimer = undefined
+  }
+}
+
+const loadYouTubeApi = () => {
+  if (window.YT?.Player) {
+    return Promise.resolve(window.YT)
+  }
+
+  if (youtubeApiPromise) {
+    return youtubeApiPromise
+  }
+
+  youtubeApiPromise = new Promise<YouTubeApi>((resolve) => {
+    const previousCallback = window.onYouTubeIframeAPIReady
+
+    window.onYouTubeIframeAPIReady = () => {
+      previousCallback?.()
+      if (window.YT) {
+        resolve(window.YT)
+      }
+    }
+
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const script = document.createElement('script')
+      script.src = 'https://www.youtube.com/iframe_api'
+      document.head.append(script)
+    }
+  })
+
+  return youtubeApiPromise
+}
+
+const destroyYouTubePlayer = () => {
+  youtubePlayer?.destroy()
+  youtubePlayer = null
+  youtubePlayerDropId = null
+}
+
+const startYouTubeStatePolling = () => {
+  clearYouTubeStateTimer()
+  youtubeStateTimer = window.setInterval(() => {
+    if (activeKind.value !== 'youtube') {
+      clearYouTubeStateTimer()
+      return
+    }
+
+    if (youtubePlayer?.getPlayerState() === 0) {
+      advanceQueue()
+    }
+  }, 1000)
+}
+
 const applyDropVolume = () => {
   if (videoElement.value) {
     videoElement.value.volume = normalizedDropVolume.value
@@ -88,13 +181,51 @@ const applyDropVolume = () => {
     audioElement.value.volume = normalizedDropVolume.value
   }
 
+  youtubePlayer?.setVolume(Math.round(normalizedDropVolume.value * 100))
   sendYouTubeCommand('setVolume', [Math.round(normalizedDropVolume.value * 100)])
+}
+
+const initializeYouTubePlayer = async () => {
+  if (!youtubeIframe.value || !activeDrop.value || activeKind.value !== 'youtube') {
+    return
+  }
+
+  if (youtubePlayer && youtubePlayerDropId === activeDrop.value.id) {
+    return
+  }
+
+  destroyYouTubePlayer()
+
+  const dropId = activeDrop.value.id
+  const api = await loadYouTubeApi()
+
+  if (!youtubeIframe.value || activeDrop.value?.id !== dropId) {
+    return
+  }
+
+  youtubePlayerDropId = dropId
+  youtubePlayer = new api.Player(youtubeIframe.value, {
+    events: {
+      onReady: (event) => {
+        event.target.setVolume(Math.round(normalizedDropVolume.value * 100))
+        event.target.playVideo()
+        startYouTubeStatePolling()
+      },
+      onStateChange: (event) => {
+        if (event.data === api.PlayerState.ENDED && activeKind.value === 'youtube') {
+          advanceQueue()
+        }
+      },
+    },
+  })
 }
 
 const handleYouTubeLoad = () => {
   applyDropVolume()
   sendYouTubeCommand('addEventListener', ['onStateChange'])
   sendYouTubeCommand('playVideo')
+  void initializeYouTubePlayer()
+  startYouTubeStatePolling()
 }
 
 const handleYouTubeMessage = (event: MessageEvent) => {
@@ -108,10 +239,13 @@ const handleYouTubeMessage = (event: MessageEvent) => {
   try {
     const message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
     const playerState =
-      typeof message?.info === 'number' ? message.info : message?.info?.playerState
+      typeof message?.info === 'number'
+        ? message.info
+        : message?.info?.playerState ?? message?.data
 
     if (playerState === 0 && activeKind.value === 'youtube') {
       advanceQueue()
+      return
     }
 
     if (message?.event === 'onReady' || message?.event === 'initialDelivery') {
@@ -149,6 +283,8 @@ const clearQueueTimer = () => {
 
 const advanceQueue = () => {
   clearQueueTimer()
+  clearYouTubeStateTimer()
+  destroyYouTubePlayer()
   queue.value.shift()
   scheduleCurrentDrop()
 }
@@ -337,6 +473,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('storage', handleStorage)
   window.removeEventListener('message', handleYouTubeMessage)
   clearQueueTimer()
+  clearYouTubeStateTimer()
+  destroyYouTubePlayer()
   unsubscribers.forEach((unsubscribe) => unsubscribe())
 })
 
