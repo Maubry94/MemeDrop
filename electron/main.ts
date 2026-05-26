@@ -507,7 +507,7 @@ const createOverlayWindow = () => {
 
   overlayWindow.setAlwaysOnTop(true, 'screen-saver')
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  overlayWindow.setIgnoreMouseEvents(true)
   keepOverlayAboveFullscreen()
   startOverlayKeepAlive()
   overlayWindow.webContents.on('did-finish-load', () => {
