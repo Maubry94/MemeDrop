@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Drop } from '../../shared/types'
 import type { MediaKind } from '../../shared/media'
+import type { CSSProperties } from 'vue'
 import DropAuthor from './DropAuthor.vue'
 
 type YouTubePlayerEvent = {
@@ -43,7 +44,10 @@ const props = defineProps<{
   activeKind: MediaKind
   hasDrop: boolean
   overlayClasses: string
+  customStyle: CSSProperties
   volume: number
+  size: number
+  isCustomPosition: boolean
 }>()
 
 const emit = defineEmits<{
@@ -60,6 +64,23 @@ let youtubePlayer: YouTubePlayer | null = null
 let youtubePlayerDropId: string | null = null
 
 const normalizedDropVolume = computed(() => Math.min(Math.max(props.volume, 0), 100) / 100)
+const normalizedDropSize = computed(() => Math.min(Math.max(props.size, 40), 130) / 100)
+
+const overlayWrapperClasses = computed(() =>
+  props.isCustomPosition ? '' : `inset-0 flex ${props.overlayClasses}`,
+)
+
+const overlayWrapperStyle = computed<CSSProperties>(() =>
+  props.isCustomPosition ? props.customStyle : {},
+)
+
+const dropCardStyle = computed<CSSProperties>(() => ({
+  width: `min(${Math.round(880 * normalizedDropSize.value)}px, 90vw)`,
+}))
+
+const mediaFrameStyle = computed<CSSProperties>(() => ({
+  maxWidth: `min(calc(60vh * 16 / 9), ${Math.round(880 * normalizedDropSize.value)}px, 90vw)`,
+}))
 
 const youtubeEmbedUrl = computed(() => {
   if (!props.activeDrop?.youtubeVideoId) {
@@ -264,15 +285,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="pointer-events-none absolute inset-0 flex" :class="overlayClasses">
+  <div
+    class="pointer-events-none absolute"
+    :class="overlayWrapperClasses"
+    :style="overlayWrapperStyle"
+  >
     <div
       v-if="hasDrop"
-      class="pointer-events-none w-full max-w-[min(880px,90vw)] rounded-3xl border border-overlay-border bg-overlay-bg p-6 backdrop-blur"
+      class="pointer-events-none rounded-3xl border border-overlay-border bg-overlay-bg p-6 backdrop-blur"
+      :style="dropCardStyle"
     >
       <div class="flex flex-col gap-4">
         <div
           v-if="['image', 'video', 'youtube'].includes(activeKind)"
           class="mx-auto aspect-video w-full max-w-[calc(60vh*16/9)] overflow-hidden rounded-2xl bg-black"
+          :style="mediaFrameStyle"
         >
           <img
             v-if="activeKind === 'image'"

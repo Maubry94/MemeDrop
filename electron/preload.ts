@@ -19,6 +19,7 @@ const onChannel = <T>(channel: string, handler: (payload: T) => void): Unsubscri
 contextBridge.exposeInMainWorld('memedrop', {
   onDrop: (handler: (drop: Drop) => void) => onChannel('drop-received', handler),
   onClearDrop: (handler: () => void) => onChannel('clear-drop', handler),
+  onTestDropCleared: (handler: () => void) => onChannel('test-drop-cleared', handler),
   onSkipCurrentDrop: (handler: () => void) => onChannel('skip-current-drop', handler),
   onConnectionStatus: (handler: (status: ConnectionStatus) => void) =>
     onChannel('connection-status', handler),
@@ -41,4 +42,5 @@ contextBridge.exposeInMainWorld('memedrop', {
   authenticateDiscord: () => ipcRenderer.invoke('authenticate-discord'),
   disconnectDiscord: () => ipcRenderer.invoke('disconnect-discord'),
   emitTestDrop: (drop: Drop) => ipcRenderer.invoke('emit-test-drop', drop),
+  clearTestDrop: () => ipcRenderer.invoke('clear-test-drop'),
 })

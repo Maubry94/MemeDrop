@@ -555,9 +555,9 @@ const createOverlayWindow = () => {
 const createControlWindow = () => {
   controlWindow = new BrowserWindow({
     width: 360,
-    height: 660,
+    height: 564,
     minWidth: 360,
-    minHeight: 660,
+    minHeight: 564,
     resizable: true,
     minimizable: true,
     maximizable: false,
@@ -682,6 +682,10 @@ if (hasInstanceLock) app.whenReady().then(async () => {
       return
     }
     overlayWindow?.webContents.send('drop-received', drop)
+  })
+
+  ipcMain.handle('clear-test-drop', () => {
+    overlayWindow?.webContents.send('test-drop-cleared')
   })
 
   registerGlobalShortcuts()

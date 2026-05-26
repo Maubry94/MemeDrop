@@ -4,6 +4,7 @@ interface Window {
   memedrop: {
     onDrop: (handler: (drop: import('./shared/types').Drop) => void) => () => void
     onClearDrop: (handler: () => void) => () => void
+    onTestDropCleared: (handler: () => void) => () => void
     onSkipCurrentDrop: (handler: () => void) => () => void
     onConnectionStatus: (
       handler: (status: import('./shared/types').ConnectionStatus) => void,
@@ -35,5 +36,6 @@ interface Window {
     authenticateDiscord: () => Promise<import('./shared/types').ServerConfig>
     disconnectDiscord: () => Promise<import('./shared/types').ServerConfig>
     emitTestDrop: (drop: import('./shared/types').Drop) => Promise<void>
+    clearTestDrop: () => Promise<void>
   }
 }

@@ -8,7 +8,12 @@ defineProps<{
   hideOwnDrops: boolean
   canStopGlobalDrop: boolean
   dropVolume: number
+  dropSize: number
+  isTestDropActive: boolean
   overlayPosition: string
+  customX: number
+  customY: number
+  customAnchor: string
   isSavingConfig: boolean
   configSavedMessage: string | null
   authMessage: string | null
@@ -21,7 +26,11 @@ defineEmits<{
   toggleHideOwnDrops: []
   stopCurrentDropForEveryone: []
   updateDropVolume: [value: number]
+  updateDropSize: [value: number]
   updateOverlayPosition: [value: string]
+  updateCustomX: [value: number]
+  updateCustomY: [value: number]
+  updateCustomAnchor: [value: string]
   saveServerConfig: []
   disconnectDiscord: []
   triggerTestDrop: []
@@ -75,8 +84,74 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
       <option value="top-right">Haut droite</option>
       <option value="bottom-left">Bas gauche</option>
       <option value="bottom-right">Bas droite</option>
+      <option value="custom">Personnalisé</option>
     </select>
   </label>
+
+  <label class="flex flex-col gap-2 text-xs text-slate-300">
+    <span class="flex items-center justify-between gap-2">
+      Taille des drops
+      <span class="text-[11px] text-slate-400">{{ dropSize }}%</span>
+    </span>
+    <input
+      :value="dropSize"
+      type="range"
+      min="40"
+      max="130"
+      step="5"
+      class="w-full accent-sky-400"
+      @input="$emit('updateDropSize', Number(($event.target as HTMLInputElement).value))"
+    />
+  </label>
+
+  <div v-if="overlayPosition === 'custom'" class="grid grid-cols-2 gap-3">
+    <label class="flex flex-col gap-2 text-xs text-slate-300">
+      <span class="flex items-center justify-between gap-2">
+        Horizontal
+        <span class="text-[11px] text-slate-400">{{ customX }}%</span>
+      </span>
+      <input
+        :value="customX"
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        class="w-full accent-sky-400"
+        @input="$emit('updateCustomX', Number(($event.target as HTMLInputElement).value))"
+      />
+    </label>
+
+    <label class="flex flex-col gap-2 text-xs text-slate-300">
+      <span class="flex items-center justify-between gap-2">
+        Vertical
+        <span class="text-[11px] text-slate-400">{{ customY }}%</span>
+      </span>
+      <input
+        :value="customY"
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        class="w-full accent-sky-400"
+        @input="$emit('updateCustomY', Number(($event.target as HTMLInputElement).value))"
+      />
+    </label>
+
+    <label class="col-span-2 flex flex-col gap-1 text-xs text-slate-300">
+      Point d'ancrage
+      <select
+        :value="customAnchor"
+        class="w-full rounded-lg border border-white/10 bg-slate-900/70 px-2 py-1 text-sm text-slate-100"
+        @change="$emit('updateCustomAnchor', ($event.target as HTMLSelectElement).value)"
+      >
+        <option value="full">Centre</option>
+        <option value="top-left">Haut gauche</option>
+        <option value="top-right">Haut droite</option>
+        <option value="bottom-left">Bas gauche</option>
+        <option value="bottom-right">Bas droite</option>
+      </select>
+    </label>
+  </div>
 
   <label class="flex flex-col gap-2 text-xs text-slate-300">
     <span class="flex items-center justify-between gap-2">
@@ -124,6 +199,6 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
     class="mt-auto w-full cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
     @click="$emit('triggerTestDrop')"
   >
-    Tester un drop
+    {{ isTestDropActive ? "Masquer l'aperçu" : 'Tester un drop' }}
   </button>
 </template>

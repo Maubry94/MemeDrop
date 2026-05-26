@@ -1,18 +1,25 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { CSSProperties } from 'vue'
 import ControlPanel from './components/control/ControlPanel.vue'
 import LoginView from './components/control/LoginView.vue'
 import DropOverlay from './components/overlay/DropOverlay.vue'
 import { getMediaKind } from './shared/media'
 import type { ConnectionStatus, Drop, OverlayState, ServerConfig } from './shared/types'
 
-type OverlayPosition = 'full' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+type OverlayAnchor = 'full' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+type OverlayPosition = OverlayAnchor | 'custom'
 type AppView = 'overlay' | 'control'
 
 const STORAGE_KEYS = {
   position: 'memedrop.overlay.position',
   volume: 'memedrop.overlay.volume',
+  size: 'memedrop.overlay.size',
+  customX: 'memedrop.overlay.customX',
+  customY: 'memedrop.overlay.customY',
+  customAnchor: 'memedrop.overlay.customAnchor',
 }
+const TEST_DROP_ID = 'memedrop-test-preview'
 
 const viewParam = new URLSearchParams(window.location.search).get('view')
 const view: AppView = viewParam === 'control' ? 'control' : 'overlay'
@@ -23,8 +30,15 @@ const overlayPosition = ref<OverlayPosition>(
   (localStorage.getItem(STORAGE_KEYS.position) as OverlayPosition) ?? 'full',
 )
 const dropVolume = ref(Number(localStorage.getItem(STORAGE_KEYS.volume) ?? '80'))
+const dropSize = ref(Number(localStorage.getItem(STORAGE_KEYS.size) ?? '100'))
+const customX = ref(Number(localStorage.getItem(STORAGE_KEYS.customX) ?? '50'))
+const customY = ref(Number(localStorage.getItem(STORAGE_KEYS.customY) ?? '50'))
+const customAnchor = ref<OverlayAnchor>(
+  (localStorage.getItem(STORAGE_KEYS.customAnchor) as OverlayAnchor) ?? 'full',
+)
 const dropsEnabled = ref(true)
 const hideOwnDrops = ref(false)
+const isTestDropActive = ref(false)
 const activeDrop = ref<Drop | null>(null)
 const connectionStatus = ref<ConnectionStatus | null>(null)
 const serverConfig = ref<ServerConfig>({
@@ -55,6 +69,10 @@ const canStopGlobalDrop = computed(
 )
 
 const overlayClasses = computed(() => {
+  if (overlayPosition.value === 'custom') {
+    return 'p-10'
+  }
+
   switch (overlayPosition.value) {
     case 'full':
       return 'items-center justify-center p-10'
@@ -67,6 +85,26 @@ const overlayClasses = computed(() => {
     case 'bottom-right':
     default:
       return 'items-end justify-end p-10'
+  }
+})
+
+const overlayCustomStyle = computed<CSSProperties>(() => {
+  if (overlayPosition.value !== 'custom') {
+    return {}
+  }
+
+  const anchorTransforms: Record<OverlayAnchor, string> = {
+    full: 'translate(-50%, -50%)',
+    'top-left': 'translate(0, 0)',
+    'top-right': 'translate(-100%, 0)',
+    'bottom-left': 'translate(0, -100%)',
+    'bottom-right': 'translate(-100%, -100%)',
+  }
+
+  return {
+    left: `${customX.value}%`,
+    top: `${customY.value}%`,
+    transform: anchorTransforms[customAnchor.value] ?? anchorTransforms.full,
   }
 })
 
@@ -89,12 +127,20 @@ const completeActiveDrop = async (expectedDropId?: string) => {
 
   clearActiveDropTimer()
   activeDrop.value = null
+  if (drop.id === TEST_DROP_ID) {
+    isTestDropActive.value = false
+    return
+  }
   await window.memedrop?.completeCurrentDrop(drop.id)
 }
 
 const scheduleActiveDrop = () => {
   clearActiveDropTimer()
   if (!activeDrop.value || !isOverlayView.value) {
+    return
+  }
+
+  if (activeDrop.value.id === TEST_DROP_ID) {
     return
   }
 
@@ -209,8 +255,15 @@ const stopCurrentDropForEveryone = async () => {
 }
 
 const triggerTestDrop = async () => {
+  if (isTestDropActive.value) {
+    isTestDropActive.value = false
+    await window.memedrop?.clearTestDrop()
+    return
+  }
+
+  isTestDropActive.value = true
   await window.memedrop?.emitTestDrop({
-    id: crypto.randomUUID(),
+    id: TEST_DROP_ID,
     url: 'https://media.giphy.com/media/5GoVLqeAOo6PK/giphy.gif',
     contentType: 'image/gif',
     fileName: 'test.gif',
@@ -230,6 +283,22 @@ const handleStorage = (event: StorageEvent) => {
   if (event.key === STORAGE_KEYS.volume) {
     dropVolume.value = Number(event.newValue ?? '80')
   }
+
+  if (event.key === STORAGE_KEYS.size) {
+    dropSize.value = Number(event.newValue ?? '100')
+  }
+
+  if (event.key === STORAGE_KEYS.customX) {
+    customX.value = Number(event.newValue ?? '50')
+  }
+
+  if (event.key === STORAGE_KEYS.customY) {
+    customY.value = Number(event.newValue ?? '50')
+  }
+
+  if (event.key === STORAGE_KEYS.customAnchor) {
+    customAnchor.value = (event.newValue as OverlayAnchor) ?? 'full'
+  }
 }
 
 watch(overlayPosition, (value) => {
@@ -238,6 +307,22 @@ watch(overlayPosition, (value) => {
 
 watch(dropVolume, (value) => {
   localStorage.setItem(STORAGE_KEYS.volume, String(value))
+})
+
+watch(dropSize, (value) => {
+  localStorage.setItem(STORAGE_KEYS.size, String(value))
+})
+
+watch(customX, (value) => {
+  localStorage.setItem(STORAGE_KEYS.customX, String(value))
+})
+
+watch(customY, (value) => {
+  localStorage.setItem(STORAGE_KEYS.customY, String(value))
+})
+
+watch(customAnchor, (value) => {
+  localStorage.setItem(STORAGE_KEYS.customAnchor, value)
 })
 
 watch(dropsEnabled, async (value) => {
@@ -259,6 +344,7 @@ onMounted(async () => {
 
   const unsubDrop = window.memedrop?.onDrop((drop) => {
     activeDrop.value = drop
+    isTestDropActive.value = drop.id === TEST_DROP_ID
 
     if (!isOverlayView.value) {
       return
@@ -272,8 +358,22 @@ onMounted(async () => {
   })
 
   const unsubClearDrop = window.memedrop?.onClearDrop(() => {
+    if (activeDrop.value?.id === TEST_DROP_ID) {
+      return
+    }
+
     clearActiveDropTimer()
     activeDrop.value = null
+  })
+
+  const unsubTestDropCleared = window.memedrop?.onTestDropCleared(() => {
+    if (activeDrop.value?.id !== TEST_DROP_ID) {
+      return
+    }
+
+    clearActiveDropTimer()
+    activeDrop.value = null
+    isTestDropActive.value = false
   })
 
   const unsubSkipCurrentDrop = window.memedrop?.onSkipCurrentDrop(() => {
@@ -292,6 +392,7 @@ onMounted(async () => {
 
   if (unsubDrop) unsubscribers.push(unsubDrop)
   if (unsubClearDrop) unsubscribers.push(unsubClearDrop)
+  if (unsubTestDropCleared) unsubscribers.push(unsubTestDropCleared)
   if (unsubSkipCurrentDrop) unsubscribers.push(unsubSkipCurrentDrop)
   if (unsubStatus) unsubscribers.push(unsubStatus)
   if (unsubOverlay) unsubscribers.push(unsubOverlay)
@@ -312,7 +413,10 @@ onBeforeUnmount(() => {
         :active-kind="activeKind"
         :has-drop="hasDrop"
         :overlay-classes="overlayClasses"
+        :custom-style="overlayCustomStyle"
         :volume="dropVolume"
+        :size="dropSize"
+        :is-custom-position="overlayPosition === 'custom'"
         @advance="completeActiveDrop"
       />
     </div>
@@ -343,7 +447,12 @@ onBeforeUnmount(() => {
         :hide-own-drops="hideOwnDrops"
         :can-stop-global-drop="canStopGlobalDrop"
         :drop-volume="dropVolume"
+        :drop-size="dropSize"
+        :is-test-drop-active="isTestDropActive"
         :overlay-position="overlayPosition"
+        :custom-x="customX"
+        :custom-y="customY"
+        :custom-anchor="customAnchor"
         :is-saving-config="isSavingConfig"
         :config-saved-message="configSavedMessage"
         :auth-message="discordAuthMessage"
@@ -353,7 +462,11 @@ onBeforeUnmount(() => {
         @toggle-hide-own-drops="toggleHideOwnDrops"
         @stop-current-drop-for-everyone="stopCurrentDropForEveryone"
         @update-drop-volume="dropVolume = $event"
+        @update-drop-size="dropSize = $event"
         @update-overlay-position="overlayPosition = $event as OverlayPosition"
+        @update-custom-x="customX = $event"
+        @update-custom-y="customY = $event"
+        @update-custom-anchor="customAnchor = $event as OverlayAnchor"
         @save-server-config="saveServerConfig"
         @disconnect-discord="disconnectDiscord"
         @trigger-test-drop="triggerTestDrop"
