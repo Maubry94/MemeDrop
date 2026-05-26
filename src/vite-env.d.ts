@@ -3,6 +3,7 @@
 interface Window {
   memedrop: {
     onDrop: (handler: (drop: import('./shared/types').Drop) => void) => () => void
+    onClearDrop: (handler: () => void) => () => void
     onSkipCurrentDrop: (handler: () => void) => () => void
     onConnectionStatus: (
       handler: (status: import('./shared/types').ConnectionStatus) => void,
@@ -22,6 +23,8 @@ interface Window {
     toggleDrops: () => Promise<import('./shared/types').OverlayState>
     toggleHideOwnDrops: () => Promise<import('./shared/types').OverlayState>
     skipCurrentDrop: () => Promise<void>
+    completeCurrentDrop: (dropId: string) => Promise<void>
+    stopCurrentDropForEveryone: () => Promise<void>
     getOverlayState: () => Promise<import('./shared/types').OverlayState>
     getConnectionStatus: () => Promise<import('./shared/types').ConnectionStatus | null>
     getShortcutStatus: () => Promise<import('./shared/types').ShortcutStatus[]>

@@ -25,6 +25,7 @@ declare namespace NodeJS {
 interface Window {
   memedrop: {
     onDrop: (handler: (drop: import('../src/shared/types').Drop) => void) => () => void
+    onClearDrop: (handler: () => void) => () => void
     onSkipCurrentDrop: (handler: () => void) => () => void
     onConnectionStatus: (
       handler: (status: import('../src/shared/types').ConnectionStatus) => void,
@@ -44,6 +45,8 @@ interface Window {
     toggleDrops: () => Promise<import('../src/shared/types').OverlayState>
     toggleHideOwnDrops: () => Promise<import('../src/shared/types').OverlayState>
     skipCurrentDrop: () => Promise<void>
+    completeCurrentDrop: (dropId: string) => Promise<void>
+    stopCurrentDropForEveryone: () => Promise<void>
     getOverlayState: () => Promise<import('../src/shared/types').OverlayState>
     getConnectionStatus: () => Promise<import('../src/shared/types').ConnectionStatus | null>
     getShortcutStatus: () => Promise<import('../src/shared/types').ShortcutStatus[]>

@@ -12,6 +12,7 @@ import {
 import http from 'node:http'
 import { config as loadEnv } from 'dotenv'
 import { startMemeDropClient } from './memedropClient'
+import type { MemeDropClientController } from './memedropClient'
 import type {
   ConnectionStatus,
   DiscordUser,
@@ -54,7 +55,8 @@ let controlWindow: BrowserWindow | null = null
 let dropsEnabled = true
 let hideOwnDrops = false
 let connectionStatus: ConnectionStatus | null = null
-let stopMemeDropClient: (() => void) | null = null
+let memeDropClient: MemeDropClientController | null = null
+let currentServerDrop: Drop | null = null
 let shortcutStatus: ShortcutStatus[] = []
 let overlayKeepAliveTimer: ReturnType<typeof setInterval> | null = null
 let isQuitting = false
@@ -253,26 +255,36 @@ const disconnectDiscord = (): ServerConfig => {
 }
 
 const startOrRestartMemeDropClient = () => {
-  stopMemeDropClient?.()
-  stopMemeDropClient = null
+  memeDropClient?.stop()
+  memeDropClient = null
 
   const { serverUrl, accessKey, discordUserId } = getServerConfig()
 
-  stopMemeDropClient = startMemeDropClient({
+  memeDropClient = startMemeDropClient({
     serverUrl,
     accessKey,
+    userId: discordUserId,
     onDrop: (drop: Drop) => {
+      currentServerDrop = drop
       if (!dropsEnabled) {
+        memeDropClient?.completeDrop(drop.id)
         return
       }
       if (!discordUserId) {
+        memeDropClient?.completeDrop(drop.id)
         return
       }
       if (hideOwnDrops && discordUserId && drop.authorId === discordUserId) {
+        controlWindow?.webContents.send('drop-received', drop)
+        memeDropClient?.completeDrop(drop.id)
         return
       }
       keepOverlayAboveFullscreen()
-      overlayWindow?.webContents.send('drop-received', drop)
+      sendToWindows('drop-received', drop)
+    },
+    onClearDrop: () => {
+      currentServerDrop = null
+      sendToWindows('clear-drop', null)
     },
     onStatus: (status: ConnectionStatus) => {
       setConnectionStatus(status)
@@ -356,6 +368,17 @@ const skipCurrentDrop = () => {
   overlayWindow?.webContents.send('skip-current-drop')
 }
 
+const completeCurrentDrop = (dropId: string) => {
+  memeDropClient?.completeDrop(dropId)
+}
+
+const stopCurrentDropForEveryone = () => {
+  if (!currentServerDrop) {
+    return
+  }
+  memeDropClient?.stopDrop(currentServerDrop.id)
+}
+
 const registerGlobalShortcuts = () => {
   globalShortcut.unregisterAll()
 
@@ -378,6 +401,11 @@ const registerGlobalShortcuts = () => {
       registered: globalShortcut.register('CommandOrControl+Shift+M', () => {
         setHideOwnDrops(!hideOwnDrops)
       }),
+    },
+    {
+      accelerator: 'CommandOrControl+Shift+X',
+      label: 'Couper le drop pour tout le monde',
+      registered: globalShortcut.register('CommandOrControl+Shift+X', stopCurrentDropForEveryone),
     },
   ]
 
@@ -527,9 +555,9 @@ const createOverlayWindow = () => {
 const createControlWindow = () => {
   controlWindow = new BrowserWindow({
     width: 360,
-    height: 640,
+    height: 660,
     minWidth: 360,
-    minHeight: 640,
+    minHeight: 660,
     resizable: true,
     minimizable: true,
     maximizable: false,
@@ -641,6 +669,14 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     skipCurrentDrop()
   })
 
+  ipcMain.handle('complete-current-drop', (_event, dropId: string) => {
+    completeCurrentDrop(dropId)
+  })
+
+  ipcMain.handle('stop-current-drop-for-everyone', () => {
+    stopCurrentDropForEveryone()
+  })
+
   ipcMain.handle('emit-test-drop', (_event, drop: Drop) => {
     if (!dropsEnabled) {
       return
@@ -662,6 +698,6 @@ app.on('will-quit', () => {
   rendererServer = null
   rendererServerUrl = null
   globalShortcut.unregisterAll()
-  stopMemeDropClient?.()
-  stopMemeDropClient = null
+  memeDropClient?.stop()
+  memeDropClient = null
 })

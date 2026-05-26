@@ -6,6 +6,7 @@ import ServerSettings from './ServerSettings.vue'
 defineProps<{
   dropsEnabled: boolean
   hideOwnDrops: boolean
+  canStopGlobalDrop: boolean
   dropVolume: number
   overlayPosition: string
   isSavingConfig: boolean
@@ -18,6 +19,7 @@ defineEmits<{
   toggleDrops: []
   skipCurrentDrop: []
   toggleHideOwnDrops: []
+  stopCurrentDropForEveryone: []
   updateDropVolume: [value: number]
   updateOverlayPosition: [value: string]
   saveServerConfig: []
@@ -29,7 +31,7 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
 </script>
 
 <template>
-  <div class="grid grid-cols-3 gap-2">
+  <div class="grid grid-cols-2 gap-2">
     <button
       type="button"
       class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
@@ -50,6 +52,14 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
       @click="$emit('toggleHideOwnDrops')"
     >
       {{ hideOwnDrops ? 'Voir mes drops' : 'Masquer mes drops' }}
+    </button>
+    <button
+      type="button"
+      class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90 disabled:cursor-default disabled:opacity-50"
+      :disabled="!canStopGlobalDrop"
+      @click="$emit('stopCurrentDropForEveryone')"
+    >
+      Stop global
     </button>
   </div>
 
@@ -106,7 +116,7 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
 
   <div class="rounded-lg border border-white/10 bg-slate-900/70 p-2 text-[11px] text-slate-300">
     Ctrl+Shift+D (désactiver les drop)<br />Ctrl+Shift+S (couper le drop actuel)<br />Ctrl+Shift+M
-    (masquer mes drops)
+    (masquer mes drops)<br />Ctrl+Shift+X (stop global auteur)
   </div>
 
   <button

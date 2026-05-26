@@ -25,7 +25,7 @@ const overlayPosition = ref<OverlayPosition>(
 const dropVolume = ref(Number(localStorage.getItem(STORAGE_KEYS.volume) ?? '80'))
 const dropsEnabled = ref(true)
 const hideOwnDrops = ref(false)
-const queue = ref<Drop[]>([])
+const activeDrop = ref<Drop | null>(null)
 const connectionStatus = ref<ConnectionStatus | null>(null)
 const serverConfig = ref<ServerConfig>({
   serverUrl: '',
@@ -41,14 +41,18 @@ const isAuthenticatingDiscord = ref(false)
 const unsubscribers: Array<() => void> = []
 
 const DISPLAY_MS = 9000
-let queueTimer: number | undefined
-let advancingDropId: string | null = null
+let activeDropTimer: number | undefined
 let syncingState = false
 
-const activeDrop = computed(() => queue.value[0] ?? null)
 const activeKind = computed(() => getMediaKind(activeDrop.value))
 const hasDrop = computed(() => Boolean(activeDrop.value) && dropsEnabled.value)
 const isDiscordConnected = computed(() => Boolean(serverConfig.value.discordUserId))
+const canStopGlobalDrop = computed(
+  () =>
+    Boolean(activeDrop.value?.id) &&
+    Boolean(serverConfig.value.discordUserId) &&
+    activeDrop.value?.authorId === serverConfig.value.discordUserId,
+)
 
 const overlayClasses = computed(() => {
   switch (overlayPosition.value) {
@@ -66,54 +70,41 @@ const overlayClasses = computed(() => {
   }
 })
 
-const clearQueueTimer = () => {
-  if (queueTimer) {
-    window.clearTimeout(queueTimer)
-    queueTimer = undefined
+const clearActiveDropTimer = () => {
+  if (activeDropTimer) {
+    window.clearTimeout(activeDropTimer)
+    activeDropTimer = undefined
   }
 }
 
-const scheduleCurrentDrop = () => {
-  clearQueueTimer()
-  if (!queue.value.length) {
+const completeActiveDrop = async (expectedDropId?: string) => {
+  const drop = activeDrop.value
+  if (!drop) {
     return
   }
 
-  if (['video', 'audio', 'youtube'].includes(activeKind.value)) {
+  if (expectedDropId && drop.id !== expectedDropId) {
     return
   }
 
-  queueTimer = window.setTimeout(() => {
-    advanceQueue()
+  clearActiveDropTimer()
+  activeDrop.value = null
+  await window.memedrop?.completeCurrentDrop(drop.id)
+}
+
+const scheduleActiveDrop = () => {
+  clearActiveDropTimer()
+  if (!activeDrop.value || !isOverlayView.value) {
+    return
+  }
+
+  if (activeKind.value !== 'image') {
+    return
+  }
+
+  activeDropTimer = window.setTimeout(() => {
+    void completeActiveDrop(activeDrop.value?.id)
   }, DISPLAY_MS)
-}
-
-const advanceQueue = (expectedDropId?: string) => {
-  const currentDrop = activeDrop.value
-  if (!currentDrop) {
-    return
-  }
-
-  if (expectedDropId && currentDrop.id !== expectedDropId) {
-    return
-  }
-
-  if (advancingDropId === currentDrop.id) {
-    return
-  }
-
-  advancingDropId = currentDrop.id
-  clearQueueTimer()
-  queue.value.shift()
-  advancingDropId = null
-  scheduleCurrentDrop()
-}
-
-const enqueue = (drop: Drop) => {
-  queue.value.push(drop)
-  if (queue.value.length === 1) {
-    scheduleCurrentDrop()
-  }
 }
 
 const applyOverlayState = (state: OverlayState) => {
@@ -213,6 +204,10 @@ const skipCurrentDrop = async () => {
   await window.memedrop?.skipCurrentDrop()
 }
 
+const stopCurrentDropForEveryone = async () => {
+  await window.memedrop?.stopCurrentDropForEveryone()
+}
+
 const triggerTestDrop = async () => {
   await window.memedrop?.emitTestDrop({
     id: crypto.randomUUID(),
@@ -247,8 +242,7 @@ watch(dropVolume, (value) => {
 
 watch(dropsEnabled, async (value) => {
   if (!value) {
-    queue.value = []
-    clearQueueTimer()
+    void completeActiveDrop()
   }
 
   if (syncingState || !isControlView.value) {
@@ -264,15 +258,27 @@ onMounted(async () => {
   window.addEventListener('storage', handleStorage)
 
   const unsubDrop = window.memedrop?.onDrop((drop) => {
-    if (!isOverlayView.value || !dropsEnabled.value || getMediaKind(drop) === 'file') {
+    activeDrop.value = drop
+
+    if (!isOverlayView.value) {
       return
     }
-    enqueue(drop)
+
+    if (!dropsEnabled.value || getMediaKind(drop) === 'file') {
+      void completeActiveDrop(drop.id)
+      return
+    }
+    scheduleActiveDrop()
+  })
+
+  const unsubClearDrop = window.memedrop?.onClearDrop(() => {
+    clearActiveDropTimer()
+    activeDrop.value = null
   })
 
   const unsubSkipCurrentDrop = window.memedrop?.onSkipCurrentDrop(() => {
     if (isOverlayView.value) {
-      advanceQueue()
+      void completeActiveDrop()
     }
   })
 
@@ -285,6 +291,7 @@ onMounted(async () => {
   })
 
   if (unsubDrop) unsubscribers.push(unsubDrop)
+  if (unsubClearDrop) unsubscribers.push(unsubClearDrop)
   if (unsubSkipCurrentDrop) unsubscribers.push(unsubSkipCurrentDrop)
   if (unsubStatus) unsubscribers.push(unsubStatus)
   if (unsubOverlay) unsubscribers.push(unsubOverlay)
@@ -292,7 +299,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('storage', handleStorage)
-  clearQueueTimer()
+  clearActiveDropTimer()
   unsubscribers.forEach((unsubscribe) => unsubscribe())
 })
 </script>
@@ -306,7 +313,7 @@ onBeforeUnmount(() => {
         :has-drop="hasDrop"
         :overlay-classes="overlayClasses"
         :volume="dropVolume"
-        @advance="advanceQueue"
+        @advance="completeActiveDrop"
       />
     </div>
 
@@ -334,6 +341,7 @@ onBeforeUnmount(() => {
         v-model:server-config="serverConfig"
         :drops-enabled="dropsEnabled"
         :hide-own-drops="hideOwnDrops"
+        :can-stop-global-drop="canStopGlobalDrop"
         :drop-volume="dropVolume"
         :overlay-position="overlayPosition"
         :is-saving-config="isSavingConfig"
@@ -343,6 +351,7 @@ onBeforeUnmount(() => {
         @toggle-drops="toggleDrops"
         @skip-current-drop="skipCurrentDrop"
         @toggle-hide-own-drops="toggleHideOwnDrops"
+        @stop-current-drop-for-everyone="stopCurrentDropForEveryone"
         @update-drop-volume="dropVolume = $event"
         @update-overlay-position="overlayPosition = $event as OverlayPosition"
         @save-server-config="saveServerConfig"

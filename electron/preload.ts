@@ -18,6 +18,7 @@ const onChannel = <T>(channel: string, handler: (payload: T) => void): Unsubscri
 
 contextBridge.exposeInMainWorld('memedrop', {
   onDrop: (handler: (drop: Drop) => void) => onChannel('drop-received', handler),
+  onClearDrop: (handler: () => void) => onChannel('clear-drop', handler),
   onSkipCurrentDrop: (handler: () => void) => onChannel('skip-current-drop', handler),
   onConnectionStatus: (handler: (status: ConnectionStatus) => void) =>
     onChannel('connection-status', handler),
@@ -30,6 +31,8 @@ contextBridge.exposeInMainWorld('memedrop', {
   toggleDrops: () => ipcRenderer.invoke('toggle-drops'),
   toggleHideOwnDrops: () => ipcRenderer.invoke('toggle-hide-own-drops'),
   skipCurrentDrop: () => ipcRenderer.invoke('skip-current-drop'),
+  completeCurrentDrop: (dropId: string) => ipcRenderer.invoke('complete-current-drop', dropId),
+  stopCurrentDropForEveryone: () => ipcRenderer.invoke('stop-current-drop-for-everyone'),
   getOverlayState: () => ipcRenderer.invoke('get-overlay-state'),
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
   getShortcutStatus: () => ipcRenderer.invoke('get-shortcut-status'),

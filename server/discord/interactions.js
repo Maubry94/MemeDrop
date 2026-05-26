@@ -70,13 +70,14 @@ export const createInteractionHandler = ({ broadcastDrop }) => async (interactio
     return
   }
 
+  console.log(`Commande /${interaction.commandName} reçue de ${interaction.user.tag}.`)
+
   try {
     await interaction.deferReply({
       flags: MessageFlags.Ephemeral,
     })
 
     const caption = interaction.options.getString('legende')
-    console.log(`Commande /${interaction.commandName} reçue de ${interaction.user.tag}.`)
 
     if (interaction.commandName === 'dropyt') {
       await handleYouTubeDrop(interaction, caption, broadcastDrop)
@@ -85,6 +86,13 @@ export const createInteractionHandler = ({ broadcastDrop }) => async (interactio
 
     await handleFileDrop(interaction, caption, broadcastDrop)
   } catch (error) {
+    if (error?.code === 10062) {
+      console.error(
+        `Interaction Discord inconnue pour /${interaction.commandName}. Le drop n'a pas été ajouté à la queue. Vérifie qu'un seul serveur MemeDrop utilise ce bot et que le serveur répond en moins de 3 secondes.`,
+      )
+      return
+    }
+
     console.error('Erreur lors du traitement de /drop:', error)
   }
 }

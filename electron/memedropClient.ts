@@ -4,20 +4,35 @@ import type { ConnectionStatus, Drop } from '../src/shared/types'
 type MemeDropClientOptions = {
   serverUrl: string | undefined
   accessKey: string | undefined
+  userId: string | undefined
   onDrop: (drop: Drop) => void
+  onClearDrop: () => void
   onStatus: (status: ConnectionStatus) => void
 }
 
 type ServerMessage =
   | {
-      type: 'drop'
+      type: 'active-drop' | 'drop'
       drop: Drop
     }
   | {
       type: 'hello'
     }
+  | {
+      type: 'clear-drop'
+    }
 
-const toWebSocketUrl = (serverUrl: string, accessKey: string | undefined) => {
+export type MemeDropClientController = {
+  completeDrop: (dropId: string) => void
+  stopDrop: (dropId: string) => void
+  stop: () => void
+}
+
+const toWebSocketUrl = (
+  serverUrl: string,
+  accessKey: string | undefined,
+  userId: string | undefined,
+) => {
   const normalizedUrl = serverUrl.match(/^https?:\/\//i) ? serverUrl : `https://${serverUrl}`
   const url = new URL(normalizedUrl)
 
@@ -27,6 +42,10 @@ const toWebSocketUrl = (serverUrl: string, accessKey: string | undefined) => {
 
   if (accessKey) {
     url.searchParams.set('key', accessKey)
+  }
+
+  if (userId) {
+    url.searchParams.set('userId', userId)
   }
 
   return url.toString()
@@ -42,14 +61,18 @@ const isDrop = (value: unknown): value is Drop => {
 }
 
 export function startMemeDropClient(options: MemeDropClientOptions) {
-  const { serverUrl, accessKey, onDrop, onStatus } = options
+  const { serverUrl, accessKey, userId, onDrop, onClearDrop, onStatus } = options
 
   if (!serverUrl) {
     onStatus({
       level: 'error',
       message: 'Serveur MemeDrop : URL manquante.',
     })
-    return () => undefined
+    return {
+      completeDrop: () => undefined,
+      stopDrop: () => undefined,
+      stop: () => undefined,
+    }
   }
 
   let socket: WebSocket | null = null
@@ -78,7 +101,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     let wsUrl: string
 
     try {
-      wsUrl = toWebSocketUrl(serverUrl.trim(), accessKey?.trim())
+      wsUrl = toWebSocketUrl(serverUrl.trim(), accessKey?.trim(), userId?.trim())
     } catch {
       onStatus({
         level: 'error',
@@ -105,9 +128,13 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
       try {
         const message = JSON.parse(data.toString()) as ServerMessage
 
-        if (message.type === 'drop' && isDrop(message.drop)) {
+        if ((message.type === 'active-drop' || message.type === 'drop') && isDrop(message.drop)) {
           console.log(`Drop reçu du serveur MemeDrop : ${message.drop.id}`)
           onDrop(message.drop)
+        }
+
+        if (message.type === 'clear-drop') {
+          onClearDrop()
         }
       } catch (error) {
         console.error('Message serveur MemeDrop invalide:', error)
@@ -119,6 +146,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
         return
       }
 
+      onClearDrop()
       onStatus({
         level: 'error',
         message: 'Serveur MemeDrop : déconnecté, reconnexion...',
@@ -136,10 +164,30 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
 
   connect()
 
-  return () => {
-    stopped = true
-    clearReconnectTimer()
-    socket?.close()
-    socket = null
+  const sendMessage = (payload: unknown) => {
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(payload))
+    }
+  }
+
+  return {
+    completeDrop: (dropId: string) => {
+      sendMessage({
+        type: 'drop-completed',
+        dropId,
+      })
+    },
+    stopDrop: (dropId: string) => {
+      sendMessage({
+        type: 'drop-stop',
+        dropId,
+      })
+    },
+    stop: () => {
+      stopped = true
+      clearReconnectTimer()
+      socket?.close()
+      socket = null
+    },
   }
 }
