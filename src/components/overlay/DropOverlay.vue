@@ -270,34 +270,39 @@ onBeforeUnmount(() => {
       class="pointer-events-none w-full max-w-[min(880px,90vw)] rounded-3xl border border-overlay-border bg-overlay-bg p-6 backdrop-blur"
     >
       <div class="flex flex-col gap-4">
-        <img
-          v-if="activeKind === 'image'"
-          :src="activeDrop?.url"
-          :alt="activeDrop?.caption ?? 'MemeDrop image'"
-          class="max-h-[60vh] w-full rounded-2xl object-contain"
-        />
-        <iframe
-          v-else-if="activeKind === 'youtube'"
-          ref="youtubeIframe"
-          :key="`youtube-${activeDrop?.id}`"
-          :src="youtubeEmbedUrl"
-          allow="autoplay; encrypted-media; picture-in-picture"
-          allowfullscreen
-          class="aspect-video max-h-[60vh] w-full rounded-2xl border-0 bg-black"
-          @load="handleYouTubeLoad"
-        />
-        <video
-          v-else-if="activeKind === 'video'"
-          ref="videoElement"
-          :key="`video-${activeDrop?.id}`"
-          :src="activeDrop?.url"
-          autoplay
-          playsinline
-          class="max-h-[60vh] w-full rounded-2xl object-contain"
-          @loadedmetadata="applyDropVolume"
-          @ended="() => emit('advance')"
-          @error="() => emit('advance')"
-        />
+        <div
+          v-if="['image', 'video', 'youtube'].includes(activeKind)"
+          class="mx-auto aspect-video w-full max-w-[calc(60vh*16/9)] overflow-hidden rounded-2xl bg-black"
+        >
+          <img
+            v-if="activeKind === 'image'"
+            :src="activeDrop?.url"
+            :alt="activeDrop?.caption ?? 'MemeDrop image'"
+            class="h-full w-full object-contain"
+          />
+          <iframe
+            v-else-if="activeKind === 'youtube'"
+            ref="youtubeIframe"
+            :key="`youtube-${activeDrop?.id}`"
+            :src="youtubeEmbedUrl"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowfullscreen
+            class="h-full w-full border-0"
+            @load="handleYouTubeLoad"
+          />
+          <video
+            v-else-if="activeKind === 'video'"
+            ref="videoElement"
+            :key="`video-${activeDrop?.id}`"
+            :src="activeDrop?.url"
+            autoplay
+            playsinline
+            class="h-full w-full object-contain"
+            @loadedmetadata="applyDropVolume"
+            @ended="() => emit('advance')"
+            @error="() => emit('advance')"
+          />
+        </div>
         <audio
           v-else-if="activeKind === 'audio'"
           ref="audioElement"
