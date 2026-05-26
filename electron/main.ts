@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
@@ -14,6 +14,7 @@ import { config as loadEnv } from 'dotenv'
 import { startMemeDropClient } from './memedropClient'
 import type {
   ConnectionStatus,
+  DiscordUser,
   Drop,
   OverlayState,
   ServerConfig,
@@ -51,6 +52,7 @@ const windowIcon = path.join(process.env.VITE_PUBLIC, 'memeDrop.png')
 let overlayWindow: BrowserWindow | null = null
 let controlWindow: BrowserWindow | null = null
 let dropsEnabled = true
+let hideOwnDrops = false
 let connectionStatus: ConnectionStatus | null = null
 let stopMemeDropClient: (() => void) | null = null
 let shortcutStatus: ShortcutStatus[] = []
@@ -62,6 +64,7 @@ let rendererServerUrl: string | null = null
 type AppConfigFile = {
   discord?: Record<string, unknown>
   server?: Partial<ServerConfig>
+  overlay?: Partial<Pick<OverlayState, 'hideOwnDrops'>>
 }
 
 const loadAppEnv = () => {
@@ -99,6 +102,9 @@ const readAppConfig = (): AppConfigFile => {
 const normalizeServerConfig = (config: ServerConfig): ServerConfig => ({
   serverUrl: config.serverUrl.trim(),
   accessKey: config.accessKey.trim(),
+  discordUserId: config.discordUserId.trim(),
+  discordUserName: config.discordUserName.trim(),
+  discordUserAvatarUrl: config.discordUserAvatarUrl?.trim() || null,
 })
 
 const getServerConfig = (): ServerConfig => {
@@ -107,6 +113,9 @@ const getServerConfig = (): ServerConfig => {
   return {
     serverUrl: stored.serverUrl ?? process.env.MEMEDROP_SERVER_URL ?? '',
     accessKey: stored.accessKey ?? process.env.MEMEDROP_SERVER_KEY ?? '',
+    discordUserId: stored.discordUserId ?? process.env.DISCORD_USER_ID ?? '',
+    discordUserName: stored.discordUserName ?? '',
+    discordUserAvatarUrl: stored.discordUserAvatarUrl ?? null,
   }
 }
 
@@ -122,17 +131,144 @@ const saveServerConfig = (config: ServerConfig): ServerConfig => {
   return nextConfig.server
 }
 
+const saveOverlayPreferences = () => {
+  const nextConfig = {
+    ...readAppConfig(),
+    overlay: {
+      ...readAppConfig().overlay,
+      hideOwnDrops,
+    },
+  }
+
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeFileSync(getConfigPath(), JSON.stringify(nextConfig, null, 2), 'utf8')
+}
+
+const loadOverlayPreferences = () => {
+  hideOwnDrops = Boolean(readAppConfig().overlay?.hideOwnDrops)
+}
+
+const toServerHttpUrl = (serverUrl: string) => {
+  const normalizedUrl = serverUrl.match(/^https?:\/\//i) ? serverUrl : `https://${serverUrl}`
+  return new URL(normalizedUrl)
+}
+
+const withServerKey = (url: URL, accessKey: string) => {
+  if (accessKey) {
+    url.searchParams.set('key', accessKey)
+  }
+
+  return url
+}
+
+type DiscordAuthStartResponse = {
+  sessionId: string
+  authUrl: string
+}
+
+type DiscordAuthStatusResponse =
+  | {
+      status: 'pending' | 'expired'
+    }
+  | {
+      status: 'done'
+      user: DiscordUser
+    }
+
+const requestJson = async <T>(url: URL, options?: RequestInit): Promise<T> => {
+  const response = await fetch(url, options)
+
+  if (!response.ok) {
+    const body = await response.text()
+    let message = body
+
+    try {
+      const json = JSON.parse(body) as { error?: string }
+      message = json.error ?? body
+    } catch {
+      // Keep the raw response body when the server did not return JSON.
+    }
+
+    throw new Error(message || `HTTP ${response.status}`)
+  }
+
+  return response.json() as Promise<T>
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const authenticateDiscord = async (): Promise<ServerConfig> => {
+  const config = getServerConfig()
+
+  if (!config.serverUrl) {
+    throw new Error('URL du serveur manquante.')
+  }
+
+  const serverUrl = toServerHttpUrl(config.serverUrl)
+  const startUrl = withServerKey(new URL('/auth/discord/session', serverUrl), config.accessKey)
+  const start = await requestJson<DiscordAuthStartResponse>(startUrl, {
+    method: 'POST',
+  })
+
+  await shell.openExternal(start.authUrl)
+
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    await sleep(1000)
+
+    const statusUrl = withServerKey(
+      new URL(`/auth/discord/session/${start.sessionId}`, serverUrl),
+      config.accessKey,
+    )
+    const status = await requestJson<DiscordAuthStatusResponse>(statusUrl)
+
+    if (status.status === 'done') {
+      const savedConfig = saveServerConfig({
+        ...config,
+        discordUserId: status.user.id,
+        discordUserName: status.user.username,
+        discordUserAvatarUrl: status.user.avatarUrl,
+      })
+      startOrRestartMemeDropClient()
+      return savedConfig
+    }
+
+    if (status.status === 'expired') {
+      throw new Error('Session Discord expirée.')
+    }
+  }
+
+  throw new Error('Connexion Discord expirée.')
+}
+
+const disconnectDiscord = (): ServerConfig => {
+  const config = getServerConfig()
+  const savedConfig = saveServerConfig({
+    ...config,
+    discordUserId: '',
+    discordUserName: '',
+    discordUserAvatarUrl: null,
+  })
+  startOrRestartMemeDropClient()
+  return savedConfig
+}
+
 const startOrRestartMemeDropClient = () => {
   stopMemeDropClient?.()
   stopMemeDropClient = null
 
-  const { serverUrl, accessKey } = getServerConfig()
+  const { serverUrl, accessKey, discordUserId } = getServerConfig()
 
   stopMemeDropClient = startMemeDropClient({
     serverUrl,
     accessKey,
     onDrop: (drop: Drop) => {
       if (!dropsEnabled) {
+        return
+      }
+      if (!discordUserId) {
+        return
+      }
+      if (hideOwnDrops && discordUserId && drop.authorId === discordUserId) {
         return
       }
       keepOverlayAboveFullscreen()
@@ -146,6 +282,7 @@ const startOrRestartMemeDropClient = () => {
 
 const getOverlayState = (): OverlayState => ({
   dropsEnabled,
+  hideOwnDrops,
 })
 
 const getShortcutStatus = () => shortcutStatus
@@ -209,6 +346,12 @@ const setDropsEnabled = (enabled: boolean) => {
   syncOverlayState()
 }
 
+const setHideOwnDrops = (enabled: boolean) => {
+  hideOwnDrops = enabled
+  saveOverlayPreferences()
+  syncOverlayState()
+}
+
 const skipCurrentDrop = () => {
   overlayWindow?.webContents.send('skip-current-drop')
 }
@@ -228,6 +371,13 @@ const registerGlobalShortcuts = () => {
       accelerator: 'CommandOrControl+Shift+S',
       label: 'Couper le drop actuel',
       registered: globalShortcut.register('CommandOrControl+Shift+S', skipCurrentDrop),
+    },
+    {
+      accelerator: 'CommandOrControl+Shift+M',
+      label: 'Afficher/masquer mes drops',
+      registered: globalShortcut.register('CommandOrControl+Shift+M', () => {
+        setHideOwnDrops(!hideOwnDrops)
+      }),
     },
   ]
 
@@ -377,9 +527,9 @@ const createOverlayWindow = () => {
 const createControlWindow = () => {
   controlWindow = new BrowserWindow({
     width: 360,
-    height: 620,
-    minWidth: 320,
-    minHeight: 620,
+    height: 640,
+    minWidth: 360,
+    minHeight: 640,
     resizable: true,
     minimizable: true,
     maximizable: false,
@@ -443,6 +593,7 @@ if (!hasInstanceLock) {
 
 if (hasInstanceLock) app.whenReady().then(async () => {
   loadAppEnv()
+  loadOverlayPreferences()
   Menu.setApplicationMenu(null)
   if (!VITE_DEV_SERVER_URL) {
     await startRendererServer()
@@ -457,6 +608,11 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     return getOverlayState()
   })
 
+  ipcMain.handle('set-hide-own-drops', (_event, enabled: boolean) => {
+    setHideOwnDrops(Boolean(enabled))
+    return getOverlayState()
+  })
+
   ipcMain.handle('get-overlay-state', () => getOverlayState())
   ipcMain.handle('get-connection-status', () => connectionStatus)
   ipcMain.handle('get-shortcut-status', () => getShortcutStatus())
@@ -467,8 +623,17 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     return savedConfig
   })
 
+  ipcMain.handle('authenticate-discord', () => authenticateDiscord())
+
+  ipcMain.handle('disconnect-discord', () => disconnectDiscord())
+
   ipcMain.handle('toggle-drops', () => {
     setDropsEnabled(!dropsEnabled)
+    return getOverlayState()
+  })
+
+  ipcMain.handle('toggle-hide-own-drops', () => {
+    setHideOwnDrops(!hideOwnDrops)
     return getOverlayState()
   })
 

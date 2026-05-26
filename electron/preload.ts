@@ -26,12 +26,16 @@ contextBridge.exposeInMainWorld('memedrop', {
   onOverlayState: (handler: (state: OverlayState) => void) =>
     onChannel('overlay-state', handler),
   setDropsEnabled: (enabled: boolean) => ipcRenderer.invoke('set-drops-enabled', enabled),
+  setHideOwnDrops: (enabled: boolean) => ipcRenderer.invoke('set-hide-own-drops', enabled),
   toggleDrops: () => ipcRenderer.invoke('toggle-drops'),
+  toggleHideOwnDrops: () => ipcRenderer.invoke('toggle-hide-own-drops'),
   skipCurrentDrop: () => ipcRenderer.invoke('skip-current-drop'),
   getOverlayState: () => ipcRenderer.invoke('get-overlay-state'),
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
   getShortcutStatus: () => ipcRenderer.invoke('get-shortcut-status'),
   getServerConfig: () => ipcRenderer.invoke('get-server-config'),
   saveServerConfig: (config: ServerConfig) => ipcRenderer.invoke('save-server-config', config),
+  authenticateDiscord: () => ipcRenderer.invoke('authenticate-discord'),
+  disconnectDiscord: () => ipcRenderer.invoke('disconnect-discord'),
   emitTestDrop: (drop: Drop) => ipcRenderer.invoke('emit-test-drop', drop),
 })

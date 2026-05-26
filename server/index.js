@@ -1,4 +1,5 @@
 import http from 'node:http'
+import { randomUUID } from 'node:crypto'
 import {
   Client,
   GatewayIntentBits,
@@ -15,7 +16,11 @@ loadEnv()
 const PORT = Number(process.env.PORT ?? 3010)
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN
 const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET
 const MEMEDROP_SERVER_KEY = process.env.MEMEDROP_SERVER_KEY ?? ''
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL
+const AUTH_SESSION_MS = 5 * 60 * 1000
 const SUPPORTED_EXTENSIONS = new Set([
   'png',
   'jpg',
@@ -35,7 +40,201 @@ const SUPPORTED_EXTENSIONS = new Set([
 ])
 
 const clients = new Set()
+const authSessions = new Map()
 let discordStatus = 'starting'
+
+const sendJsonResponse = (response, statusCode, payload) => {
+  response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8' })
+  response.end(JSON.stringify(payload))
+}
+
+const getRequestKey = (request, requestUrl) => {
+  const headerKey = request.headers['x-memedrop-key']
+  return requestUrl.searchParams.get('key') ?? (Array.isArray(headerKey) ? headerKey[0] : headerKey) ?? ''
+}
+
+const isAuthorizedRequest = (request, requestUrl) => {
+  if (!MEMEDROP_SERVER_KEY) {
+    return true
+  }
+
+  return getRequestKey(request, requestUrl) === MEMEDROP_SERVER_KEY
+}
+
+const cleanupAuthSessions = () => {
+  const now = Date.now()
+
+  for (const [sessionId, session] of authSessions) {
+    if (session.expiresAt <= now) {
+      authSessions.delete(sessionId)
+    }
+  }
+}
+
+const getPublicBaseUrl = (request) => {
+  if (PUBLIC_BASE_URL) {
+    return PUBLIC_BASE_URL.replace(/\/$/, '')
+  }
+
+  const protocol = request.headers['x-forwarded-proto'] ?? 'http'
+  const host = request.headers['x-forwarded-host'] ?? request.headers.host
+  return `${Array.isArray(protocol) ? protocol[0] : protocol}://${Array.isArray(host) ? host[0] : host}`
+}
+
+const getOAuthRedirectUri = (request) => `${getPublicBaseUrl(request)}/auth/discord/callback`
+
+const getDiscordAvatarUrl = (user) => {
+  if (!user.avatar) {
+    return null
+  }
+
+  return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`
+}
+
+const getDiscordDisplayName = (user) => user.global_name ?? user.username ?? 'Discord'
+
+const exchangeDiscordCode = async (request, code) => {
+  const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      client_id: DISCORD_CLIENT_ID,
+      client_secret: DISCORD_CLIENT_SECRET,
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: getOAuthRedirectUri(request),
+    }),
+  })
+
+  if (!tokenResponse.ok) {
+    const body = await tokenResponse.text()
+    throw new Error(`Discord token exchange failed (${tokenResponse.status}): ${body}`)
+  }
+
+  const token = await tokenResponse.json()
+  const userResponse = await fetch('https://discord.com/api/users/@me', {
+    headers: {
+      authorization: `Bearer ${token.access_token}`,
+    },
+  })
+
+  if (!userResponse.ok) {
+    const body = await userResponse.text()
+    throw new Error(`Discord user fetch failed (${userResponse.status}): ${body}`)
+  }
+
+  const user = await userResponse.json()
+  return {
+    id: user.id,
+    username: getDiscordDisplayName(user),
+    avatarUrl: getDiscordAvatarUrl(user),
+  }
+}
+
+const handleDiscordAuthStart = (request, response, requestUrl) => {
+  if (!isAuthorizedRequest(request, requestUrl)) {
+    console.warn('Connexion Discord refusée: clé MemeDrop invalide.')
+    sendJsonResponse(response, 401, { error: 'Invalid MemeDrop key' })
+    return
+  }
+
+  if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+    console.warn('Connexion Discord refusée: OAuth Discord non configuré.')
+    sendJsonResponse(response, 503, { error: 'Discord OAuth is not configured.' })
+    return
+  }
+
+  cleanupAuthSessions()
+
+  const sessionId = randomUUID()
+  const expiresAt = Date.now() + AUTH_SESSION_MS
+  authSessions.set(sessionId, {
+    status: 'pending',
+    expiresAt,
+  })
+
+  const authUrl = new URL('https://discord.com/oauth2/authorize')
+  authUrl.searchParams.set('client_id', DISCORD_CLIENT_ID)
+  authUrl.searchParams.set('redirect_uri', getOAuthRedirectUri(request))
+  authUrl.searchParams.set('response_type', 'code')
+  authUrl.searchParams.set('scope', 'identify')
+  authUrl.searchParams.set('state', sessionId)
+
+  console.log(
+    `Session OAuth Discord créée: ${sessionId}. Redirect URI: ${getOAuthRedirectUri(request)}`,
+  )
+
+  sendJsonResponse(response, 200, {
+    sessionId,
+    authUrl: authUrl.toString(),
+    expiresAt: new Date(expiresAt).toISOString(),
+  })
+}
+
+const handleDiscordAuthStatus = (request, response, requestUrl) => {
+  if (!isAuthorizedRequest(request, requestUrl)) {
+    console.warn('Statut OAuth Discord refusé: clé MemeDrop invalide.')
+    sendJsonResponse(response, 401, { error: 'Invalid MemeDrop key' })
+    return
+  }
+
+  cleanupAuthSessions()
+
+  const sessionId = requestUrl.pathname.split('/').pop()
+  const session = authSessions.get(sessionId)
+
+  if (!session) {
+    console.warn(`Session OAuth Discord introuvable ou expirée: ${sessionId}.`)
+    sendJsonResponse(response, 404, { status: 'expired' })
+    return
+  }
+
+  if (session.status === 'done') {
+    authSessions.delete(sessionId)
+    console.log(`Session OAuth Discord terminée: ${sessionId}.`)
+    sendJsonResponse(response, 200, {
+      status: 'done',
+      user: session.user,
+    })
+    return
+  }
+
+  sendJsonResponse(response, 200, {
+    status: 'pending',
+  })
+}
+
+const handleDiscordAuthCallback = async (request, response, requestUrl) => {
+  const code = requestUrl.searchParams.get('code')
+  const sessionId = requestUrl.searchParams.get('state')
+  const session = sessionId ? authSessions.get(sessionId) : null
+
+  if (!code || !sessionId || !session) {
+    console.warn(`Callback OAuth Discord invalide ou expiré: ${sessionId ?? 'sans session'}.`)
+    response.writeHead(400, { 'content-type': 'text/html; charset=utf-8' })
+    response.end('<h1>MemeDrop</h1><p>Connexion Discord invalide ou expirée.</p>')
+    return
+  }
+
+  try {
+    const user = await exchangeDiscordCode(request, code)
+    console.log(`Callback OAuth Discord reçu pour ${user.username} (${user.id}).`)
+    authSessions.set(sessionId, {
+      status: 'done',
+      expiresAt: Date.now() + AUTH_SESSION_MS,
+      user,
+    })
+
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    response.end('<h1>MemeDrop</h1><p>Connexion Discord réussie. Tu peux fermer cet onglet.</p>')
+  } catch (error) {
+    console.error('Connexion Discord OAuth impossible:', error)
+    response.writeHead(500, { 'content-type': 'text/html; charset=utf-8' })
+    response.end('<h1>MemeDrop</h1><p>Connexion Discord impossible.</p>')
+  }
+}
 
 const sendJson = (socket, payload) => {
   if (socket.readyState === WebSocket.OPEN) {
@@ -145,7 +344,9 @@ const registerSlashCommands = async (token, guildId, clientId) => {
 }
 
 const server = http.createServer((request, response) => {
-  if (request.url === '/health') {
+  const requestUrl = new URL(request.url ?? '/', `http://${request.headers.host}`)
+
+  if (requestUrl.pathname === '/health') {
     response.writeHead(200, { 'content-type': 'application/json' })
     response.end(
       JSON.stringify({
@@ -154,6 +355,21 @@ const server = http.createServer((request, response) => {
         clients: clients.size,
       }),
     )
+    return
+  }
+
+  if (request.method === 'POST' && requestUrl.pathname === '/auth/discord/session') {
+    handleDiscordAuthStart(request, response, requestUrl)
+    return
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname.startsWith('/auth/discord/session/')) {
+    handleDiscordAuthStatus(request, response, requestUrl)
+    return
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname === '/auth/discord/callback') {
+    void handleDiscordAuthCallback(request, response, requestUrl)
     return
   }
 
@@ -233,6 +449,7 @@ if (!DISCORD_BOT_TOKEN || !DISCORD_GUILD_ID) {
           fileName: null,
           youtubeVideoId,
           caption: caption || null,
+          authorId: interaction.user.id,
           author: interaction.user.username ?? null,
           authorAvatarUrl: interaction.user.displayAvatarURL({
             extension: 'png',
@@ -264,6 +481,7 @@ if (!DISCORD_BOT_TOKEN || !DISCORD_GUILD_ID) {
         contentType: attachment.contentType ?? null,
         fileName: attachment.name ?? null,
         caption: caption || null,
+        authorId: interaction.user.id,
         author: interaction.user.username ?? null,
         authorAvatarUrl: interaction.user.displayAvatarURL({
           extension: 'png',

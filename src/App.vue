@@ -60,6 +60,7 @@ const overlayPosition = ref<OverlayPosition>(
 )
 const dropVolume = ref(Number(localStorage.getItem(STORAGE_KEYS.volume) ?? '80'))
 const dropsEnabled = ref(true)
+const hideOwnDrops = ref(false)
 const queue = ref<Drop[]>([])
 const videoElement = ref<HTMLVideoElement | null>(null)
 const audioElement = ref<HTMLAudioElement | null>(null)
@@ -69,9 +70,14 @@ const shortcutStatus = ref<ShortcutStatus[]>([])
 const serverConfig = ref<ServerConfig>({
   serverUrl: '',
   accessKey: '',
+  discordUserId: '',
+  discordUserName: '',
+  discordUserAvatarUrl: null,
 })
 const configSavedMessage = ref<string | null>(null)
 const isSavingConfig = ref(false)
+const discordAuthMessage = ref<string | null>(null)
+const isAuthenticatingDiscord = ref(false)
 const unsubscribers: Array<() => void> = []
 
 const DISPLAY_MS = 9000
@@ -85,6 +91,7 @@ let syncingState = false
 
 const activeDrop = computed(() => queue.value[0] ?? null)
 const hasDrop = computed(() => Boolean(activeDrop.value) && dropsEnabled.value)
+const isDiscordConnected = computed(() => Boolean(serverConfig.value.discordUserId))
 const normalizedDropVolume = computed(() => Math.min(Math.max(dropVolume.value, 0), 100) / 100)
 const youtubeEmbedUrl = computed(() => {
   if (!activeDrop.value?.youtubeVideoId) {
@@ -337,6 +344,7 @@ const enqueue = (drop: Drop) => {
 const applyOverlayState = (state: OverlayState) => {
   syncingState = true
   dropsEnabled.value = state.dropsEnabled
+  hideOwnDrops.value = state.hideOwnDrops
   syncingState = false
 }
 
@@ -381,6 +389,9 @@ const saveServerConfig = async () => {
     const configToSave: ServerConfig = {
       serverUrl: serverConfig.value.serverUrl,
       accessKey: serverConfig.value.accessKey,
+      discordUserId: serverConfig.value.discordUserId,
+      discordUserName: serverConfig.value.discordUserName,
+      discordUserAvatarUrl: serverConfig.value.discordUserAvatarUrl,
     }
 
     serverConfig.value = await window.memedrop.saveServerConfig(configToSave)
@@ -393,8 +404,51 @@ const saveServerConfig = async () => {
   }
 }
 
+const authenticateDiscord = async () => {
+  if (!window.memedrop) {
+    return
+  }
+
+  isAuthenticatingDiscord.value = true
+  discordAuthMessage.value = 'Connexion Discord en cours...'
+
+  try {
+    serverConfig.value = await window.memedrop.saveServerConfig({
+      serverUrl: serverConfig.value.serverUrl,
+      accessKey: serverConfig.value.accessKey,
+      discordUserId: serverConfig.value.discordUserId,
+      discordUserName: serverConfig.value.discordUserName,
+      discordUserAvatarUrl: serverConfig.value.discordUserAvatarUrl,
+    })
+    serverConfig.value = await window.memedrop.authenticateDiscord()
+    discordAuthMessage.value = `Connecté avec Discord: ${serverConfig.value.discordUserName}`
+  } catch (error) {
+    console.error('Connexion Discord impossible:', error)
+    discordAuthMessage.value =
+      error instanceof Error ? `Connexion Discord impossible: ${error.message}` : 'Connexion Discord impossible.'
+  } finally {
+    isAuthenticatingDiscord.value = false
+  }
+}
+
+const disconnectDiscord = async () => {
+  if (!window.memedrop) {
+    return
+  }
+
+  serverConfig.value = await window.memedrop.disconnectDiscord()
+  discordAuthMessage.value = null
+}
+
 const toggleDrops = async () => {
   const state = await window.memedrop?.toggleDrops()
+  if (state) {
+    applyOverlayState(state)
+  }
+}
+
+const toggleHideOwnDrops = async () => {
+  const state = await window.memedrop?.toggleHideOwnDrops()
   if (state) {
     applyOverlayState(state)
   }
@@ -411,6 +465,7 @@ const triggerTestDrop = async () => {
     contentType: 'image/gif',
     fileName: 'test.gif',
     caption: 'Drop de test (dev)',
+    authorId: null,
     author: 'MemeDrop',
     authorAvatarUrl: null,
     createdAt: new Date().toISOString(),
@@ -598,25 +653,102 @@ const getMediaKind = (drop: Drop | null): MediaKind => {
       </div>
     </div>
 
-    <div v-else class="flex h-full w-full flex-col gap-4 bg-slate-950 p-4 text-sm text-slate-100">
+    <div
+      v-else
+      class="flex h-full w-full flex-col gap-4 overflow-y-auto bg-slate-950 p-4 text-sm text-slate-100"
+    >
       <div class="flex items-center justify-between">
         <span class="text-sm font-semibold">MemeDrop</span>
       </div>
 
-      <div class="grid grid-cols-2 gap-2">
+      <template v-if="!isDiscordConnected">
+        <div class="flex min-h-0 flex-1 flex-col justify-center gap-4">
+          <div class="flex flex-col items-center gap-3 text-center">
+            <img
+              src="/memeDrop.png"
+              alt="Logo de MemeDrop"
+              class="size-24 rounded-2xl object-contain"
+            />
+            <div>
+              <h1 class="text-xl font-semibold text-slate-100">MemeDrop</h1>
+              <p class="mt-1 text-xs text-slate-400">Connexion Discord requise.</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="w-full rounded-lg border border-white/10 bg-indigo-400 px-3 py-3 text-sm font-semibold text-slate-950 cursor-pointer hover:bg-indigo-300 disabled:opacity-60"
+            :disabled="isAuthenticatingDiscord"
+            @click="authenticateDiscord"
+          >
+            {{ isAuthenticatingDiscord ? 'Connexion…' : 'Se connecter avec Discord' }}
+          </button>
+
+          <div v-if="discordAuthMessage" class="text-center text-[11px] text-slate-300">
+            {{ discordAuthMessage }}
+          </div>
+
+          <details class="rounded-lg border border-white/10 bg-slate-900/70 p-3 text-xs text-slate-300">
+            <summary class="cursor-pointer font-semibold text-slate-200">Paramètres serveur</summary>
+            <form class="mt-3 flex flex-col gap-3" @submit.prevent="saveServerConfig">
+              <label class="flex flex-col gap-1">
+                URL du serveur
+                <input
+                  v-model="serverConfig.serverUrl"
+                  type="url"
+                  placeholder="https://memedrop.example.com"
+                  class="w-full rounded-lg border border-white/10 bg-slate-950/70 px-2 py-1 text-sm text-slate-100"
+                />
+              </label>
+
+              <label class="flex flex-col gap-1">
+                Clé d'accès
+                <input
+                  v-model="serverConfig.accessKey"
+                  type="password"
+                  autocomplete="off"
+                  class="w-full rounded-lg border border-white/10 bg-slate-950/70 px-2 py-1 text-sm text-slate-100"
+                />
+              </label>
+
+              <button
+                type="submit"
+                class="w-full rounded-lg border border-white/10 bg-sky-400 px-3 py-2 text-xs font-semibold text-slate-950 cursor-pointer hover:bg-sky-300"
+                :disabled="isSavingConfig"
+              >
+                {{ isSavingConfig ? 'Enregistrement…' : 'Enregistrer le serveur' }}
+              </button>
+
+              <div v-if="configSavedMessage" class="text-[11px] text-slate-300">
+                {{ configSavedMessage }}
+              </div>
+            </form>
+          </details>
+        </div>
+      </template>
+
+      <template v-else>
+      <div class="grid grid-cols-3 gap-2">
         <button
           type="button"
-          class="rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
+          class="rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 cursor-pointer hover:bg-slate-900/90"
           @click="toggleDrops"
         >
           {{ dropsEnabled ? 'Désactiver' : 'Activer' }}
         </button>
         <button
           type="button"
-          class="rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
+          class="rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 cursor-pointer hover:bg-slate-900/90"
           @click="skipCurrentDrop"
         >
           Couper
+        </button>
+        <button
+          type="button"
+          class="rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 cursor-pointer hover:bg-slate-900/90"
+          @click="toggleHideOwnDrops"
+        >
+          {{ hideOwnDrops ? 'Voir mes drops' : 'Masquer mes drops' }}
         </button>
       </div>
 
@@ -649,58 +781,94 @@ const getMediaKind = (drop: Drop | null): MediaKind => {
         />
       </label>
 
-      <form class="flex flex-col gap-3" @submit.prevent="saveServerConfig">
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
-          URL du serveur
-          <input
-            v-model="serverConfig.serverUrl"
-            type="url"
-            placeholder="https://memedrop.example.com"
-            class="w-full rounded-lg border border-white/10 bg-slate-900/70 px-2 py-1 text-sm text-slate-100"
-          />
-        </label>
+      <details class="rounded-lg border border-white/10 bg-slate-900/70 p-3 text-xs text-slate-300">
+        <summary class="cursor-pointer font-semibold text-slate-200">Paramètres serveur</summary>
+        <form class="mt-3 flex flex-col gap-3" @submit.prevent="saveServerConfig">
+          <label class="flex flex-col gap-1">
+            URL du serveur
+            <input
+              v-model="serverConfig.serverUrl"
+              type="url"
+              placeholder="https://memedrop.example.com"
+              class="w-full rounded-lg border border-white/10 bg-slate-950/70 px-2 py-1 text-sm text-slate-100"
+            />
+          </label>
 
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
-          Clé d'accès
-          <input
-            v-model="serverConfig.accessKey"
-            type="password"
-            autocomplete="off"
-            class="w-full rounded-lg border border-white/10 bg-slate-900/70 px-2 py-1 text-sm text-slate-100"
-          />
-        </label>
+          <label class="flex flex-col gap-1">
+            Clé d'accès
+            <input
+              v-model="serverConfig.accessKey"
+              type="password"
+              autocomplete="off"
+              class="w-full rounded-lg border border-white/10 bg-slate-950/70 px-2 py-1 text-sm text-slate-100"
+            />
+          </label>
 
-        <button
-          type="submit"
-          class="w-full rounded-lg border border-white/10 bg-sky-400 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-300"
-          :disabled="isSavingConfig"
+          <button
+            type="submit"
+            class="w-full rounded-lg border border-white/10 bg-sky-400 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-300"
+            :disabled="isSavingConfig"
+          >
+            {{ isSavingConfig ? 'Enregistrement…' : 'Enregistrer le serveur' }}
+          </button>
+
+          <div v-if="configSavedMessage" class="text-[11px] text-slate-300">
+            {{ configSavedMessage }}
+          </div>
+        </form>
+      </details>
+
+      <div class="flex flex-col gap-2 rounded-lg border border-white/10 bg-slate-900/70 p-3">
+        <div
+          v-if="serverConfig.discordUserId"
+          class="flex items-center gap-3 text-xs text-slate-300"
         >
-          {{ isSavingConfig ? 'Enregistrement…' : 'Enregistrer le serveur' }}
-        </button>
-
-        <div v-if="configSavedMessage" class="text-[11px] text-slate-300">
-          {{ configSavedMessage }}
+          <img
+            v-if="serverConfig.discordUserAvatarUrl"
+            :src="serverConfig.discordUserAvatarUrl"
+            :alt="`Avatar Discord de ${serverConfig.discordUserName}`"
+            class="h-8 w-8 shrink-0 rounded-full border border-white/20 bg-slate-800 object-cover"
+          />
+          <div
+            v-else
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/20 bg-slate-800 text-xs font-semibold text-slate-200"
+          >
+            {{ serverConfig.discordUserName.slice(0, 1).toUpperCase() }}
+          </div>
+          <span>Connecté: {{ serverConfig.discordUserName }}</span>
         </div>
-      </form>
+        <button
+          type="button"
+          class="w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-950"
+          @click="disconnectDiscord"
+        >
+          Déconnexion
+        </button>
+        <div v-if="discordAuthMessage" class="text-[11px] text-slate-300">
+          {{ discordAuthMessage }}
+        </div>
+      </div>
 
       <div
         class="text-[11px]"
         :class="connectionStatus?.level === 'error' ? 'text-rose-300' : 'text-emerald-300'"
       >
-        {{ connectionStatus?.message ?? 'Serveur MemeDrop: en attente de connexion…' }}
+        {{ connectionStatus?.message ?? 'Serveur MemeDrop : en attente de connexion…' }}
       </div>
 
       <div class="rounded-lg border border-white/10 bg-slate-900/70 p-2 text-[11px] text-slate-300">
-        Ctrl+Shift+D (désactiver les drop)<br>Ctrl+Shift+S (couper le drop actuel)
+        Ctrl+Shift+D (désactiver les drop)<br>Ctrl+Shift+S (couper le drop actuel)<br>Ctrl+Shift+M
+        (masquer mes drops)
       </div>
 
       <button
         type="button"
-        class="mt-auto w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
+        class="mt-auto w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 cursor-pointer hover:bg-slate-900/90"
         @click="triggerTestDrop"
       >
         Tester un drop
       </button>
+      </template>
     </div>
   </div>
 </template>

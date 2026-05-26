@@ -16,7 +16,11 @@ interface Window {
     setDropsEnabled: (
       enabled: boolean,
     ) => Promise<import('./shared/types').OverlayState>
+    setHideOwnDrops: (
+      enabled: boolean,
+    ) => Promise<import('./shared/types').OverlayState>
     toggleDrops: () => Promise<import('./shared/types').OverlayState>
+    toggleHideOwnDrops: () => Promise<import('./shared/types').OverlayState>
     skipCurrentDrop: () => Promise<void>
     getOverlayState: () => Promise<import('./shared/types').OverlayState>
     getConnectionStatus: () => Promise<import('./shared/types').ConnectionStatus | null>
@@ -25,6 +29,8 @@ interface Window {
     saveServerConfig: (
       config: import('./shared/types').ServerConfig,
     ) => Promise<import('./shared/types').ServerConfig>
+    authenticateDiscord: () => Promise<import('./shared/types').ServerConfig>
+    disconnectDiscord: () => Promise<import('./shared/types').ServerConfig>
     emitTestDrop: (drop: import('./shared/types').Drop) => Promise<void>
   }
 }

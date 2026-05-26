@@ -5,6 +5,7 @@ export type Drop = {
   fileName: string | null
   youtubeVideoId?: string | null
   caption: string | null
+  authorId: string | null
   author: string | null
   authorAvatarUrl: string | null
   createdAt: string
@@ -15,13 +16,23 @@ export type ConnectionStatus = {
   message: string
 }
 
+export type DiscordUser = {
+  id: string
+  username: string
+  avatarUrl: string | null
+}
+
 export type ServerConfig = {
   serverUrl: string
   accessKey: string
+  discordUserId: string
+  discordUserName: string
+  discordUserAvatarUrl: string | null
 }
 
 export type OverlayState = {
   dropsEnabled: boolean
+  hideOwnDrops: boolean
 }
 
 export type ShortcutStatus = {

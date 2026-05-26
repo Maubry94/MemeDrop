@@ -47,7 +47,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
   if (!serverUrl) {
     onStatus({
       level: 'error',
-      message: 'Serveur MemeDrop: URL manquante.',
+      message: 'Serveur MemeDrop : URL manquante.',
     })
     return () => undefined
   }
@@ -82,14 +82,14 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     } catch {
       onStatus({
         level: 'error',
-        message: 'Serveur MemeDrop: URL invalide.',
+        message: 'Serveur MemeDrop : URL invalide.',
       })
       return
     }
 
     onStatus({
       level: 'info',
-      message: 'Serveur MemeDrop: connexion en cours...',
+      message: 'Serveur MemeDrop : connexion en cours...',
     })
 
     socket = new WebSocket(wsUrl)
@@ -97,7 +97,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     socket.on('open', () => {
       onStatus({
         level: 'info',
-        message: 'Serveur MemeDrop: connecté.',
+        message: 'Serveur MemeDrop : connecté.',
       })
     })
 
@@ -106,7 +106,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
         const message = JSON.parse(data.toString()) as ServerMessage
 
         if (message.type === 'drop' && isDrop(message.drop)) {
-          console.log(`Drop reçu du serveur MemeDrop: ${message.drop.id}`)
+          console.log(`Drop reçu du serveur MemeDrop : ${message.drop.id}`)
           onDrop(message.drop)
         }
       } catch (error) {
@@ -121,7 +121,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
 
       onStatus({
         level: 'error',
-        message: 'Serveur MemeDrop: déconnecté, reconnexion...',
+        message: 'Serveur MemeDrop : déconnecté, reconnexion...',
       })
       scheduleReconnect()
     })
@@ -129,7 +129,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     socket.on('error', (error) => {
       onStatus({
         level: 'error',
-        message: `Serveur MemeDrop: erreur (${error.message}).`,
+        message: `Serveur MemeDrop : erreur (${error.message}).`,
       })
     })
   }
