@@ -77,7 +77,7 @@ const canStopGlobalDrop = computed(
   () =>
     Boolean(activeDrop.value?.id) &&
     Boolean(serverConfig.value.discordUserId) &&
-    activeDrop.value?.authorId === serverConfig.value.discordUserId,
+    (activeDrop.value?.ownerId ?? activeDrop.value?.authorId) === serverConfig.value.discordUserId,
 )
 
 const overlayClasses = computed(() => {

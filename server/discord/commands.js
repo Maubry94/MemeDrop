@@ -16,6 +16,12 @@ const createSlashCommands = () => {
         .setDescription('Légende optionnelle')
         .setRequired(false),
     )
+    .addBooleanOption((option) =>
+      option
+        .setName('anonyme')
+        .setDescription('Masquer ton pseudo et ton avatar sur le drop')
+        .setRequired(false),
+    )
 
   const dropYouTubeCommand = new SlashCommandBuilder()
     .setName('dropyt')
@@ -30,6 +36,12 @@ const createSlashCommands = () => {
       option
         .setName('legende')
         .setDescription('Légende optionnelle')
+        .setRequired(false),
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName('anonyme')
+        .setDescription('Masquer ton pseudo et ton avatar sur le drop')
         .setRequired(false),
     )
 

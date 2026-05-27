@@ -6,6 +6,8 @@ export type Drop = {
   youtubeVideoId?: string | null
   caption: string | null
   authorId: string | null
+  ownerId?: string | null
+  isAnonymous?: boolean
   author: string | null
   authorAvatarUrl: string | null
   createdAt: string

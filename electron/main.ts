@@ -317,7 +317,7 @@ const startOrRestartMemeDropClient = () => {
         memeDropClient?.completeDrop(drop.id)
         return
       }
-      if (hideOwnDrops && discordUserId && drop.authorId === discordUserId) {
+      if (hideOwnDrops && discordUserId && (drop.ownerId ?? drop.authorId) === discordUserId) {
         controlWindow?.webContents.send('drop-received', drop)
         memeDropClient?.completeDrop(drop.id)
         return

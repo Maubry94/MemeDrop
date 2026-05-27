@@ -351,6 +351,7 @@ onBeforeUnmount(() => {
           v-if="activeDrop?.author"
           :author="activeDrop.author"
           :avatar-url="activeDrop.authorAvatarUrl"
+          :is-anonymous="activeDrop.isAnonymous"
         />
       </div>
     </div>

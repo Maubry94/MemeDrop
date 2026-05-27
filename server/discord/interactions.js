@@ -10,15 +10,17 @@ const getUserAvatarUrl = (user) =>
     size: 128,
   })
 
-const createBaseDrop = (interaction, caption) => ({
+const createBaseDrop = (interaction, caption, isAnonymous) => ({
   caption: caption || null,
-  authorId: interaction.user.id,
-  author: interaction.user.username ?? null,
-  authorAvatarUrl: getUserAvatarUrl(interaction.user),
+  authorId: isAnonymous ? null : interaction.user.id,
+  ownerId: interaction.user.id,
+  isAnonymous,
+  author: isAnonymous ? 'anonymement' : (interaction.user.username ?? null),
+  authorAvatarUrl: isAnonymous ? null : getUserAvatarUrl(interaction.user),
   createdAt: new Date().toISOString(),
 })
 
-const handleYouTubeDrop = async (interaction, caption, broadcastDrop) => {
+const handleYouTubeDrop = async (interaction, caption, isAnonymous, broadcastDrop) => {
   const link = interaction.options.getString('lien', true)
   const youtubeVideoId = getYouTubeVideoId(link)
 
@@ -33,14 +35,14 @@ const handleYouTubeDrop = async (interaction, caption, broadcastDrop) => {
     contentType: 'video/youtube',
     fileName: null,
     youtubeVideoId,
-    ...createBaseDrop(interaction, caption),
+    ...createBaseDrop(interaction, caption, isAnonymous),
   })
 
   console.log(`Drop YouTube diffusé à ${sentCount} client(s): ${youtubeVideoId}.`)
   await interaction.editReply('Drop YouTube envoyé !')
 }
 
-const handleFileDrop = async (interaction, caption, broadcastDrop) => {
+const handleFileDrop = async (interaction, caption, isAnonymous, broadcastDrop) => {
   const attachment = interaction.options.getAttachment('fichier')
 
   if (!attachment) {
@@ -58,7 +60,7 @@ const handleFileDrop = async (interaction, caption, broadcastDrop) => {
     url: attachment.url,
     contentType: attachment.contentType ?? null,
     fileName: attachment.name ?? null,
-    ...createBaseDrop(interaction, caption),
+    ...createBaseDrop(interaction, caption, isAnonymous),
   })
 
   console.log(`Drop fichier diffusé à ${sentCount} client(s): ${attachment.name ?? attachment.id}.`)
@@ -78,13 +80,14 @@ export const createInteractionHandler = ({ broadcastDrop }) => async (interactio
     })
 
     const caption = interaction.options.getString('legende')
+    const isAnonymous = interaction.options.getBoolean('anonyme') ?? false
 
     if (interaction.commandName === 'dropyt') {
-      await handleYouTubeDrop(interaction, caption, broadcastDrop)
+      await handleYouTubeDrop(interaction, caption, isAnonymous, broadcastDrop)
       return
     }
 
-    await handleFileDrop(interaction, caption, broadcastDrop)
+    await handleFileDrop(interaction, caption, isAnonymous, broadcastDrop)
   } catch (error) {
     if (error?.code === 10062) {
       console.error(

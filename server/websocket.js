@@ -88,8 +88,10 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
       return
     }
 
-    if (activeDrop.authorId !== client.userId) {
-      console.warn(`Stop global refusé pour ${client.userId}: auteur attendu ${activeDrop.authorId}.`)
+    const ownerId = activeDrop.ownerId ?? activeDrop.authorId
+
+    if (ownerId !== client.userId) {
+      console.warn(`Stop global refusé pour ${client.userId}: auteur attendu ${ownerId}.`)
       return
     }
 
