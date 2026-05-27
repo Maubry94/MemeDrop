@@ -56,6 +56,7 @@ interface Window {
     setAppPreferences: (
       preferences: import('../src/shared/types').AppPreferences,
     ) => Promise<import('../src/shared/types').AppPreferences>
+    quitApp: () => Promise<void>
     uninstallApp: () => Promise<void>
     getConnectionStatus: () => Promise<import('../src/shared/types').ConnectionStatus | null>
     getShortcutStatus: () => Promise<import('../src/shared/types').ShortcutStatus[]>

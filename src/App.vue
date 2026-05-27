@@ -221,6 +221,10 @@ const uninstallApp = async () => {
   }
 }
 
+const quitApp = async () => {
+  await window.memedrop?.quitApp()
+}
+
 const requestServerConfig = async () => {
   if (!window.memedrop) {
     return
@@ -494,6 +498,7 @@ onBeforeUnmount(() => {
         :preferences="appPreferences"
         @close="isPreferencesOpen = false"
         @update-preferences="updateAppPreferences"
+        @quit-app="quitApp"
         @uninstall-app="uninstallApp"
       />
 

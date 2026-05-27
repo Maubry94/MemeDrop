@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('memedrop', {
   getAppPreferences: () => ipcRenderer.invoke('get-app-preferences'),
   setAppPreferences: (preferences: AppPreferences) =>
     ipcRenderer.invoke('set-app-preferences', preferences),
+  quitApp: () => ipcRenderer.invoke('quit-app'),
   uninstallApp: () => ipcRenderer.invoke('uninstall-app'),
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
   getShortcutStatus: () => ipcRenderer.invoke('get-shortcut-status'),

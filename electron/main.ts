@@ -809,6 +809,9 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     setAppPreferences(preferences)
     return getAppPreferences()
   })
+  ipcMain.handle('quit-app', () => {
+    quitApp()
+  })
   ipcMain.handle('uninstall-app', () => {
     uninstallApp()
   })
