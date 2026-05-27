@@ -43,6 +43,7 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
         name: client.userName || client.userId,
         avatarUrl: client.userAvatarUrl || null,
         connections: (existing?.connections ?? 0) + 1,
+        dropsEnabled: Boolean((existing?.dropsEnabled ?? false) || client.dropsEnabled),
       })
     }
 
@@ -264,6 +265,7 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
       userId,
       userName,
       userAvatarUrl,
+      dropsEnabled: true,
     })
     console.log(`Client MemeDrop connecté (${clients.size} client(s)).`)
     sendJson(socket, { type: 'hello' })
@@ -278,6 +280,13 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
         }
         if (message.type === 'drop-stop') {
           stopDropForEveryone(socket, message.dropId)
+        }
+        if (message.type === 'client-state') {
+          const client = clients.get(socket)
+          if (client) {
+            client.dropsEnabled = message.dropsEnabled !== false
+            broadcastConnectedUsers()
+          }
         }
       } catch (error) {
         console.error('Message client MemeDrop invalide:', error)

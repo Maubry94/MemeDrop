@@ -7,6 +7,7 @@ type MemeDropClientOptions = {
   userId: string | undefined
   userName: string | undefined
   userAvatarUrl: string | null | undefined
+  dropsEnabled: boolean
   onDrop: (drop: Drop) => void
   onClearDrop: () => void
   onConnectedUsers: (users: ConnectedUser[]) => void
@@ -32,6 +33,7 @@ type ServerMessage =
 export type MemeDropClientController = {
   completeDrop: (dropId: string) => void
   stopDrop: (dropId: string) => void
+  updateDropsEnabled: (enabled: boolean) => void
   stop: () => void
 }
 
@@ -84,6 +86,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     userId,
     userName,
     userAvatarUrl,
+    dropsEnabled,
     onDrop,
     onClearDrop,
     onConnectedUsers,
@@ -98,6 +101,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     return {
       completeDrop: () => undefined,
       stopDrop: () => undefined,
+      updateDropsEnabled: () => undefined,
       stop: () => undefined,
     }
   }
@@ -154,6 +158,10 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
       onStatus({
         level: 'info',
         message: 'Serveur MemeDrop : connecté.',
+      })
+      sendMessage({
+        type: 'client-state',
+        dropsEnabled,
       })
     })
 
@@ -218,6 +226,12 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
       sendMessage({
         type: 'drop-stop',
         dropId,
+      })
+    },
+    updateDropsEnabled: (enabled: boolean) => {
+      sendMessage({
+        type: 'client-state',
+        dropsEnabled: enabled,
       })
     },
     stop: () => {

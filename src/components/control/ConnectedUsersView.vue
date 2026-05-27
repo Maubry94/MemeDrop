@@ -35,11 +35,20 @@ defineProps<{
           {{ user.name.slice(0, 1).toUpperCase() }}
         </div>
 
-        <div class="min-w-0 flex-1">
-          <p class="truncate text-sm font-semibold text-slate-100">{{ user.name }}</p>
-          <p class="text-[11px] text-slate-400">
-            {{ user.connections > 1 ? `${user.connections} connexions` : 'Connecté' }}
-          </p>
+        <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-semibold text-slate-100">{{ user.name }}</p>
+            <p class="mt-0.5 text-[11px] text-slate-400">
+              {{ user.dropsEnabled ? 'Drops activés' : 'Drops désactivés' }}
+              <span v-if="user.connections > 1"> · {{ user.connections }} connexions</span>
+            </p>
+          </div>
+
+          <span
+            class="h-2.5 w-2.5 shrink-0 rounded-full"
+            :class="user.dropsEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'"
+            :title="user.dropsEnabled ? 'Drops activés' : 'Drops désactivés'"
+          />
         </div>
       </div>
     </div>

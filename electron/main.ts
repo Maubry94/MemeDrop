@@ -71,16 +71,25 @@ let memeDropClient: MemeDropClientController | null = null
 let currentServerDrop: Drop | null = null
 let shortcutStatus: ShortcutStatus[] = []
 let overlayKeepAliveTimer: ReturnType<typeof setInterval> | null = null
+let controlWindowBoundsSaveTimer: ReturnType<typeof setTimeout> | null = null
 let isQuitting = false
 let rendererServer: http.Server | null = null
 let rendererServerUrl: string | null = null
 let shouldStartControlHidden = false
+
+type ControlWindowBounds = {
+  x?: number
+  y?: number
+  width: number
+  height: number
+}
 
 type AppConfigFile = {
   discord?: Record<string, unknown>
   server?: Partial<ServerConfig>
   overlay?: Partial<Pick<OverlayState, 'hideOwnDrops'> & OverlayDisplayPreferences>
   app?: Partial<AppPreferences>
+  controlWindow?: Partial<ControlWindowBounds>
 }
 
 const loadAppEnv = () => {
@@ -231,6 +240,83 @@ const loadAppPreferences = () => {
   applyOpenAtLogin()
 }
 
+const getControlWindowBounds = (): ControlWindowBounds => {
+  const stored = readAppConfig().controlWindow ?? {}
+  const width = Number(stored.width)
+  const height = Number(stored.height)
+  const x = Number(stored.x)
+  const y = Number(stored.y)
+  const fallback: ControlWindowBounds = {
+    width: 500,
+    height: 800,
+  }
+
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    return fallback
+  }
+
+  const bounds: ControlWindowBounds = {
+    width: Math.max(500, Math.round(width)),
+    height: Math.max(800, Math.round(height)),
+  }
+
+  if (Number.isFinite(x) && Number.isFinite(y)) {
+    bounds.x = Math.round(x)
+    bounds.y = Math.round(y)
+  }
+
+  const matchingDisplay = screen.getDisplayMatching({
+    x: bounds.x ?? 0,
+    y: bounds.y ?? 0,
+    width: bounds.width,
+    height: bounds.height,
+  })
+
+  if (bounds.x === undefined || bounds.y === undefined) {
+    return bounds
+  }
+
+  const visibleArea = matchingDisplay.workArea
+  const hasVisibleCorner =
+    bounds.x < visibleArea.x + visibleArea.width &&
+    bounds.x + bounds.width > visibleArea.x &&
+    bounds.y < visibleArea.y + visibleArea.height &&
+    bounds.y + bounds.height > visibleArea.y
+
+  return hasVisibleCorner ? bounds : fallback
+}
+
+const saveControlWindowBounds = () => {
+  if (!controlWindow || controlWindow.isDestroyed() || controlWindow.isMinimized()) {
+    return
+  }
+
+  const bounds = controlWindow.getNormalBounds()
+  const nextConfig = {
+    ...readAppConfig(),
+    controlWindow: {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+    },
+  }
+
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeFileSync(getConfigPath(), JSON.stringify(nextConfig, null, 2), 'utf8')
+}
+
+const scheduleControlWindowBoundsSave = () => {
+  if (controlWindowBoundsSaveTimer) {
+    clearTimeout(controlWindowBoundsSaveTimer)
+  }
+
+  controlWindowBoundsSaveTimer = setTimeout(() => {
+    controlWindowBoundsSaveTimer = null
+    saveControlWindowBounds()
+  }, 400)
+}
+
 const toServerHttpUrl = (serverUrl: string) => {
   const normalizedUrl = serverUrl.match(/^https?:\/\//i) ? serverUrl : `https://${serverUrl}`
   return new URL(normalizedUrl)
@@ -348,6 +434,7 @@ const startOrRestartMemeDropClient = () => {
     userId: discordUserId,
     userName: serverConfig.discordUserName,
     userAvatarUrl: serverConfig.discordUserAvatarUrl,
+    dropsEnabled,
     onConnectedUsers: (users: ConnectedUser[]) => {
       connectedUsers = users
       sendToWindows('connected-users', connectedUsers)
@@ -455,6 +542,7 @@ const setConnectionStatus = (status: ConnectionStatus) => {
 
 const setDropsEnabled = (enabled: boolean) => {
   dropsEnabled = enabled
+  memeDropClient?.updateDropsEnabled(dropsEnabled)
   updateTrayMenu()
   syncOverlayState()
 }
@@ -760,11 +848,12 @@ const createOverlayWindow = () => {
 }
 
 const createControlWindow = () => {
+  const controlWindowBounds = getControlWindowBounds()
+
   controlWindow = new BrowserWindow({
-    width: 360,
-    height: 564,
-    minWidth: 360,
-    minHeight: 564,
+    ...controlWindowBounds,
+    minWidth: 500,
+    minHeight: 800,
     resizable: true,
     minimizable: true,
     maximizable: false,
@@ -787,6 +876,8 @@ const createControlWindow = () => {
     syncConnectedUsers()
   })
   controlWindow.on('close', (event) => {
+    saveControlWindowBounds()
+
     if (isQuitting) {
       return
     }
@@ -802,6 +893,8 @@ const createControlWindow = () => {
   controlWindow.on('closed', () => {
     controlWindow = null
   })
+  controlWindow.on('resize', scheduleControlWindowBoundsSave)
+  controlWindow.on('move', scheduleControlWindowBoundsSave)
 
   loadView(controlWindow, 'control')
   shouldStartControlHidden = false
@@ -941,6 +1034,11 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   stopOverlayKeepAlive()
+  if (controlWindowBoundsSaveTimer) {
+    clearTimeout(controlWindowBoundsSaveTimer)
+    controlWindowBoundsSaveTimer = null
+  }
+  saveControlWindowBounds()
   tray?.destroy()
   tray = null
   rendererServer?.close()

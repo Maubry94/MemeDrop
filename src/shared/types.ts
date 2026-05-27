@@ -31,6 +31,7 @@ export type ConnectedUser = {
   name: string
   avatarUrl: string | null
   connections: number
+  dropsEnabled: boolean
 }
 
 export type ServerConfig = {
