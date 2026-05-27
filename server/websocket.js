@@ -11,16 +11,16 @@ const sendJson = (socket, payload) => {
 export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
   const clients = new Map()
   const wss = new WebSocketServer({ server, path: '/ws' })
-  const queue = []
-  let activeDrop = null
-  let activeTargets = new Set()
-  let activeDone = new Set()
-  let activeTimer = null
+  const globalQueue = []
+  const targetedQueues = new Map()
+  const activeJobBySocket = new Map()
+  const activeTargetJobs = new Map()
+  let activeGlobalJob = null
 
-  const clearActiveTimer = () => {
-    if (activeTimer) {
-      clearTimeout(activeTimer)
-      activeTimer = null
+  const clearJobTimer = (job) => {
+    if (job.timer) {
+      clearTimeout(job.timer)
+      job.timer = null
     }
   }
 
@@ -29,74 +29,191 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
       .filter(([, client]) => client.userId)
       .map(([socket]) => socket)
 
-  const startNextDrop = () => {
-    clearActiveTimer()
-    activeDrop = null
-    activeTargets = new Set()
-    activeDone = new Set()
+  const getClientsByUserId = (userId) =>
+    [...clients.entries()]
+      .filter(([, client]) => client.userId === userId)
+      .map(([socket]) => socket)
 
-    const targets = getEligibleClients()
-    if (!targets.length) {
-      queue.length = 0
-      return
+  const hasBusyClient = (sockets) => sockets.some((socket) => activeJobBySocket.has(socket))
+
+  const sendClearToTargets = (job) => {
+    for (const socket of job.targets) {
+      sendJson(socket, { type: 'clear-drop' })
+    }
+  }
+
+  const startJob = (drop, targets, scope) => {
+    const job = {
+      drop,
+      targets: new Set(targets),
+      done: new Set(),
+      scope,
+      targetUserId: drop.targetUserId ?? null,
+      timer: null,
     }
 
-    const nextDrop = queue.shift()
-    if (!nextDrop) {
-      for (const socket of clients.keys()) {
-        sendJson(socket, { type: 'clear-drop' })
-      }
-      return
+    if (scope === 'global') {
+      activeGlobalJob = job
+    } else if (job.targetUserId) {
+      activeTargetJobs.set(job.targetUserId, job)
     }
-
-    activeDrop = nextDrop
-    activeTargets = new Set(targets)
 
     for (const socket of targets) {
+      activeJobBySocket.set(socket, job)
       sendJson(socket, {
         type: 'active-drop',
-        drop: nextDrop,
+        drop,
       })
     }
 
-    console.log(`Drop actif: ${nextDrop.id} (${activeTargets.size} client(s) ciblé(s)).`)
+    console.log(`Drop actif: ${drop.id} (${targets.length} client(s) ciblé(s)).`)
 
-    const contentType = nextDrop.contentType?.toLowerCase() ?? ''
+    const contentType = drop.contentType?.toLowerCase() ?? ''
     if (contentType.startsWith('image/')) {
-      activeTimer = setTimeout(() => {
-        console.log(`Drop image terminé par timeout: ${nextDrop.id}.`)
-        startNextDrop()
+      job.timer = setTimeout(() => {
+        console.log(`Drop image terminé par timeout: ${drop.id}.`)
+        finishJob(job, { sendClear: false })
       }, IMAGE_DISPLAY_MS)
+    }
+
+    return job
+  }
+
+  const finishJob = (job, options = {}) => {
+    clearJobTimer(job)
+
+    if (options.sendClear) {
+      sendClearToTargets(job)
+    }
+
+    for (const socket of job.targets) {
+      activeJobBySocket.delete(socket)
+    }
+
+    if (job.scope === 'global') {
+      activeGlobalJob = null
+    } else if (job.targetUserId) {
+      activeTargetJobs.delete(job.targetUserId)
+    }
+
+    scheduleDrops()
+  }
+
+  function scheduleDrops() {
+    if (activeGlobalJob) {
+      return
+    }
+
+    const eligibleClients = getEligibleClients()
+    const busyClientExists = eligibleClients.some((socket) => activeJobBySocket.has(socket))
+
+    if (globalQueue.length && !eligibleClients.length) {
+      globalQueue.length = 0
+      return
+    }
+
+    if (globalQueue.length && eligibleClients.length && !busyClientExists) {
+      startJob(globalQueue.shift(), eligibleClients, 'global')
+      return
+    }
+
+    if (globalQueue.length) {
+      return
+    }
+
+    for (const [targetUserId, queue] of targetedQueues.entries()) {
+      if (!queue.length || activeTargetJobs.has(targetUserId)) {
+        continue
+      }
+
+      const targets = getClientsByUserId(targetUserId)
+      if (!targets.length) {
+        queue.shift()
+        if (!queue.length) {
+          targetedQueues.delete(targetUserId)
+        }
+        continue
+      }
+
+      if (hasBusyClient(targets)) {
+        continue
+      }
+
+      startJob(queue.shift(), targets, 'targeted')
+      if (!queue.length) {
+        targetedQueues.delete(targetUserId)
+      }
     }
   }
 
   const completeDropForClient = (socket, dropId) => {
-    if (!activeDrop || activeDrop.id !== dropId || !activeTargets.has(socket)) {
+    const job = activeJobBySocket.get(socket)
+    if (!job || job.drop.id !== dropId) {
       return
     }
 
-    activeDone.add(socket)
-    if (activeDone.size >= activeTargets.size) {
-      console.log(`Drop terminé chez tous les clients: ${dropId}.`)
-      startNextDrop()
+    job.done.add(socket)
+    if (job.done.size >= job.targets.size) {
+      console.log(`Drop terminé chez tous les clients ciblés: ${dropId}.`)
+      finishJob(job, { sendClear: false })
     }
+  }
+
+  const stopActiveDropByOwner = (dropId, ownerId, options = {}) => {
+    const jobs = [activeGlobalJob, ...activeTargetJobs.values()].filter(Boolean)
+    const job = jobs.find((activeJob) => activeJob.drop.id === dropId)
+
+    if (job) {
+      const expectedOwnerId = job.drop.ownerId ?? job.drop.authorId
+      if (expectedOwnerId !== ownerId) {
+        console.warn(`Stop global refusé pour ${ownerId}: auteur attendu ${expectedOwnerId}.`)
+        return false
+      }
+
+      console.log(`Drop stoppé globalement par l'auteur: ${dropId}.`)
+      finishJob(job, { sendClear: options.sendClear ?? true })
+      return true
+    }
+
+    const removeFromQueue = (queue) => {
+      const index = queue.findIndex((drop) => drop.id === dropId)
+      if (index === -1) {
+        return false
+      }
+
+      const drop = queue[index]
+      if ((drop.ownerId ?? drop.authorId) !== ownerId) {
+        console.warn(`Stop global refusé pour ${ownerId}: auteur attendu ${drop.ownerId ?? drop.authorId}.`)
+        return false
+      }
+
+      queue.splice(index, 1)
+      return true
+    }
+
+    if (removeFromQueue(globalQueue)) {
+      return true
+    }
+
+    for (const [targetUserId, queue] of targetedQueues.entries()) {
+      if (removeFromQueue(queue)) {
+        if (!queue.length) {
+          targetedQueues.delete(targetUserId)
+        }
+        return true
+      }
+    }
+
+    return false
   }
 
   const stopDropForEveryone = (socket, dropId) => {
     const client = clients.get(socket)
-    if (!activeDrop || activeDrop.id !== dropId || !client?.userId) {
+    if (!client?.userId) {
       return
     }
 
-    const ownerId = activeDrop.ownerId ?? activeDrop.authorId
-
-    if (ownerId !== client.userId) {
-      console.warn(`Stop global refusé pour ${client.userId}: auteur attendu ${ownerId}.`)
-      return
-    }
-
-    console.log(`Drop stoppé globalement par l'auteur: ${dropId}.`)
-    startNextDrop()
+    stopActiveDropByOwner(dropId, client.userId)
   }
 
   wss.on('connection', (socket, request) => {
@@ -115,6 +232,7 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
     })
     console.log(`Client MemeDrop connecté (${clients.size} client(s)).`)
     sendJson(socket, { type: 'hello' })
+    scheduleDrops()
 
     socket.on('message', (data) => {
       try {
@@ -131,37 +249,55 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
     })
 
     socket.on('close', () => {
+      const job = activeJobBySocket.get(socket)
       clients.delete(socket)
-      activeTargets.delete(socket)
-      activeDone.delete(socket)
+
+      if (job) {
+        activeJobBySocket.delete(socket)
+        job.targets.delete(socket)
+        job.done.delete(socket)
+
+        if (!job.targets.size) {
+          console.log(`Drop annulé: plus aucun client cible (${job.drop.id}).`)
+          finishJob(job, { sendClear: false })
+        } else if (job.done.size >= job.targets.size) {
+          finishJob(job, { sendClear: false })
+        }
+      }
+
       console.log(`Client MemeDrop déconnecté (${clients.size} client(s)).`)
-      if (activeDrop && activeTargets.size === 0) {
-        console.log(`Drop annulé: plus aucun client cible (${activeDrop.id}).`)
-        startNextDrop()
-        return
-      }
-      if (activeDrop && activeDone.size >= activeTargets.size) {
-        startNextDrop()
-      }
+      scheduleDrops()
     })
   })
 
   const broadcastDrop = (drop) => {
+    if (drop.targetUserId) {
+      const sentCount = getClientsByUserId(drop.targetUserId).length
+      if (!sentCount) {
+        return 0
+      }
+
+      const queue = targetedQueues.get(drop.targetUserId) ?? []
+      queue.push(drop)
+      targetedQueues.set(drop.targetUserId, queue)
+      scheduleDrops()
+      return sentCount
+    }
+
     const sentCount = getEligibleClients().length
     if (!sentCount) {
       return 0
     }
 
-    queue.push(drop)
-    if (!activeDrop) {
-      startNextDrop()
-    }
+    globalQueue.push(drop)
+    scheduleDrops()
     return sentCount
   }
 
   return {
     clients,
     broadcastDrop,
+    stopDropByOwner: stopActiveDropByOwner,
     wss,
   }
 }

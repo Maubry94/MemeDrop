@@ -44,7 +44,7 @@ const server = http.createServer((request, response) => {
   sendTextResponse(response, 200, 'MemeDrop server is running.\n')
 })
 
-const { broadcastDrop, clients } = createMemeDropWebSocketServer({
+const { broadcastDrop, clients, stopDropByOwner } = createMemeDropWebSocketServer({
   server,
   serverKey: config.memedropServerKey,
 })
@@ -53,6 +53,7 @@ createDiscordBot({
   token: config.discordBotToken,
   guildId: config.discordGuildId,
   broadcastDrop,
+  stopDropByOwner,
   onStatusChange: (status) => {
     discordStatus = status
   },

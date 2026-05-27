@@ -1,7 +1,7 @@
 {
   "name": "memedrop",
   "private": true,
-  "version": "1.10.6",
+  "version": "1.11.6",
   "type": "module",
   "scripts": {
     "dev": "vite",

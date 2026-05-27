@@ -8,6 +8,8 @@ export type Drop = {
   authorId: string | null
   ownerId?: string | null
   isAnonymous?: boolean
+  targetUserId?: string | null
+  targetUserName?: string | null
   author: string | null
   authorAvatarUrl: string | null
   createdAt: string
