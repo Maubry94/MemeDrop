@@ -2,6 +2,7 @@ import { ipcRenderer, contextBridge } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type {
   ConnectionStatus,
+  ConnectedUser,
   Drop,
   AppPreferences,
   OverlayDisplayPreferences,
@@ -25,6 +26,8 @@ contextBridge.exposeInMainWorld('memedrop', {
   onSkipCurrentDrop: (handler: () => void) => onChannel('skip-current-drop', handler),
   onConnectionStatus: (handler: (status: ConnectionStatus) => void) =>
     onChannel('connection-status', handler),
+  onConnectedUsers: (handler: (users: ConnectedUser[]) => void) =>
+    onChannel('connected-users', handler),
   onShortcutStatus: (handler: (status: ShortcutStatus[]) => void) =>
     onChannel('shortcut-status', handler),
   onOverlayState: (handler: (state: OverlayState) => void) =>
@@ -50,6 +53,7 @@ contextBridge.exposeInMainWorld('memedrop', {
   quitApp: () => ipcRenderer.invoke('quit-app'),
   uninstallApp: () => ipcRenderer.invoke('uninstall-app'),
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
+  getConnectedUsers: () => ipcRenderer.invoke('get-connected-users'),
   getShortcutStatus: () => ipcRenderer.invoke('get-shortcut-status'),
   getServerConfig: () => ipcRenderer.invoke('get-server-config'),
   saveServerConfig: (config: ServerConfig) => ipcRenderer.invoke('save-server-config', config),

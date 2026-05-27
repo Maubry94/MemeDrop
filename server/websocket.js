@@ -29,6 +29,37 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
       .filter(([, client]) => client.userId)
       .map(([socket]) => socket)
 
+  const getConnectedUsers = () => {
+    const users = new Map()
+
+    for (const client of clients.values()) {
+      if (!client.userId) {
+        continue
+      }
+
+      const existing = users.get(client.userId)
+      users.set(client.userId, {
+        id: client.userId,
+        name: client.userName || client.userId,
+        avatarUrl: client.userAvatarUrl || null,
+        connections: (existing?.connections ?? 0) + 1,
+      })
+    }
+
+    return [...users.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  const broadcastConnectedUsers = () => {
+    const connectedUsers = getConnectedUsers()
+
+    for (const socket of clients.keys()) {
+      sendJson(socket, {
+        type: 'connected-users',
+        users: connectedUsers,
+      })
+    }
+  }
+
   const getClientsByUserId = (userId) =>
     [...clients.entries()]
       .filter(([, client]) => client.userId === userId)
@@ -220,6 +251,8 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
     const requestUrl = new URL(request.url ?? '/ws', `http://${request.headers.host}`)
     const requestKey = requestUrl.searchParams.get('key') ?? ''
     const userId = requestUrl.searchParams.get('userId') ?? ''
+    const userName = requestUrl.searchParams.get('userName') ?? ''
+    const userAvatarUrl = requestUrl.searchParams.get('userAvatarUrl') ?? ''
 
     if (serverKey && requestKey !== serverKey) {
       console.warn('Client MemeDrop refusé: clé invalide.')
@@ -229,9 +262,12 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
 
     clients.set(socket, {
       userId,
+      userName,
+      userAvatarUrl,
     })
     console.log(`Client MemeDrop connecté (${clients.size} client(s)).`)
     sendJson(socket, { type: 'hello' })
+    broadcastConnectedUsers()
     scheduleDrops()
 
     socket.on('message', (data) => {
@@ -266,6 +302,7 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
       }
 
       console.log(`Client MemeDrop déconnecté (${clients.size} client(s)).`)
+      broadcastConnectedUsers()
       scheduleDrops()
     })
   })
@@ -297,6 +334,7 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
   return {
     clients,
     broadcastDrop,
+    getConnectedUsers,
     stopDropByOwner: stopActiveDropByOwner,
     wss,
   }

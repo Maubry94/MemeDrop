@@ -9,6 +9,9 @@ interface Window {
     onConnectionStatus: (
       handler: (status: import('./shared/types').ConnectionStatus) => void,
     ) => () => void
+    onConnectedUsers: (
+      handler: (users: import('./shared/types').ConnectedUser[]) => void,
+    ) => () => void
     onShortcutStatus: (
       handler: (status: import('./shared/types').ShortcutStatus[]) => void,
     ) => () => void
@@ -44,6 +47,7 @@ interface Window {
     quitApp: () => Promise<void>
     uninstallApp: () => Promise<void>
     getConnectionStatus: () => Promise<import('./shared/types').ConnectionStatus | null>
+    getConnectedUsers: () => Promise<import('./shared/types').ConnectedUser[]>
     getShortcutStatus: () => Promise<import('./shared/types').ShortcutStatus[]>
     getServerConfig: () => Promise<import('./shared/types').ServerConfig>
     saveServerConfig: (

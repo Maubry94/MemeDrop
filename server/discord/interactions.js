@@ -2,7 +2,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'disc
 import { isSupportedAttachment } from '../utils/attachments.js'
 import { getYouTubeVideoId, isValidYouTubeVideoId } from '../utils/youtube.js'
 
-const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt'])
+const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'dropstatus'])
 
 const getUserAvatarUrl = (user) =>
   user.displayAvatarURL({
@@ -127,7 +127,49 @@ const handleStopButton = async (interaction, stopDropByOwner) => {
   return true
 }
 
-export const createInteractionHandler = ({ broadcastDrop, stopDropByOwner }) => async (interaction) => {
+const resolveConnectedUserName = async (interaction, user) => {
+  if (user.name && user.name !== user.id) {
+    return user.name
+  }
+
+  try {
+    const discordUser = await interaction.client.users.fetch(user.id)
+    return discordUser.globalName ?? discordUser.username ?? user.id
+  } catch {
+    return user.id
+  }
+}
+
+const handleDropStatus = async (interaction, getConnectedUsers) => {
+  const users = getConnectedUsers().filter((user) => user.id !== interaction.user.id)
+
+  if (!users.length) {
+    await interaction.reply({
+      content: 'Aucun autre utilisateur connecté à MemeDrop.',
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  const resolvedUsers = await Promise.all(
+    users.map(async (user) => ({
+      ...user,
+      name: await resolveConnectedUserName(interaction, user),
+    })),
+  )
+
+  const lines = resolvedUsers.map((user) => {
+    const suffix = user.connections > 1 ? ` (${user.connections} connexions)` : ''
+    return `- ${user.name}${suffix}`
+  })
+
+  await interaction.reply({
+    content: `Utilisateurs connectés à MemeDrop :\n${lines.join('\n')}`,
+    flags: MessageFlags.Ephemeral,
+  })
+}
+
+export const createInteractionHandler = ({ broadcastDrop, getConnectedUsers, stopDropByOwner }) => async (interaction) => {
   if (await handleStopButton(interaction, stopDropByOwner)) {
     return
   }
@@ -139,6 +181,11 @@ export const createInteractionHandler = ({ broadcastDrop, stopDropByOwner }) => 
   console.log(`Commande /${interaction.commandName} reçue de ${interaction.user.tag}.`)
 
   try {
+    if (interaction.commandName === 'dropstatus') {
+      await handleDropStatus(interaction, getConnectedUsers)
+      return
+    }
+
     await interaction.deferReply({
       flags: MessageFlags.Ephemeral,
     })

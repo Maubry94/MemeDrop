@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
+import ConnectedUsersView from './components/control/ConnectedUsersView.vue'
 import ControlPanel from './components/control/ControlPanel.vue'
 import LoginView from './components/control/LoginView.vue'
 import PreferencesModal from './components/control/PreferencesModal.vue'
@@ -8,6 +9,7 @@ import DropOverlay from './components/overlay/DropOverlay.vue'
 import { getMediaKind } from './shared/media'
 import type {
   AppPreferences,
+  ConnectedUser,
   ConnectionStatus,
   Drop,
   OverlayAnchor,
@@ -18,6 +20,7 @@ import type {
 } from './shared/types'
 
 type AppView = 'overlay' | 'control'
+type ControlTab = 'control' | 'connected'
 
 const TEST_DROP_ID = 'memedrop-test-preview'
 
@@ -25,6 +28,7 @@ const viewParam = new URLSearchParams(window.location.search).get('view')
 const view: AppView = viewParam === 'control' ? 'control' : 'overlay'
 const isOverlayView = computed(() => view === 'overlay')
 const isControlView = computed(() => view === 'control')
+const controlTab = ref<ControlTab>('control')
 
 const overlayPosition = ref<OverlayPosition>('full')
 const dropVolume = ref(100)
@@ -37,6 +41,7 @@ const hideOwnDrops = ref(false)
 const isPreferencesOpen = ref(false)
 const isTestDropActive = ref(false)
 const activeDrop = ref<Drop | null>(null)
+const connectedUsers = ref<ConnectedUser[]>([])
 const connectionStatus = ref<ConnectionStatus | null>(null)
 const appPreferences = ref<AppPreferences>({
   minimizeToTray: false,
@@ -63,6 +68,9 @@ let syncingDisplayPreferences = false
 const activeKind = computed(() => getMediaKind(activeDrop.value))
 const hasDrop = computed(() => Boolean(activeDrop.value) && dropsEnabled.value)
 const isDiscordConnected = computed(() => Boolean(serverConfig.value.discordUserId))
+const otherConnectedUsers = computed(() =>
+  connectedUsers.value.filter((user) => user.id !== serverConfig.value.discordUserId),
+)
 const canStopGlobalDrop = computed(
   () =>
     Boolean(activeDrop.value?.id) &&
@@ -210,6 +218,13 @@ const requestConnectionStatus = async () => {
     return
   }
   connectionStatus.value = await window.memedrop.getConnectionStatus()
+}
+
+const requestConnectedUsers = async () => {
+  if (!window.memedrop) {
+    return
+  }
+  connectedUsers.value = await window.memedrop.getConnectedUsers()
 }
 
 const updateAppPreferences = async (preferences: AppPreferences) => {
@@ -385,6 +400,7 @@ onMounted(async () => {
   await requestOverlayDisplayPreferences()
   await requestAppPreferences()
   await requestConnectionStatus()
+  await requestConnectedUsers()
   await requestServerConfig()
 
   const unsubDrop = window.memedrop?.onDrop((drop) => {
@@ -430,6 +446,10 @@ onMounted(async () => {
     connectionStatus.value = status
   })
 
+  const unsubConnectedUsers = window.memedrop?.onConnectedUsers((users) => {
+    connectedUsers.value = users
+  })
+
   const unsubOverlay = window.memedrop?.onOverlayState((state) => {
     applyOverlayState(state)
   })
@@ -449,6 +469,7 @@ onMounted(async () => {
   if (unsubTestDropCleared) unsubscribers.push(unsubTestDropCleared)
   if (unsubSkipCurrentDrop) unsubscribers.push(unsubSkipCurrentDrop)
   if (unsubStatus) unsubscribers.push(unsubStatus)
+  if (unsubConnectedUsers) unsubscribers.push(unsubConnectedUsers)
   if (unsubOverlay) unsubscribers.push(unsubOverlay)
   if (unsubOverlayDisplayPreferences) unsubscribers.push(unsubOverlayDisplayPreferences)
   if (unsubAppPreferences) unsubscribers.push(unsubAppPreferences)
@@ -511,8 +532,35 @@ onBeforeUnmount(() => {
         @save-server-config="saveServerConfig"
       />
 
+      <div v-else class="grid grid-cols-2 gap-1 rounded-lg bg-slate-900/70 p-1">
+        <button
+          type="button"
+          class="rounded-md px-3 py-1.5 text-xs font-semibold"
+          :class="
+            controlTab === 'control'
+              ? 'bg-slate-700 text-slate-100 shadow-sm'
+              : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
+          "
+          @click="controlTab = 'control'"
+        >
+          Contrôle
+        </button>
+        <button
+          type="button"
+          class="rounded-md px-3 py-1.5 text-xs font-semibold"
+          :class="
+            controlTab === 'connected'
+              ? 'bg-slate-700 text-slate-100 shadow-sm'
+              : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
+          "
+          @click="controlTab = 'connected'"
+        >
+          Connecté(s) ({{ otherConnectedUsers.length }})
+        </button>
+      </div>
+
       <ControlPanel
-        v-else
+        v-if="isDiscordConnected && controlTab === 'control'"
         v-model:server-config="serverConfig"
         :drops-enabled="dropsEnabled"
         :hide-own-drops="hideOwnDrops"
@@ -541,6 +589,12 @@ onBeforeUnmount(() => {
         @save-server-config="saveServerConfig"
         @disconnect-discord="disconnectDiscord"
         @trigger-test-drop="triggerTestDrop"
+      />
+
+      <ConnectedUsersView
+        v-if="isDiscordConnected && controlTab === 'connected'"
+        :users="otherConnectedUsers"
+        empty-message="Aucun autre utilisateur connecté."
       />
     </div>
   </div>

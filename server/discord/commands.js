@@ -57,7 +57,11 @@ const createSlashCommands = () => {
         .setRequired(false),
     )
 
-  return [dropCommand.toJSON(), dropYouTubeCommand.toJSON()]
+  const dropStatusCommand = new SlashCommandBuilder()
+    .setName('dropstatus')
+    .setDescription('Voir les utilisateurs connectés à MemeDrop')
+
+  return [dropCommand.toJSON(), dropYouTubeCommand.toJSON(), dropStatusCommand.toJSON()]
 }
 
 export const registerSlashCommands = async (token, guildId, clientId) => {

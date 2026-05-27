@@ -1,12 +1,15 @@
 import WebSocket from 'ws'
-import type { ConnectionStatus, Drop } from '../src/shared/types'
+import type { ConnectedUser, ConnectionStatus, Drop } from '../src/shared/types'
 
 type MemeDropClientOptions = {
   serverUrl: string | undefined
   accessKey: string | undefined
   userId: string | undefined
+  userName: string | undefined
+  userAvatarUrl: string | null | undefined
   onDrop: (drop: Drop) => void
   onClearDrop: () => void
+  onConnectedUsers: (users: ConnectedUser[]) => void
   onStatus: (status: ConnectionStatus) => void
 }
 
@@ -21,6 +24,10 @@ type ServerMessage =
   | {
       type: 'clear-drop'
     }
+  | {
+      type: 'connected-users'
+      users: ConnectedUser[]
+    }
 
 export type MemeDropClientController = {
   completeDrop: (dropId: string) => void
@@ -32,6 +39,8 @@ const toWebSocketUrl = (
   serverUrl: string,
   accessKey: string | undefined,
   userId: string | undefined,
+  userName: string | undefined,
+  userAvatarUrl: string | null | undefined,
 ) => {
   const normalizedUrl = serverUrl.match(/^https?:\/\//i) ? serverUrl : `https://${serverUrl}`
   const url = new URL(normalizedUrl)
@@ -48,6 +57,14 @@ const toWebSocketUrl = (
     url.searchParams.set('userId', userId)
   }
 
+  if (userName) {
+    url.searchParams.set('userName', userName)
+  }
+
+  if (userAvatarUrl) {
+    url.searchParams.set('userAvatarUrl', userAvatarUrl)
+  }
+
   return url.toString()
 }
 
@@ -61,7 +78,17 @@ const isDrop = (value: unknown): value is Drop => {
 }
 
 export function startMemeDropClient(options: MemeDropClientOptions) {
-  const { serverUrl, accessKey, userId, onDrop, onClearDrop, onStatus } = options
+  const {
+    serverUrl,
+    accessKey,
+    userId,
+    userName,
+    userAvatarUrl,
+    onDrop,
+    onClearDrop,
+    onConnectedUsers,
+    onStatus,
+  } = options
 
   if (!serverUrl) {
     onStatus({
@@ -101,7 +128,13 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     let wsUrl: string
 
     try {
-      wsUrl = toWebSocketUrl(serverUrl.trim(), accessKey?.trim(), userId?.trim())
+      wsUrl = toWebSocketUrl(
+        serverUrl.trim(),
+        accessKey?.trim(),
+        userId?.trim(),
+        userName?.trim(),
+        userAvatarUrl,
+      )
     } catch {
       onStatus({
         level: 'error',
@@ -135,6 +168,10 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
 
         if (message.type === 'clear-drop') {
           onClearDrop()
+        }
+
+        if (message.type === 'connected-users') {
+          onConnectedUsers(message.users)
         }
       } catch (error) {
         console.error('Message serveur MemeDrop invalide:', error)

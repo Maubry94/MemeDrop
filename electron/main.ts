@@ -19,6 +19,7 @@ import type {
   DiscordUser,
   Drop,
   AppPreferences,
+  ConnectedUser,
   OverlayDisplayPreferences,
   OverlayState,
   ServerConfig,
@@ -60,6 +61,7 @@ let controlWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let dropsEnabled = true
 let hideOwnDrops = false
+let connectedUsers: ConnectedUser[] = []
 let appPreferences: AppPreferences = {
   minimizeToTray: false,
   openAtLogin: false,
@@ -338,11 +340,18 @@ const startOrRestartMemeDropClient = () => {
   memeDropClient = null
 
   const { serverUrl, accessKey, discordUserId } = getServerConfig()
+  const serverConfig = getServerConfig()
 
   memeDropClient = startMemeDropClient({
     serverUrl,
     accessKey,
     userId: discordUserId,
+    userName: serverConfig.discordUserName,
+    userAvatarUrl: serverConfig.discordUserAvatarUrl,
+    onConnectedUsers: (users: ConnectedUser[]) => {
+      connectedUsers = users
+      sendToWindows('connected-users', connectedUsers)
+    },
     onDrop: (drop: Drop) => {
       currentServerDrop = drop
       if (!dropsEnabled) {
@@ -379,6 +388,8 @@ const getOverlayState = (): OverlayState => ({
 const getAppPreferences = (): AppPreferences => ({ ...appPreferences })
 
 const getShortcutStatus = () => shortcutStatus
+
+const getConnectedUsers = () => connectedUsers
 
 const sendToWindows = (channel: string, payload: unknown) => {
   overlayWindow?.webContents.send(channel, payload)
@@ -431,6 +442,10 @@ const syncConnectionStatus = () => {
 
 const syncShortcutStatus = () => {
   sendToWindows('shortcut-status', getShortcutStatus())
+}
+
+const syncConnectedUsers = () => {
+  sendToWindows('connected-users', getConnectedUsers())
 }
 
 const setConnectionStatus = (status: ConnectionStatus) => {
@@ -733,6 +748,7 @@ const createOverlayWindow = () => {
     syncOverlayDisplayPreferences()
     syncConnectionStatus()
     syncShortcutStatus()
+    syncConnectedUsers()
     keepOverlayAboveFullscreen()
   })
   overlayWindow.on('closed', () => {
@@ -768,6 +784,7 @@ const createControlWindow = () => {
     syncAppPreferences()
     syncConnectionStatus()
     syncShortcutStatus()
+    syncConnectedUsers()
   })
   controlWindow.on('close', (event) => {
     if (isQuitting) {
@@ -869,6 +886,7 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   })
   ipcMain.handle('get-connection-status', () => connectionStatus)
   ipcMain.handle('get-shortcut-status', () => getShortcutStatus())
+  ipcMain.handle('get-connected-users', () => getConnectedUsers())
   ipcMain.handle('get-server-config', () => getServerConfig())
   ipcMain.handle('save-server-config', (_event, config: ServerConfig) => {
     const savedConfig = saveServerConfig(config)

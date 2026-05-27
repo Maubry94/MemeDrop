@@ -26,6 +26,13 @@ export type DiscordUser = {
   avatarUrl: string | null
 }
 
+export type ConnectedUser = {
+  id: string
+  name: string
+  avatarUrl: string | null
+  connections: number
+}
+
 export type ServerConfig = {
   serverUrl: string
   accessKey: string
