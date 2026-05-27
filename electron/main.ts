@@ -25,6 +25,7 @@ import type {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const APP_ID = 'com.memedrop.app'
+const START_MINIMIZED_ARG = '--memedrop-start-minimized'
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 if (process.platform === 'win32') {
@@ -50,6 +51,7 @@ const hasInstanceLock = VITE_DEV_SERVER_URL ? true : app.requestSingleInstanceLo
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 const windowIcon = path.join(process.env.VITE_PUBLIC, 'memeDrop.png')
+const getAppTitle = () => `MemeDrop v${app.getVersion()}`
 
 let overlayWindow: BrowserWindow | null = null
 let controlWindow: BrowserWindow | null = null
@@ -68,6 +70,7 @@ let overlayKeepAliveTimer: ReturnType<typeof setInterval> | null = null
 let isQuitting = false
 let rendererServer: http.Server | null = null
 let rendererServerUrl: string | null = null
+let shouldStartControlHidden = false
 
 type AppConfigFile = {
   discord?: Record<string, unknown>
@@ -170,6 +173,8 @@ const saveAppPreferences = () => {
 const applyOpenAtLogin = () => {
   app.setLoginItemSettings({
     openAtLogin: appPreferences.openAtLogin,
+    args:
+      appPreferences.openAtLogin && appPreferences.minimizeToTray ? [START_MINIMIZED_ARG] : [],
   })
 }
 
@@ -180,6 +185,9 @@ const loadAppPreferences = () => {
     minimizeToTray: Boolean(stored.minimizeToTray),
     openAtLogin: Boolean(stored.openAtLogin),
   }
+  shouldStartControlHidden =
+    appPreferences.minimizeToTray &&
+    (process.argv.includes(START_MINIMIZED_ARG) || app.getLoginItemSettings().wasOpenedAtLogin)
 
   applyOpenAtLogin()
 }
@@ -672,15 +680,17 @@ const createControlWindow = () => {
     resizable: true,
     minimizable: true,
     maximizable: false,
+    show: !shouldStartControlHidden,
     backgroundColor: '#0f172a',
     icon: windowIcon,
-    title: 'MemeDrop',
+    title: getAppTitle(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
     },
   })
 
   controlWindow.webContents.on('did-finish-load', () => {
+    controlWindow?.setTitle(getAppTitle())
     syncOverlayState()
     syncAppPreferences()
     syncConnectionStatus()
@@ -704,6 +714,7 @@ const createControlWindow = () => {
   })
 
   loadView(controlWindow, 'control')
+  shouldStartControlHidden = false
 }
 
 const createWindows = () => {
