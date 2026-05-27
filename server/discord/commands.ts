@@ -64,7 +64,11 @@ const createSlashCommands = () => {
   return [dropCommand.toJSON(), dropYouTubeCommand.toJSON(), dropStatusCommand.toJSON()]
 }
 
-export const registerSlashCommands = async (token, guildId, clientId) => {
+export const registerSlashCommands = async (
+  token: string,
+  guildId: string,
+  clientId: string,
+) => {
   const rest = new REST({ version: '10' }).setToken(token)
 
   await rest.put(Routes.applicationGuildCommands(clientId, guildId), {

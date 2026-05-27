@@ -6,7 +6,7 @@ import ControlPanel from './components/control/ControlPanel.vue'
 import LoginView from './components/control/LoginView.vue'
 import PreferencesModal from './components/control/PreferencesModal.vue'
 import DropOverlay from './components/overlay/DropOverlay.vue'
-import { getMediaKind } from './shared/media'
+import { getMediaKind } from '../shared/media'
 import type {
   AppPreferences,
   ConnectedUser,
@@ -17,7 +17,7 @@ import type {
   OverlayPosition,
   OverlayState,
   ServerConfig,
-} from './shared/types'
+} from '../shared/types'
 
 type AppView = 'overlay' | 'control'
 type ControlTab = 'control' | 'connected'

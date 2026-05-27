@@ -1,4 +1,4 @@
-import type { Drop } from './types'
+import type { Drop } from './types.js'
 
 export type MediaKind = 'none' | 'image' | 'video' | 'audio' | 'youtube' | 'file'
 

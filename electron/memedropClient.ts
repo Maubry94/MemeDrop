@@ -1,5 +1,5 @@
 import WebSocket from 'ws'
-import type { ConnectedUser, ConnectionStatus, Drop } from '../src/shared/types'
+import type { ConnectedUser, ConnectionStatus, Drop } from '../shared/types'
 
 type MemeDropClientOptions = {
   serverUrl: string | undefined

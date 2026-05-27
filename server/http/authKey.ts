@@ -1,4 +1,6 @@
-export const getRequestKey = (request, requestUrl) => {
+import type http from 'node:http'
+
+export const getRequestKey = (request: http.IncomingMessage, requestUrl: URL): string => {
   const headerKey = request.headers['x-memedrop-key']
   return (
     requestUrl.searchParams.get('key') ??
@@ -7,7 +9,11 @@ export const getRequestKey = (request, requestUrl) => {
   )
 }
 
-export const isAuthorizedRequest = (request, requestUrl, serverKey) => {
+export const isAuthorizedRequest = (
+  request: http.IncomingMessage,
+  requestUrl: URL,
+  serverKey: string,
+): boolean => {
   if (!serverKey) {
     return true
   }

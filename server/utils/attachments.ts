@@ -16,7 +16,12 @@ const SUPPORTED_EXTENSIONS = new Set([
   'm4a',
 ])
 
-export const isSupportedAttachment = (attachment) => {
+type SupportedAttachment = {
+  contentType: string | null
+  name: string | null
+}
+
+export const isSupportedAttachment = (attachment: SupportedAttachment): boolean => {
   const contentType = attachment.contentType?.toLowerCase() ?? ''
 
   if (

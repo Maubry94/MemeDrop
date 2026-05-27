@@ -2,7 +2,15 @@ import { config as loadEnv } from 'dotenv'
 
 loadEnv()
 
-export const config = {
+export const config: {
+  port: number
+  discordBotToken: string | undefined
+  discordGuildId: string | undefined
+  discordClientId: string | undefined
+  discordClientSecret: string | undefined
+  memedropServerKey: string
+  publicBaseUrl: string | undefined
+} = {
   port: Number(process.env.PORT ?? 3010),
   discordBotToken: process.env.DISCORD_BOT_TOKEN,
   discordGuildId: process.env.DISCORD_GUILD_ID,

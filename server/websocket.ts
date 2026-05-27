@@ -1,23 +1,53 @@
 import WebSocket, { WebSocketServer } from 'ws'
+import type { ConnectedUser, Drop } from '../shared/types.js'
+import type {
+  DropJob,
+  MemeDropClient,
+  MemeDropWebSocketMessage,
+  MemeDropWebSocketServerOptions,
+} from './types.js'
 
 const IMAGE_DISPLAY_MS = 9000
 
-const sendJson = (socket, payload) => {
+const sendJson = (socket: WebSocket, payload: unknown) => {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(payload))
   }
 }
 
-export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
-  const clients = new Map()
-  const wss = new WebSocketServer({ server, path: '/ws' })
-  const globalQueue = []
-  const targetedQueues = new Map()
-  const activeJobBySocket = new Map()
-  const activeTargetJobs = new Map()
-  let activeGlobalJob = null
+const parseClientMessage = (data: WebSocket.RawData): MemeDropWebSocketMessage | null => {
+  const parsed = JSON.parse(data.toString()) as Partial<MemeDropWebSocketMessage>
 
-  const clearJobTimer = (job) => {
+  if (
+    (parsed.type === 'drop-completed' || parsed.type === 'drop-stop') &&
+    typeof parsed.dropId === 'string'
+  ) {
+    return parsed as MemeDropWebSocketMessage
+  }
+
+  if (parsed.type === 'client-state') {
+    return {
+      type: 'client-state',
+      dropsEnabled: parsed.dropsEnabled,
+    }
+  }
+
+  return null
+}
+
+export const createMemeDropWebSocketServer = ({
+  server,
+  serverKey,
+}: MemeDropWebSocketServerOptions) => {
+  const clients = new Map<WebSocket, MemeDropClient>()
+  const wss = new WebSocketServer({ server, path: '/ws' })
+  const globalQueue: Drop[] = []
+  const targetedQueues = new Map<string, Drop[]>()
+  const activeJobBySocket = new Map<WebSocket, DropJob>()
+  const activeTargetJobs = new Map<string, DropJob>()
+  let activeGlobalJob: DropJob | null = null
+
+  const clearJobTimer = (job: DropJob) => {
     if (job.timer) {
       clearTimeout(job.timer)
       job.timer = null
@@ -29,8 +59,8 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
       .filter(([, client]) => client.userId)
       .map(([socket]) => socket)
 
-  const getConnectedUsers = () => {
-    const users = new Map()
+  const getConnectedUsers = (): ConnectedUser[] => {
+    const users = new Map<string, ConnectedUser>()
 
     for (const client of clients.values()) {
       if (!client.userId) {
@@ -61,21 +91,22 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
     }
   }
 
-  const getClientsByUserId = (userId) =>
+  const getClientsByUserId = (userId: string) =>
     [...clients.entries()]
       .filter(([, client]) => client.userId === userId)
       .map(([socket]) => socket)
 
-  const hasBusyClient = (sockets) => sockets.some((socket) => activeJobBySocket.has(socket))
+  const hasBusyClient = (sockets: WebSocket[]) =>
+    sockets.some((socket) => activeJobBySocket.has(socket))
 
-  const sendClearToTargets = (job) => {
+  const sendClearToTargets = (job: DropJob) => {
     for (const socket of job.targets) {
       sendJson(socket, { type: 'clear-drop' })
     }
   }
 
-  const startJob = (drop, targets, scope) => {
-    const job = {
+  const startJob = (drop: Drop, targets: WebSocket[], scope: DropJob['scope']) => {
+    const job: DropJob = {
       drop,
       targets: new Set(targets),
       done: new Set(),
@@ -111,7 +142,7 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
     return job
   }
 
-  const finishJob = (job, options = {}) => {
+  const finishJob = (job: DropJob, options: { sendClear?: boolean } = {}) => {
     clearJobTimer(job)
 
     if (options.sendClear) {
@@ -145,7 +176,10 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
     }
 
     if (globalQueue.length && eligibleClients.length && !busyClientExists) {
-      startJob(globalQueue.shift(), eligibleClients, 'global')
+      const nextDrop = globalQueue.shift()
+      if (nextDrop) {
+        startJob(nextDrop, eligibleClients, 'global')
+      }
       return
     }
 
@@ -171,14 +205,17 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
         continue
       }
 
-      startJob(queue.shift(), targets, 'targeted')
+      const nextDrop = queue.shift()
+      if (nextDrop) {
+        startJob(nextDrop, targets, 'targeted')
+      }
       if (!queue.length) {
         targetedQueues.delete(targetUserId)
       }
     }
   }
 
-  const completeDropForClient = (socket, dropId) => {
+  const completeDropForClient = (socket: WebSocket, dropId: string) => {
     const job = activeJobBySocket.get(socket)
     if (!job || job.drop.id !== dropId) {
       return
@@ -191,8 +228,14 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
     }
   }
 
-  const stopActiveDropByOwner = (dropId, ownerId, options = {}) => {
-    const jobs = [activeGlobalJob, ...activeTargetJobs.values()].filter(Boolean)
+  const stopActiveDropByOwner = (
+    dropId: string,
+    ownerId: string,
+    options: { sendClear?: boolean } = {},
+  ) => {
+    const jobs = [activeGlobalJob, ...activeTargetJobs.values()].filter(
+      (job): job is DropJob => Boolean(job),
+    )
     const job = jobs.find((activeJob) => activeJob.drop.id === dropId)
 
     if (job) {
@@ -207,13 +250,17 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
       return true
     }
 
-    const removeFromQueue = (queue) => {
+    const removeFromQueue = (queue: Drop[]) => {
       const index = queue.findIndex((drop) => drop.id === dropId)
       if (index === -1) {
         return false
       }
 
       const drop = queue[index]
+      if (!drop) {
+        return false
+      }
+
       if ((drop.ownerId ?? drop.authorId) !== ownerId) {
         console.warn(`Stop global refusé pour ${ownerId}: auteur attendu ${drop.ownerId ?? drop.authorId}.`)
         return false
@@ -239,7 +286,7 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
     return false
   }
 
-  const stopDropForEveryone = (socket, dropId) => {
+  const stopDropForEveryone = (socket: WebSocket, dropId: string) => {
     const client = clients.get(socket)
     if (!client?.userId) {
       return
@@ -274,7 +321,11 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
 
     socket.on('message', (data) => {
       try {
-        const message = JSON.parse(data.toString())
+        const message = parseClientMessage(data)
+        if (!message) {
+          return
+        }
+
         if (message.type === 'drop-completed') {
           completeDropForClient(socket, message.dropId)
         }
@@ -316,7 +367,7 @@ export const createMemeDropWebSocketServer = ({ server, serverKey }) => {
     })
   })
 
-  const broadcastDrop = (drop) => {
+  const broadcastDrop = (drop: Drop) => {
     if (drop.targetUserId) {
       const sentCount = getClientsByUserId(drop.targetUserId).length
       if (!sentCount) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ServerConfig } from '../../shared/types'
+import type { ServerConfig } from '../../../shared/types'
 
 defineProps<{
   serverConfig: ServerConfig

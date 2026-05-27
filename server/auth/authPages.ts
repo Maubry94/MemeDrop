@@ -1,4 +1,19 @@
-export const sendAuthPage = (response, { title, message, tone = 'success' }) => {
+import type http from 'node:http'
+
+type AuthPageTone = 'success' | 'warning' | 'error'
+
+export const sendAuthPage = (
+  response: http.ServerResponse,
+  {
+    title,
+    message,
+    tone = 'success',
+  }: {
+    title: string
+    message: string
+    tone?: AuthPageTone
+  },
+) => {
   const isSuccess = tone === 'success'
   response.writeHead(isSuccess ? 200 : tone === 'error' ? 500 : 400, {
     'content-type': 'text/html; charset=utf-8',

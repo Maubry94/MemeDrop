@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ConnectedUser } from '../../shared/types'
+import type { ConnectedUser } from '../../../shared/types'
 
 defineProps<{
   users: ConnectedUser[]

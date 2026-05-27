@@ -1,6 +1,7 @@
-import { ActivityType, Client, GatewayIntentBits } from 'discord.js'
+import { Client, GatewayIntentBits } from 'discord.js'
 import { registerSlashCommands } from './commands.js'
 import { createInteractionHandler } from './interactions.js'
+import type { DiscordBotOptions } from '../types.js'
 
 export const createDiscordBot = ({
   token,
@@ -9,7 +10,7 @@ export const createDiscordBot = ({
   getConnectedUsers,
   stopDropByOwner,
   onStatusChange,
-}) => {
+}: DiscordBotOptions) => {
   if (!token || !guildId) {
     console.error('DISCORD_BOT_TOKEN et DISCORD_GUILD_ID sont requis.')
     process.exitCode = 1
