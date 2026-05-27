@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 import type {
   ConnectionStatus,
   Drop,
+  AppPreferences,
   OverlayState,
   ServerConfig,
   ShortcutStatus,
@@ -27,6 +28,8 @@ contextBridge.exposeInMainWorld('memedrop', {
     onChannel('shortcut-status', handler),
   onOverlayState: (handler: (state: OverlayState) => void) =>
     onChannel('overlay-state', handler),
+  onAppPreferences: (handler: (preferences: AppPreferences) => void) =>
+    onChannel('app-preferences', handler),
   setDropsEnabled: (enabled: boolean) => ipcRenderer.invoke('set-drops-enabled', enabled),
   setHideOwnDrops: (enabled: boolean) => ipcRenderer.invoke('set-hide-own-drops', enabled),
   toggleDrops: () => ipcRenderer.invoke('toggle-drops'),
@@ -35,6 +38,9 @@ contextBridge.exposeInMainWorld('memedrop', {
   completeCurrentDrop: (dropId: string) => ipcRenderer.invoke('complete-current-drop', dropId),
   stopCurrentDropForEveryone: () => ipcRenderer.invoke('stop-current-drop-for-everyone'),
   getOverlayState: () => ipcRenderer.invoke('get-overlay-state'),
+  getAppPreferences: () => ipcRenderer.invoke('get-app-preferences'),
+  setAppPreferences: (preferences: AppPreferences) =>
+    ipcRenderer.invoke('set-app-preferences', preferences),
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
   getShortcutStatus: () => ipcRenderer.invoke('get-shortcut-status'),
   getServerConfig: () => ipcRenderer.invoke('get-server-config'),

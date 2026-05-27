@@ -37,6 +37,9 @@ interface Window {
     onOverlayState: (
       handler: (state: import('../src/shared/types').OverlayState) => void,
     ) => () => void
+    onAppPreferences: (
+      handler: (preferences: import('../src/shared/types').AppPreferences) => void,
+    ) => () => void
     setDropsEnabled: (
       enabled: boolean,
     ) => Promise<import('../src/shared/types').OverlayState>
@@ -49,6 +52,10 @@ interface Window {
     completeCurrentDrop: (dropId: string) => Promise<void>
     stopCurrentDropForEveryone: () => Promise<void>
     getOverlayState: () => Promise<import('../src/shared/types').OverlayState>
+    getAppPreferences: () => Promise<import('../src/shared/types').AppPreferences>
+    setAppPreferences: (
+      preferences: import('../src/shared/types').AppPreferences,
+    ) => Promise<import('../src/shared/types').AppPreferences>
     getConnectionStatus: () => Promise<import('../src/shared/types').ConnectionStatus | null>
     getShortcutStatus: () => Promise<import('../src/shared/types').ShortcutStatus[]>
     getServerConfig: () => Promise<import('../src/shared/types').ServerConfig>

@@ -40,3 +40,8 @@ export type ShortcutStatus = {
   label: string
   registered: boolean
 }
+
+export type AppPreferences = {
+  minimizeToTray: boolean
+  openAtLogin: boolean
+}

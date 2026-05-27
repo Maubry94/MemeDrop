@@ -3,9 +3,16 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import ControlPanel from './components/control/ControlPanel.vue'
 import LoginView from './components/control/LoginView.vue'
+import PreferencesModal from './components/control/PreferencesModal.vue'
 import DropOverlay from './components/overlay/DropOverlay.vue'
 import { getMediaKind } from './shared/media'
-import type { ConnectionStatus, Drop, OverlayState, ServerConfig } from './shared/types'
+import type {
+  AppPreferences,
+  ConnectionStatus,
+  Drop,
+  OverlayState,
+  ServerConfig,
+} from './shared/types'
 
 type OverlayAnchor = 'full' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 type OverlayPosition = OverlayAnchor | 'custom'
@@ -38,9 +45,14 @@ const customAnchor = ref<OverlayAnchor>(
 )
 const dropsEnabled = ref(true)
 const hideOwnDrops = ref(false)
+const isPreferencesOpen = ref(false)
 const isTestDropActive = ref(false)
 const activeDrop = ref<Drop | null>(null)
 const connectionStatus = ref<ConnectionStatus | null>(null)
+const appPreferences = ref<AppPreferences>({
+  minimizeToTray: false,
+  openAtLogin: false,
+})
 const serverConfig = ref<ServerConfig>({
   serverUrl: '',
   accessKey: '',
@@ -167,11 +179,26 @@ const requestOverlayState = async () => {
   applyOverlayState(await window.memedrop.getOverlayState())
 }
 
+const requestAppPreferences = async () => {
+  if (!window.memedrop) {
+    return
+  }
+  appPreferences.value = await window.memedrop.getAppPreferences()
+}
+
 const requestConnectionStatus = async () => {
   if (!window.memedrop) {
     return
   }
   connectionStatus.value = await window.memedrop.getConnectionStatus()
+}
+
+const updateAppPreferences = async (preferences: AppPreferences) => {
+  if (!window.memedrop) {
+    return
+  }
+
+  appPreferences.value = await window.memedrop.setAppPreferences(preferences)
 }
 
 const requestServerConfig = async () => {
@@ -338,6 +365,7 @@ watch(dropsEnabled, async (value) => {
 
 onMounted(async () => {
   await requestOverlayState()
+  await requestAppPreferences()
   await requestConnectionStatus()
   await requestServerConfig()
   window.addEventListener('storage', handleStorage)
@@ -390,12 +418,17 @@ onMounted(async () => {
     applyOverlayState(state)
   })
 
+  const unsubAppPreferences = window.memedrop?.onAppPreferences((preferences) => {
+    appPreferences.value = preferences
+  })
+
   if (unsubDrop) unsubscribers.push(unsubDrop)
   if (unsubClearDrop) unsubscribers.push(unsubClearDrop)
   if (unsubTestDropCleared) unsubscribers.push(unsubTestDropCleared)
   if (unsubSkipCurrentDrop) unsubscribers.push(unsubSkipCurrentDrop)
   if (unsubStatus) unsubscribers.push(unsubStatus)
   if (unsubOverlay) unsubscribers.push(unsubOverlay)
+  if (unsubAppPreferences) unsubscribers.push(unsubAppPreferences)
 })
 
 onBeforeUnmount(() => {
@@ -427,7 +460,21 @@ onBeforeUnmount(() => {
     >
       <div class="flex items-center justify-between">
         <span class="text-sm font-semibold">MemeDrop</span>
+        <button
+          type="button"
+          class="rounded-md border border-white/10 bg-slate-900/70 px-2 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-900"
+          @click="isPreferencesOpen = true"
+        >
+          Préférences
+        </button>
       </div>
+
+      <PreferencesModal
+        v-if="isPreferencesOpen"
+        :preferences="appPreferences"
+        @close="isPreferencesOpen = false"
+        @update-preferences="updateAppPreferences"
+      />
 
       <LoginView
         v-if="!isDiscordConnected"

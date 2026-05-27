@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, shell } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, shell, Tray } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
@@ -17,6 +17,7 @@ import type {
   ConnectionStatus,
   DiscordUser,
   Drop,
+  AppPreferences,
   OverlayState,
   ServerConfig,
   ShortcutStatus,
@@ -52,8 +53,13 @@ const windowIcon = path.join(process.env.VITE_PUBLIC, 'memeDrop.png')
 
 let overlayWindow: BrowserWindow | null = null
 let controlWindow: BrowserWindow | null = null
+let tray: Tray | null = null
 let dropsEnabled = true
 let hideOwnDrops = false
+let appPreferences: AppPreferences = {
+  minimizeToTray: false,
+  openAtLogin: false,
+}
 let connectionStatus: ConnectionStatus | null = null
 let memeDropClient: MemeDropClientController | null = null
 let currentServerDrop: Drop | null = null
@@ -67,6 +73,7 @@ type AppConfigFile = {
   discord?: Record<string, unknown>
   server?: Partial<ServerConfig>
   overlay?: Partial<Pick<OverlayState, 'hideOwnDrops'>>
+  app?: Partial<AppPreferences>
 }
 
 const loadAppEnv = () => {
@@ -148,6 +155,33 @@ const saveOverlayPreferences = () => {
 
 const loadOverlayPreferences = () => {
   hideOwnDrops = Boolean(readAppConfig().overlay?.hideOwnDrops)
+}
+
+const saveAppPreferences = () => {
+  const nextConfig = {
+    ...readAppConfig(),
+    app: appPreferences,
+  }
+
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeFileSync(getConfigPath(), JSON.stringify(nextConfig, null, 2), 'utf8')
+}
+
+const applyOpenAtLogin = () => {
+  app.setLoginItemSettings({
+    openAtLogin: appPreferences.openAtLogin,
+  })
+}
+
+const loadAppPreferences = () => {
+  const stored = readAppConfig().app ?? {}
+
+  appPreferences = {
+    minimizeToTray: Boolean(stored.minimizeToTray),
+    openAtLogin: Boolean(stored.openAtLogin),
+  }
+
+  applyOpenAtLogin()
 }
 
 const toServerHttpUrl = (serverUrl: string) => {
@@ -297,6 +331,8 @@ const getOverlayState = (): OverlayState => ({
   hideOwnDrops,
 })
 
+const getAppPreferences = (): AppPreferences => ({ ...appPreferences })
+
 const getShortcutStatus = () => shortcutStatus
 
 const sendToWindows = (channel: string, payload: unknown) => {
@@ -355,13 +391,44 @@ const setConnectionStatus = (status: ConnectionStatus) => {
 
 const setDropsEnabled = (enabled: boolean) => {
   dropsEnabled = enabled
+  updateTrayMenu()
   syncOverlayState()
 }
 
 const setHideOwnDrops = (enabled: boolean) => {
   hideOwnDrops = enabled
   saveOverlayPreferences()
+  updateTrayMenu()
   syncOverlayState()
+}
+
+const syncAppPreferences = () => {
+  sendToWindows('app-preferences', getAppPreferences())
+}
+
+const setAppPreferences = (preferences: AppPreferences) => {
+  appPreferences = {
+    minimizeToTray: Boolean(preferences.minimizeToTray),
+    openAtLogin: Boolean(preferences.openAtLogin),
+  }
+
+  applyOpenAtLogin()
+  saveAppPreferences()
+  syncAppPreferences()
+}
+
+const showControlWindow = () => {
+  if (!controlWindow || controlWindow.isDestroyed()) {
+    createControlWindow()
+    return
+  }
+
+  if (controlWindow.isMinimized()) {
+    controlWindow.restore()
+  }
+
+  controlWindow.show()
+  controlWindow.focus()
 }
 
 const skipCurrentDrop = () => {
@@ -416,6 +483,50 @@ const registerGlobalShortcuts = () => {
   }
 
   syncShortcutStatus()
+}
+
+const quitApp = () => {
+  isQuitting = true
+  app.quit()
+}
+
+const updateTrayMenu = () => {
+  if (!tray) {
+    return
+  }
+
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'Afficher MemeDrop',
+        click: showControlWindow,
+      },
+      {
+        label: dropsEnabled ? 'Desactiver les drops' : 'Activer les drops',
+        click: () => setDropsEnabled(!dropsEnabled),
+      },
+      {
+        label: hideOwnDrops ? 'Voir mes drops' : 'Masquer mes drops',
+        click: () => setHideOwnDrops(!hideOwnDrops),
+      },
+      { type: 'separator' },
+      {
+        label: 'Quitter',
+        click: quitApp,
+      },
+    ]),
+  )
+}
+
+const createTray = () => {
+  if (tray) {
+    return
+  }
+
+  tray = new Tray(windowIcon)
+  tray.setToolTip('MemeDrop')
+  tray.on('click', showControlWindow)
+  updateTrayMenu()
 }
 
 const getContentType = (filePath: string) => {
@@ -571,13 +682,22 @@ const createControlWindow = () => {
 
   controlWindow.webContents.on('did-finish-load', () => {
     syncOverlayState()
+    syncAppPreferences()
     syncConnectionStatus()
     syncShortcutStatus()
   })
-  controlWindow.on('close', () => {
-    if (!isQuitting) {
-      app.quit()
+  controlWindow.on('close', (event) => {
+    if (isQuitting) {
+      return
     }
+
+    if (appPreferences.minimizeToTray) {
+      event.preventDefault()
+      controlWindow?.hide()
+      return
+    }
+
+    quitApp()
   })
   controlWindow.on('closed', () => {
     controlWindow = null
@@ -595,8 +715,8 @@ const createWindows = () => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
+  if (process.platform !== 'darwin' && !appPreferences.minimizeToTray) {
+    quitApp()
     overlayWindow = null
     controlWindow = null
   }
@@ -614,14 +734,14 @@ if (!hasInstanceLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    controlWindow?.show()
-    controlWindow?.focus()
+    showControlWindow()
   })
 }
 
 if (hasInstanceLock) app.whenReady().then(async () => {
   loadAppEnv()
   loadOverlayPreferences()
+  loadAppPreferences()
   Menu.setApplicationMenu(null)
   if (!VITE_DEV_SERVER_URL) {
     await startRendererServer()
@@ -630,6 +750,7 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   screen.on('display-removed', keepOverlayAboveFullscreen)
   screen.on('display-metrics-changed', keepOverlayAboveFullscreen)
   createWindows()
+  createTray()
 
   ipcMain.handle('set-drops-enabled', (_event, enabled: boolean) => {
     setDropsEnabled(Boolean(enabled))
@@ -642,6 +763,11 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   })
 
   ipcMain.handle('get-overlay-state', () => getOverlayState())
+  ipcMain.handle('get-app-preferences', () => getAppPreferences())
+  ipcMain.handle('set-app-preferences', (_event, preferences: AppPreferences) => {
+    setAppPreferences(preferences)
+    return getAppPreferences()
+  })
   ipcMain.handle('get-connection-status', () => connectionStatus)
   ipcMain.handle('get-shortcut-status', () => getShortcutStatus())
   ipcMain.handle('get-server-config', () => getServerConfig())
@@ -698,6 +824,8 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   stopOverlayKeepAlive()
+  tray?.destroy()
+  tray = null
   rendererServer?.close()
   rendererServer = null
   rendererServerUrl = null
