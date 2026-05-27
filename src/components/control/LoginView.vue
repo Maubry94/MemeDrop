@@ -44,6 +44,7 @@ const serverConfig = defineModel<ServerConfig>({ required: true })
       v-model="serverConfig"
       :is-saving="isSavingConfig"
       :message="configSavedMessage"
+      default-open
       @save="$emit('saveServerConfig')"
     />
   </div>

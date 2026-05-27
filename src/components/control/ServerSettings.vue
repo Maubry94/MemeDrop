@@ -4,6 +4,7 @@ import type { ServerConfig } from '../../shared/types'
 defineProps<{
   isSaving: boolean
   message: string | null
+  defaultOpen?: boolean
 }>()
 
 defineEmits<{
@@ -14,7 +15,10 @@ const serverConfig = defineModel<ServerConfig>({ required: true })
 </script>
 
 <template>
-  <details class="rounded-lg border border-white/10 bg-slate-900/70 p-3 text-xs text-slate-300">
+  <details
+    class="rounded-lg border border-white/10 bg-slate-900/70 p-3 text-xs text-slate-300"
+    :open="defaultOpen"
+  >
     <summary class="cursor-pointer font-semibold text-slate-200">Paramètres serveur</summary>
     <form class="mt-3 flex flex-col gap-3" @submit.prevent="$emit('save')">
       <label class="flex flex-col gap-1">
