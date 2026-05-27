@@ -1,6 +1,7 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, shell, Tray } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { spawn } from 'node:child_process'
 import {
   createReadStream,
   existsSync,
@@ -498,6 +499,35 @@ const quitApp = () => {
   app.quit()
 }
 
+const uninstallApp = () => {
+  if (!app.isPackaged) {
+    throw new Error("La désinstallation est disponible uniquement sur l'application installée.")
+  }
+
+  const installDir = path.dirname(process.execPath)
+  const candidates = [
+    path.join(installDir, 'Uninstall MemeDrop.exe'),
+    path.join(installDir, `Uninstall ${app.getName()}.exe`),
+    path.join(installDir, 'Uninstall.exe'),
+  ]
+  const uninstaller = candidates.find((candidate) => existsSync(candidate))
+
+  if (!uninstaller) {
+    throw new Error("L'outil de désinstallation est introuvable.")
+  }
+
+  app.setLoginItemSettings({ openAtLogin: false, args: [] })
+  isQuitting = true
+
+  const child = spawn(uninstaller, [], {
+    detached: true,
+    stdio: 'ignore',
+  })
+
+  child.unref()
+  app.quit()
+}
+
 const updateTrayMenu = () => {
   if (!tray) {
     return
@@ -778,6 +808,9 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   ipcMain.handle('set-app-preferences', (_event, preferences: AppPreferences) => {
     setAppPreferences(preferences)
     return getAppPreferences()
+  })
+  ipcMain.handle('uninstall-app', () => {
+    uninstallApp()
   })
   ipcMain.handle('get-connection-status', () => connectionStatus)
   ipcMain.handle('get-shortcut-status', () => getShortcutStatus())

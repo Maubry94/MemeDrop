@@ -201,6 +201,26 @@ const updateAppPreferences = async (preferences: AppPreferences) => {
   appPreferences.value = await window.memedrop.setAppPreferences(preferences)
 }
 
+const uninstallApp = async () => {
+  const confirmed = window.confirm(
+    'Désinstaller MemeDrop ? L’application va lancer le programme de désinstallation Windows.',
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    await window.memedrop?.uninstallApp()
+  } catch (error) {
+    window.alert(
+      error instanceof Error
+        ? error.message
+        : "La désinstallation n'a pas pu être lancée.",
+    )
+  }
+}
+
 const requestServerConfig = async () => {
   if (!window.memedrop) {
     return
@@ -474,6 +494,7 @@ onBeforeUnmount(() => {
         :preferences="appPreferences"
         @close="isPreferencesOpen = false"
         @update-preferences="updateAppPreferences"
+        @uninstall-app="uninstallApp"
       />
 
       <LoginView
