@@ -95,18 +95,10 @@ const overlayCustomStyle = computed<CSSProperties>(() => {
     return {}
   }
 
-  const anchorTransforms: Record<OverlayAnchor, string> = {
-    full: 'translate(-50%, -50%)',
-    'top-left': 'translate(0, 0)',
-    'top-right': 'translate(-100%, 0)',
-    'bottom-left': 'translate(0, -100%)',
-    'bottom-right': 'translate(-100%, -100%)',
-  }
-
   return {
     left: `${customX.value}%`,
     top: `${customY.value}%`,
-    transform: anchorTransforms[customAnchor.value] ?? anchorTransforms.full,
+    transform: `translate(-${customX.value}%, -${customY.value}%)`,
   }
 })
 
@@ -420,12 +412,11 @@ onMounted(async () => {
   })
 
   const unsubTestDropCleared = window.memedrop?.onTestDropCleared(() => {
-    if (activeDrop.value?.id !== TEST_DROP_ID) {
-      return
+    if (activeDrop.value?.id === TEST_DROP_ID) {
+      clearActiveDropTimer()
+      activeDrop.value = null
     }
 
-    clearActiveDropTimer()
-    activeDrop.value = null
     isTestDropActive.value = false
   })
 

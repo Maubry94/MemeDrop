@@ -482,6 +482,7 @@ const showControlWindow = () => {
 
 const skipCurrentDrop = () => {
   overlayWindow?.webContents.send('skip-current-drop')
+  sendToWindows('test-drop-cleared', null)
 }
 
 const completeCurrentDrop = (dropId: string) => {
@@ -909,7 +910,7 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   })
 
   ipcMain.handle('clear-test-drop', () => {
-    overlayWindow?.webContents.send('test-drop-cleared')
+    sendToWindows('test-drop-cleared', null)
   })
 
   registerGlobalShortcuts()

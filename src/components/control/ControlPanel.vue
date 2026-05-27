@@ -136,21 +136,6 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
         @input="$emit('updateCustomY', Number(($event.target as HTMLInputElement).value))"
       />
     </label>
-
-    <label class="col-span-2 flex flex-col gap-1 text-xs text-slate-300">
-      Point d'ancrage
-      <select
-        :value="customAnchor"
-        class="w-full rounded-lg border border-white/10 bg-slate-900/70 px-2 py-1 text-sm text-slate-100"
-        @change="$emit('updateCustomAnchor', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="full">Centre</option>
-        <option value="top-left">Haut gauche</option>
-        <option value="top-right">Haut droite</option>
-        <option value="bottom-left">Bas gauche</option>
-        <option value="bottom-right">Bas droite</option>
-      </select>
-    </label>
   </div>
 
   <label class="flex flex-col gap-2 text-xs text-slate-300">
