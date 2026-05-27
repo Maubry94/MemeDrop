@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ConnectionStatus, ServerConfig } from '../../shared/types'
+import type { ConnectionStatus, ServerConfig } from '../../../shared/types'
 import DiscordAccount from './DiscordAccount.vue'
 import ServerSettings from './ServerSettings.vue'
 

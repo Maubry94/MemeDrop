@@ -1,16 +1,36 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js'
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChatInputCommandInteraction,
+  MessageFlags,
+  User,
+  type Interaction,
+} from 'discord.js'
+import type { ConnectedUser, Drop } from '../../shared/types.js'
+import type { BroadcastDrop, GetConnectedUsers, StopDropByOwner } from '../types.js'
 import { isSupportedAttachment } from '../utils/attachments.js'
 import { getYouTubeVideoId, isValidYouTubeVideoId } from '../utils/youtube.js'
 
 const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'dropstatus'])
 
-const getUserAvatarUrl = (user) =>
+type BaseDrop = Omit<Drop, 'id' | 'url' | 'contentType' | 'fileName' | 'youtubeVideoId' | 'targetUserId' | 'targetUserName'>
+
+type DiscordApiErrorLike = {
+  code?: number
+}
+
+const getUserAvatarUrl = (user: User): string =>
   user.displayAvatarURL({
     extension: 'png',
     size: 128,
   })
 
-const createBaseDrop = (interaction, caption, isAnonymous) => ({
+const createBaseDrop = (
+  interaction: ChatInputCommandInteraction,
+  caption: string | null,
+  isAnonymous: boolean,
+): BaseDrop => ({
   caption: caption || null,
   authorId: isAnonymous ? null : interaction.user.id,
   ownerId: interaction.user.id,
@@ -20,8 +40,8 @@ const createBaseDrop = (interaction, caption, isAnonymous) => ({
   createdAt: new Date().toISOString(),
 })
 
-const createStopButtonComponents = (dropId) => [
-  new ActionRowBuilder().addComponents(
+const createStopButtonComponents = (dropId: string) => [
+  new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`stop-drop:${dropId}`)
       .setLabel('Stopper le drop')
@@ -29,15 +49,15 @@ const createStopButtonComponents = (dropId) => [
   ),
 ]
 
-const getTargetUser = (interaction) => interaction.options.getUser('cible')
+const getTargetUser = (interaction: ChatInputCommandInteraction) => interaction.options.getUser('cible')
 
-const withTarget = (drop, targetUser) => ({
+const withTarget = (drop: Drop, targetUser: User | null): Drop => ({
   ...drop,
   targetUserId: targetUser?.id ?? null,
   targetUserName: targetUser?.username ?? null,
 })
 
-const createSentMessage = (sentCount, targetUser) => {
+const createSentMessage = (sentCount: number, targetUser: User | null): string => {
   if (!sentCount && targetUser) {
     return `Aucun client MemeDrop connecté pour ${targetUser.username}.`
   }
@@ -49,7 +69,13 @@ const createSentMessage = (sentCount, targetUser) => {
   return targetUser ? `Drop envoyé à ${targetUser.username} !` : 'Drop envoyé !'
 }
 
-const editDropReply = async (interaction, dropId, sentCount, targetUser, fallbackMessage) => {
+const editDropReply = async (
+  interaction: ChatInputCommandInteraction,
+  dropId: string,
+  sentCount: number,
+  targetUser: User | null,
+  fallbackMessage: string,
+) => {
   if (!sentCount) {
     await interaction.editReply(createSentMessage(sentCount, targetUser))
     return
@@ -61,7 +87,12 @@ const editDropReply = async (interaction, dropId, sentCount, targetUser, fallbac
   })
 }
 
-const handleYouTubeDrop = async (interaction, caption, isAnonymous, broadcastDrop) => {
+const handleYouTubeDrop = async (
+  interaction: ChatInputCommandInteraction,
+  caption: string | null,
+  isAnonymous: boolean,
+  broadcastDrop: BroadcastDrop,
+) => {
   const link = interaction.options.getString('lien', true)
   const youtubeVideoId = getYouTubeVideoId(link)
   const targetUser = getTargetUser(interaction)
@@ -85,7 +116,12 @@ const handleYouTubeDrop = async (interaction, caption, isAnonymous, broadcastDro
   await editDropReply(interaction, dropId, sentCount, targetUser, 'Drop YouTube envoyé !')
 }
 
-const handleFileDrop = async (interaction, caption, isAnonymous, broadcastDrop) => {
+const handleFileDrop = async (
+  interaction: ChatInputCommandInteraction,
+  caption: string | null,
+  isAnonymous: boolean,
+  broadcastDrop: BroadcastDrop,
+) => {
   const attachment = interaction.options.getAttachment('fichier')
   const targetUser = getTargetUser(interaction)
 
@@ -111,7 +147,10 @@ const handleFileDrop = async (interaction, caption, isAnonymous, broadcastDrop) 
   await editDropReply(interaction, attachment.id, sentCount, targetUser, 'Drop envoyé !')
 }
 
-const handleStopButton = async (interaction, stopDropByOwner) => {
+const handleStopButton = async (
+  interaction: Interaction,
+  stopDropByOwner: StopDropByOwner,
+): Promise<boolean> => {
   if (!interaction.isButton() || !interaction.customId.startsWith('stop-drop:')) {
     return false
   }
@@ -127,7 +166,10 @@ const handleStopButton = async (interaction, stopDropByOwner) => {
   return true
 }
 
-const resolveConnectedUserName = async (interaction, user) => {
+const resolveConnectedUserName = async (
+  interaction: ChatInputCommandInteraction,
+  user: ConnectedUser,
+): Promise<string> => {
   if (user.name && user.name !== user.id) {
     return user.name
   }
@@ -140,7 +182,10 @@ const resolveConnectedUserName = async (interaction, user) => {
   }
 }
 
-const handleDropStatus = async (interaction, getConnectedUsers) => {
+const handleDropStatus = async (
+  interaction: ChatInputCommandInteraction,
+  getConnectedUsers: GetConnectedUsers,
+) => {
   const users = getConnectedUsers().filter((user) => user.id !== interaction.user.id)
 
   if (!users.length) {
@@ -169,7 +214,17 @@ const handleDropStatus = async (interaction, getConnectedUsers) => {
   })
 }
 
-export const createInteractionHandler = ({ broadcastDrop, getConnectedUsers, stopDropByOwner }) => async (interaction) => {
+export const createInteractionHandler =
+  ({
+    broadcastDrop,
+    getConnectedUsers,
+    stopDropByOwner,
+  }: {
+    broadcastDrop: BroadcastDrop
+    getConnectedUsers: GetConnectedUsers
+    stopDropByOwner: StopDropByOwner
+  }) =>
+  async (interaction: Interaction) => {
   if (await handleStopButton(interaction, stopDropByOwner)) {
     return
   }
@@ -200,7 +255,7 @@ export const createInteractionHandler = ({ broadcastDrop, getConnectedUsers, sto
 
     await handleFileDrop(interaction, caption, isAnonymous, broadcastDrop)
   } catch (error) {
-    if (error?.code === 10062) {
+    if ((error as DiscordApiErrorLike)?.code === 10062) {
       console.error(
         `Interaction Discord inconnue pour /${interaction.commandName}. Le drop n'a pas été ajouté à la queue. Vérifie qu'un seul serveur MemeDrop utilise ce bot et que le serveur répond en moins de 3 secondes.`,
       )

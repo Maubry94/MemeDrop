@@ -9,7 +9,7 @@ import type {
   OverlayState,
   ServerConfig,
   ShortcutStatus,
-} from '../src/shared/types'
+} from '../shared/types'
 
 type Unsubscribe = () => void
 

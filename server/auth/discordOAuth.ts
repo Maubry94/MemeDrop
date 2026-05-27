@@ -1,24 +1,58 @@
 import { randomUUID } from 'node:crypto'
+import type http from 'node:http'
+import type { DiscordUser } from '../../shared/types.js'
 import { sendAuthPage } from './authPages.js'
 import { isAuthorizedRequest } from '../http/authKey.js'
 import { sendJsonResponse } from '../http/responses.js'
 
 const AUTH_SESSION_MS = 5 * 60 * 1000
 
-const getPublicBaseUrl = (request, publicBaseUrl) => {
+type DiscordOAuthOptions = {
+  clientId?: string
+  clientSecret?: string
+  publicBaseUrl?: string
+  serverKey: string
+}
+
+type DiscordOAuthSession =
+  | {
+      status: 'pending'
+      expiresAt: number
+    }
+  | {
+      status: 'done'
+      expiresAt: number
+      user: DiscordUser
+    }
+
+type DiscordApiUser = {
+  id: string
+  username?: string
+  global_name?: string | null
+  avatar?: string | null
+}
+
+type DiscordTokenResponse = {
+  access_token: string
+}
+
+const getHeaderValue = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value
+
+const getPublicBaseUrl = (request: http.IncomingMessage, publicBaseUrl?: string) => {
   if (publicBaseUrl) {
     return publicBaseUrl.replace(/\/$/, '')
   }
 
-  const protocol = request.headers['x-forwarded-proto'] ?? 'http'
-  const host = request.headers['x-forwarded-host'] ?? request.headers.host
-  return `${Array.isArray(protocol) ? protocol[0] : protocol}://${Array.isArray(host) ? host[0] : host}`
+  const protocol = getHeaderValue(request.headers['x-forwarded-proto']) ?? 'http'
+  const host = getHeaderValue(request.headers['x-forwarded-host']) ?? request.headers.host ?? 'localhost'
+  return `${protocol}://${host}`
 }
 
-const getOAuthRedirectUri = (request, publicBaseUrl) =>
+const getOAuthRedirectUri = (request: http.IncomingMessage, publicBaseUrl?: string) =>
   `${getPublicBaseUrl(request, publicBaseUrl)}/auth/discord/callback`
 
-const getDiscordAvatarUrl = (user) => {
+const getDiscordAvatarUrl = (user: DiscordApiUser): string | null => {
   if (!user.avatar) {
     return null
   }
@@ -26,15 +60,16 @@ const getDiscordAvatarUrl = (user) => {
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`
 }
 
-const getDiscordDisplayName = (user) => user.global_name ?? user.username ?? 'Discord'
+const getDiscordDisplayName = (user: DiscordApiUser): string =>
+  user.global_name ?? user.username ?? 'Discord'
 
 export const createDiscordOAuthHandlers = ({
   clientId,
   clientSecret,
   publicBaseUrl,
   serverKey,
-}) => {
-  const authSessions = new Map()
+}: DiscordOAuthOptions) => {
+  const authSessions = new Map<string, DiscordOAuthSession>()
 
   const cleanupAuthSessions = () => {
     const now = Date.now()
@@ -46,7 +81,14 @@ export const createDiscordOAuthHandlers = ({
     }
   }
 
-  const exchangeDiscordCode = async (request, code) => {
+  const exchangeDiscordCode = async (
+    request: http.IncomingMessage,
+    code: string,
+  ): Promise<DiscordUser> => {
+    if (!clientId || !clientSecret) {
+      throw new Error('Discord OAuth is not configured.')
+    }
+
     const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
       headers: {
@@ -66,7 +108,7 @@ export const createDiscordOAuthHandlers = ({
       throw new Error(`Discord token exchange failed (${tokenResponse.status}): ${body}`)
     }
 
-    const token = await tokenResponse.json()
+    const token = (await tokenResponse.json()) as DiscordTokenResponse
     const userResponse = await fetch('https://discord.com/api/users/@me', {
       headers: {
         authorization: `Bearer ${token.access_token}`,
@@ -78,7 +120,7 @@ export const createDiscordOAuthHandlers = ({
       throw new Error(`Discord user fetch failed (${userResponse.status}): ${body}`)
     }
 
-    const user = await userResponse.json()
+    const user = (await userResponse.json()) as DiscordApiUser
     return {
       id: user.id,
       username: getDiscordDisplayName(user),
@@ -86,7 +128,11 @@ export const createDiscordOAuthHandlers = ({
     }
   }
 
-  const handleDiscordAuthStart = (request, response, requestUrl) => {
+  const handleDiscordAuthStart = (
+    request: http.IncomingMessage,
+    response: http.ServerResponse,
+    requestUrl: URL,
+  ) => {
     if (!isAuthorizedRequest(request, requestUrl, serverKey)) {
       console.warn('Connexion Discord refusée: clé MemeDrop invalide.')
       sendJsonResponse(response, 401, { error: 'Invalid MemeDrop key' })
@@ -125,7 +171,11 @@ export const createDiscordOAuthHandlers = ({
     })
   }
 
-  const handleDiscordAuthStatus = (request, response, requestUrl) => {
+  const handleDiscordAuthStatus = (
+    request: http.IncomingMessage,
+    response: http.ServerResponse,
+    requestUrl: URL,
+  ) => {
     if (!isAuthorizedRequest(request, requestUrl, serverKey)) {
       console.warn('Statut OAuth Discord refusé: clé MemeDrop invalide.')
       sendJsonResponse(response, 401, { error: 'Invalid MemeDrop key' })
@@ -135,7 +185,12 @@ export const createDiscordOAuthHandlers = ({
     cleanupAuthSessions()
 
     const sessionId = requestUrl.pathname.split('/').pop()
-    const session = authSessions.get(sessionId)
+    if (!sessionId) {
+      sendJsonResponse(response, 404, { status: 'expired' })
+      return
+    }
+
+    const session = sessionId ? authSessions.get(sessionId) : undefined
 
     if (!session) {
       console.warn(`Session OAuth Discord introuvable ou expirée: ${sessionId}.`)
@@ -158,7 +213,11 @@ export const createDiscordOAuthHandlers = ({
     })
   }
 
-  const handleDiscordAuthCallback = async (request, response, requestUrl) => {
+  const handleDiscordAuthCallback = async (
+    request: http.IncomingMessage,
+    response: http.ServerResponse,
+    requestUrl: URL,
+  ) => {
     const code = requestUrl.searchParams.get('code')
     const sessionId = requestUrl.searchParams.get('state')
     const session = sessionId ? authSessions.get(sessionId) : null

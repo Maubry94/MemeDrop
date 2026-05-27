@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import type { Drop } from '../../shared/types'
-import type { MediaKind } from '../../shared/media'
+import type { Drop } from '../../../shared/types'
+import type { MediaKind } from '../../../shared/media'
 import type { CSSProperties } from 'vue'
 import DropAuthor from './DropAuthor.vue'
 

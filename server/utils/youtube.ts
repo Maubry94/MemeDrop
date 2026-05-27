@@ -1,4 +1,4 @@
-export const getYouTubeVideoId = (value) => {
+export const getYouTubeVideoId = (value: string): string | null => {
   try {
     const normalizedValue = value.match(/^https?:\/\//i) ? value : `https://${value}`
     const url = new URL(normalizedValue)
@@ -14,7 +14,7 @@ export const getYouTubeVideoId = (value) => {
       }
 
       const [, kind, id] = url.pathname.split('/')
-      if (['embed', 'shorts', 'live'].includes(kind)) {
+      if (kind && ['embed', 'shorts', 'live'].includes(kind)) {
         return id ?? null
       }
     }
@@ -25,4 +25,4 @@ export const getYouTubeVideoId = (value) => {
   return null
 }
 
-export const isValidYouTubeVideoId = (value) => /^[a-zA-Z0-9_-]{11}$/.test(value)
+export const isValidYouTubeVideoId = (value: string): boolean => /^[a-zA-Z0-9_-]{11}$/.test(value)

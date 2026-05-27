@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AppPreferences } from '../../shared/types'
+import type { AppPreferences } from '../../../shared/types'
 
 defineProps<{
   preferences: AppPreferences

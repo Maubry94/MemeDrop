@@ -24,7 +24,7 @@ import type {
   OverlayState,
   ServerConfig,
   ShortcutStatus,
-} from '../src/shared/types'
+} from '../shared/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const APP_ID = 'com.memedrop.app'

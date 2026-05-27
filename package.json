@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build && electron-builder",
-    "pack:win": "vue-tsc && vite build && electron-builder --win --dir",
+    "build": "vue-tsc && vite build && npm run build:server && electron-builder",
+    "build:server": "tsc -p tsconfig.server.json",
+    "pack:win": "vue-tsc && vite build && npm run build:server && electron-builder --win --dir",
     "preview": "vite preview",
-    "server:start": "node server/index.js"
+    "server:start": "node dist-server/server/index.js"
   },
   "dependencies": {
     "discord.js": "^14.26.4",
