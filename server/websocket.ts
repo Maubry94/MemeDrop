@@ -59,6 +59,9 @@ export const createMemeDropWebSocketServer = ({
       .filter(([, client]) => client.userId)
       .map(([socket]) => socket)
 
+  const getClientLogSummary = () =>
+    `${clients.size} connexion(s), ${getEligibleClients().length} client(s) identifié(s)`
+
   const getConnectedUsers = (): ConnectedUser[] => {
     const users = new Map<string, ConnectedUser>()
 
@@ -129,7 +132,9 @@ export const createMemeDropWebSocketServer = ({
       })
     }
 
-    console.log(`Drop actif: ${drop.id} (${targets.length} client(s) ciblé(s)).`)
+    console.log(
+      `Drop actif: ${drop.id} (${targets.length} client(s) ciblé(s), ${getClientLogSummary()}).`,
+    )
 
     const contentType = drop.contentType?.toLowerCase() ?? ''
     if (contentType.startsWith('image/')) {
@@ -223,7 +228,12 @@ export const createMemeDropWebSocketServer = ({
 
     job.done.add(socket)
     if (job.done.size >= job.targets.size) {
-      console.log(`Drop terminé chez tous les clients ciblés: ${dropId}.`)
+      if (job.scope === 'targeted') {
+        const targetLabel = job.drop.targetUserName ?? job.targetUserId ?? 'la cible'
+        console.log(`Drop ciblé terminé pour ${targetLabel}: ${dropId}.`)
+      } else {
+        console.log(`Drop global terminé chez tous les clients: ${dropId}.`)
+      }
       finishJob(job, { sendClear: false })
     }
   }
@@ -314,7 +324,7 @@ export const createMemeDropWebSocketServer = ({
       userAvatarUrl,
       dropsEnabled: true,
     })
-    console.log(`Client MemeDrop connecté (${clients.size} client(s)).`)
+    console.log(`Client MemeDrop connecté (${getClientLogSummary()}).`)
     sendJson(socket, { type: 'hello' })
     broadcastConnectedUsers()
     scheduleDrops()
@@ -361,7 +371,7 @@ export const createMemeDropWebSocketServer = ({
         }
       }
 
-      console.log(`Client MemeDrop déconnecté (${clients.size} client(s)).`)
+      console.log(`Client MemeDrop déconnecté (${getClientLogSummary()}).`)
       broadcastConnectedUsers()
       scheduleDrops()
     })

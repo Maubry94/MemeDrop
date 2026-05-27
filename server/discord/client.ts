@@ -28,7 +28,7 @@ export const createDiscordBot = ({
 
     if (discord.user) {
       await registerSlashCommands(token, guildId, discord.user.id)
-      console.log('Commandes /drop et /dropyt enregistrées.')
+      console.log('Commandes /drop, /dropyt et /dropstatus enregistrées.')
     }
   })
 
