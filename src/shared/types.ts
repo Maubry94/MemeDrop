@@ -39,6 +39,19 @@ export type OverlayState = {
   hideOwnDrops: boolean
 }
 
+export type OverlayAnchor = 'full' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+
+export type OverlayPosition = OverlayAnchor | 'custom'
+
+export type OverlayDisplayPreferences = {
+  position: OverlayPosition
+  volume: number
+  size: number
+  customX: number
+  customY: number
+  customAnchor: OverlayAnchor
+}
+
 export type ShortcutStatus = {
   accelerator: string
   label: string

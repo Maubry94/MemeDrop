@@ -4,6 +4,7 @@ import type {
   ConnectionStatus,
   Drop,
   AppPreferences,
+  OverlayDisplayPreferences,
   OverlayState,
   ServerConfig,
   ShortcutStatus,
@@ -28,6 +29,8 @@ contextBridge.exposeInMainWorld('memedrop', {
     onChannel('shortcut-status', handler),
   onOverlayState: (handler: (state: OverlayState) => void) =>
     onChannel('overlay-state', handler),
+  onOverlayDisplayPreferences: (handler: (preferences: OverlayDisplayPreferences) => void) =>
+    onChannel('overlay-display-preferences', handler),
   onAppPreferences: (handler: (preferences: AppPreferences) => void) =>
     onChannel('app-preferences', handler),
   setDropsEnabled: (enabled: boolean) => ipcRenderer.invoke('set-drops-enabled', enabled),
@@ -38,6 +41,9 @@ contextBridge.exposeInMainWorld('memedrop', {
   completeCurrentDrop: (dropId: string) => ipcRenderer.invoke('complete-current-drop', dropId),
   stopCurrentDropForEveryone: () => ipcRenderer.invoke('stop-current-drop-for-everyone'),
   getOverlayState: () => ipcRenderer.invoke('get-overlay-state'),
+  getOverlayDisplayPreferences: () => ipcRenderer.invoke('get-overlay-display-preferences'),
+  setOverlayDisplayPreferences: (preferences: OverlayDisplayPreferences) =>
+    ipcRenderer.invoke('set-overlay-display-preferences', preferences),
   getAppPreferences: () => ipcRenderer.invoke('get-app-preferences'),
   setAppPreferences: (preferences: AppPreferences) =>
     ipcRenderer.invoke('set-app-preferences', preferences),

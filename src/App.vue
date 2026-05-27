@@ -10,22 +10,15 @@ import type {
   AppPreferences,
   ConnectionStatus,
   Drop,
+  OverlayAnchor,
+  OverlayDisplayPreferences,
+  OverlayPosition,
   OverlayState,
   ServerConfig,
 } from './shared/types'
 
-type OverlayAnchor = 'full' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
-type OverlayPosition = OverlayAnchor | 'custom'
 type AppView = 'overlay' | 'control'
 
-const STORAGE_KEYS = {
-  position: 'memedrop.overlay.position',
-  volume: 'memedrop.overlay.volume',
-  size: 'memedrop.overlay.size',
-  customX: 'memedrop.overlay.customX',
-  customY: 'memedrop.overlay.customY',
-  customAnchor: 'memedrop.overlay.customAnchor',
-}
 const TEST_DROP_ID = 'memedrop-test-preview'
 
 const viewParam = new URLSearchParams(window.location.search).get('view')
@@ -33,16 +26,12 @@ const view: AppView = viewParam === 'control' ? 'control' : 'overlay'
 const isOverlayView = computed(() => view === 'overlay')
 const isControlView = computed(() => view === 'control')
 
-const overlayPosition = ref<OverlayPosition>(
-  (localStorage.getItem(STORAGE_KEYS.position) as OverlayPosition) ?? 'full',
-)
-const dropVolume = ref(Number(localStorage.getItem(STORAGE_KEYS.volume) ?? '80'))
-const dropSize = ref(Number(localStorage.getItem(STORAGE_KEYS.size) ?? '100'))
-const customX = ref(Number(localStorage.getItem(STORAGE_KEYS.customX) ?? '50'))
-const customY = ref(Number(localStorage.getItem(STORAGE_KEYS.customY) ?? '50'))
-const customAnchor = ref<OverlayAnchor>(
-  (localStorage.getItem(STORAGE_KEYS.customAnchor) as OverlayAnchor) ?? 'full',
-)
+const overlayPosition = ref<OverlayPosition>('full')
+const dropVolume = ref(100)
+const dropSize = ref(100)
+const customX = ref(50)
+const customY = ref(50)
+const customAnchor = ref<OverlayAnchor>('full')
 const dropsEnabled = ref(true)
 const hideOwnDrops = ref(false)
 const isPreferencesOpen = ref(false)
@@ -69,6 +58,7 @@ const unsubscribers: Array<() => void> = []
 const DISPLAY_MS = 9000
 let activeDropTimer: number | undefined
 let syncingState = false
+let syncingDisplayPreferences = false
 
 const activeKind = computed(() => getMediaKind(activeDrop.value))
 const hasDrop = computed(() => Boolean(activeDrop.value) && dropsEnabled.value)
@@ -177,6 +167,43 @@ const requestOverlayState = async () => {
     return
   }
   applyOverlayState(await window.memedrop.getOverlayState())
+}
+
+const getCurrentOverlayDisplayPreferences = (): OverlayDisplayPreferences => ({
+  position: overlayPosition.value,
+  volume: dropVolume.value,
+  size: dropSize.value,
+  customX: customX.value,
+  customY: customY.value,
+  customAnchor: customAnchor.value,
+})
+
+const applyOverlayDisplayPreferences = (preferences: OverlayDisplayPreferences) => {
+  syncingDisplayPreferences = true
+  overlayPosition.value = preferences.position
+  dropVolume.value = preferences.volume
+  dropSize.value = preferences.size
+  customX.value = preferences.customX
+  customY.value = preferences.customY
+  customAnchor.value = preferences.customAnchor
+  syncingDisplayPreferences = false
+}
+
+const requestOverlayDisplayPreferences = async () => {
+  if (!window.memedrop) {
+    return
+  }
+  applyOverlayDisplayPreferences(await window.memedrop.getOverlayDisplayPreferences())
+}
+
+const saveOverlayDisplayPreferences = async () => {
+  if (syncingDisplayPreferences || !window.memedrop) {
+    return
+  }
+
+  applyOverlayDisplayPreferences(
+    await window.memedrop.setOverlayDisplayPreferences(getCurrentOverlayDisplayPreferences()),
+  )
 }
 
 const requestAppPreferences = async () => {
@@ -326,54 +353,28 @@ const triggerTestDrop = async () => {
   })
 }
 
-const handleStorage = (event: StorageEvent) => {
-  if (event.key === STORAGE_KEYS.position) {
-    overlayPosition.value = (event.newValue as OverlayPosition) ?? 'bottom-right'
-  }
-
-  if (event.key === STORAGE_KEYS.volume) {
-    dropVolume.value = Number(event.newValue ?? '80')
-  }
-
-  if (event.key === STORAGE_KEYS.size) {
-    dropSize.value = Number(event.newValue ?? '100')
-  }
-
-  if (event.key === STORAGE_KEYS.customX) {
-    customX.value = Number(event.newValue ?? '50')
-  }
-
-  if (event.key === STORAGE_KEYS.customY) {
-    customY.value = Number(event.newValue ?? '50')
-  }
-
-  if (event.key === STORAGE_KEYS.customAnchor) {
-    customAnchor.value = (event.newValue as OverlayAnchor) ?? 'full'
-  }
-}
-
-watch(overlayPosition, (value) => {
-  localStorage.setItem(STORAGE_KEYS.position, value)
+watch(overlayPosition, () => {
+  void saveOverlayDisplayPreferences()
 })
 
-watch(dropVolume, (value) => {
-  localStorage.setItem(STORAGE_KEYS.volume, String(value))
+watch(dropVolume, () => {
+  void saveOverlayDisplayPreferences()
 })
 
-watch(dropSize, (value) => {
-  localStorage.setItem(STORAGE_KEYS.size, String(value))
+watch(dropSize, () => {
+  void saveOverlayDisplayPreferences()
 })
 
-watch(customX, (value) => {
-  localStorage.setItem(STORAGE_KEYS.customX, String(value))
+watch(customX, () => {
+  void saveOverlayDisplayPreferences()
 })
 
-watch(customY, (value) => {
-  localStorage.setItem(STORAGE_KEYS.customY, String(value))
+watch(customY, () => {
+  void saveOverlayDisplayPreferences()
 })
 
-watch(customAnchor, (value) => {
-  localStorage.setItem(STORAGE_KEYS.customAnchor, value)
+watch(customAnchor, () => {
+  void saveOverlayDisplayPreferences()
 })
 
 watch(dropsEnabled, async (value) => {
@@ -389,10 +390,10 @@ watch(dropsEnabled, async (value) => {
 
 onMounted(async () => {
   await requestOverlayState()
+  await requestOverlayDisplayPreferences()
   await requestAppPreferences()
   await requestConnectionStatus()
   await requestServerConfig()
-  window.addEventListener('storage', handleStorage)
 
   const unsubDrop = window.memedrop?.onDrop((drop) => {
     activeDrop.value = drop
@@ -442,6 +443,12 @@ onMounted(async () => {
     applyOverlayState(state)
   })
 
+  const unsubOverlayDisplayPreferences = window.memedrop?.onOverlayDisplayPreferences(
+    (preferences) => {
+      applyOverlayDisplayPreferences(preferences)
+    },
+  )
+
   const unsubAppPreferences = window.memedrop?.onAppPreferences((preferences) => {
     appPreferences.value = preferences
   })
@@ -452,11 +459,11 @@ onMounted(async () => {
   if (unsubSkipCurrentDrop) unsubscribers.push(unsubSkipCurrentDrop)
   if (unsubStatus) unsubscribers.push(unsubStatus)
   if (unsubOverlay) unsubscribers.push(unsubOverlay)
+  if (unsubOverlayDisplayPreferences) unsubscribers.push(unsubOverlayDisplayPreferences)
   if (unsubAppPreferences) unsubscribers.push(unsubAppPreferences)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('storage', handleStorage)
   clearActiveDropTimer()
   unsubscribers.forEach((unsubscribe) => unsubscribe())
 })

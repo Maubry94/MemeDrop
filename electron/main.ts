@@ -19,6 +19,7 @@ import type {
   DiscordUser,
   Drop,
   AppPreferences,
+  OverlayDisplayPreferences,
   OverlayState,
   ServerConfig,
   ShortcutStatus,
@@ -76,7 +77,7 @@ let shouldStartControlHidden = false
 type AppConfigFile = {
   discord?: Record<string, unknown>
   server?: Partial<ServerConfig>
-  overlay?: Partial<Pick<OverlayState, 'hideOwnDrops'>>
+  overlay?: Partial<Pick<OverlayState, 'hideOwnDrops'> & OverlayDisplayPreferences>
   app?: Partial<AppPreferences>
 }
 
@@ -159,6 +160,41 @@ const saveOverlayPreferences = () => {
 
 const loadOverlayPreferences = () => {
   hideOwnDrops = Boolean(readAppConfig().overlay?.hideOwnDrops)
+}
+
+const getOverlayDisplayPreferences = (): OverlayDisplayPreferences => {
+  const stored = readAppConfig().overlay ?? {}
+
+  return {
+    position: stored.position ?? 'full',
+    volume: Number(stored.volume ?? 100),
+    size: Number(stored.size ?? 100),
+    customX: Number(stored.customX ?? 50),
+    customY: Number(stored.customY ?? 50),
+    customAnchor: stored.customAnchor ?? 'full',
+  }
+}
+
+const saveOverlayDisplayPreferences = (
+  preferences: OverlayDisplayPreferences,
+): OverlayDisplayPreferences => {
+  const nextConfig = {
+    ...readAppConfig(),
+    overlay: {
+      ...readAppConfig().overlay,
+      position: preferences.position,
+      volume: preferences.volume,
+      size: preferences.size,
+      customX: preferences.customX,
+      customY: preferences.customY,
+      customAnchor: preferences.customAnchor,
+    },
+  }
+
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeFileSync(getConfigPath(), JSON.stringify(nextConfig, null, 2), 'utf8')
+
+  return getOverlayDisplayPreferences()
 }
 
 const saveAppPreferences = () => {
@@ -380,6 +416,10 @@ const stopOverlayKeepAlive = () => {
 
 const syncOverlayState = () => {
   sendToWindows('overlay-state', getOverlayState())
+}
+
+const syncOverlayDisplayPreferences = () => {
+  sendToWindows('overlay-display-preferences', getOverlayDisplayPreferences())
 }
 
 const syncConnectionStatus = () => {
@@ -689,6 +729,7 @@ const createOverlayWindow = () => {
   startOverlayKeepAlive()
   overlayWindow.webContents.on('did-finish-load', () => {
     syncOverlayState()
+    syncOverlayDisplayPreferences()
     syncConnectionStatus()
     syncShortcutStatus()
     keepOverlayAboveFullscreen()
@@ -722,6 +763,7 @@ const createControlWindow = () => {
   controlWindow.webContents.on('did-finish-load', () => {
     controlWindow?.setTitle(getAppTitle())
     syncOverlayState()
+    syncOverlayDisplayPreferences()
     syncAppPreferences()
     syncConnectionStatus()
     syncShortcutStatus()
@@ -804,6 +846,15 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   })
 
   ipcMain.handle('get-overlay-state', () => getOverlayState())
+  ipcMain.handle('get-overlay-display-preferences', () => getOverlayDisplayPreferences())
+  ipcMain.handle(
+    'set-overlay-display-preferences',
+    (_event, preferences: OverlayDisplayPreferences) => {
+      const savedPreferences = saveOverlayDisplayPreferences(preferences)
+      syncOverlayDisplayPreferences()
+      return savedPreferences
+    },
+  )
   ipcMain.handle('get-app-preferences', () => getAppPreferences())
   ipcMain.handle('set-app-preferences', (_event, preferences: AppPreferences) => {
     setAppPreferences(preferences)

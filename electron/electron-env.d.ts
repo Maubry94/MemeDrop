@@ -37,6 +37,9 @@ interface Window {
     onOverlayState: (
       handler: (state: import('../src/shared/types').OverlayState) => void,
     ) => () => void
+    onOverlayDisplayPreferences: (
+      handler: (preferences: import('../src/shared/types').OverlayDisplayPreferences) => void,
+    ) => () => void
     onAppPreferences: (
       handler: (preferences: import('../src/shared/types').AppPreferences) => void,
     ) => () => void
@@ -52,6 +55,10 @@ interface Window {
     completeCurrentDrop: (dropId: string) => Promise<void>
     stopCurrentDropForEveryone: () => Promise<void>
     getOverlayState: () => Promise<import('../src/shared/types').OverlayState>
+    getOverlayDisplayPreferences: () => Promise<import('../src/shared/types').OverlayDisplayPreferences>
+    setOverlayDisplayPreferences: (
+      preferences: import('../src/shared/types').OverlayDisplayPreferences,
+    ) => Promise<import('../src/shared/types').OverlayDisplayPreferences>
     getAppPreferences: () => Promise<import('../src/shared/types').AppPreferences>
     setAppPreferences: (
       preferences: import('../src/shared/types').AppPreferences,
