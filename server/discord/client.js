@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits } from 'discord.js'
+import { ActivityType, Client, GatewayIntentBits } from 'discord.js'
 import { registerSlashCommands } from './commands.js'
 import { createInteractionHandler } from './interactions.js'
 
@@ -16,6 +16,7 @@ export const createDiscordBot = ({ token, guildId, broadcastDrop, stopDropByOwne
   discord.once('clientReady', async () => {
     onStatusChange('connected')
     console.log(`Discord connecté en tant que ${discord.user?.tag ?? 'bot'}.`)
+    discord.user?.setActivity('Regarde les memes 👀')
 
     if (discord.user) {
       await registerSlashCommands(token, guildId, discord.user.id)
