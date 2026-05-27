@@ -16,11 +16,58 @@ Chaque utilisateur se connecte avec Discord dans l'app.
 
 - `/drop` : envoyer une image, vidéo ou piste audio.
 - `/dropyt` : envoyer une vidéo YouTube.
-- Queue commune côté Discord, affichage local côté app.
+- Options Discord :
+  - `legende` : ajouter un texte au drop.
+  - `anonyme` : masquer son pseudo et son avatar.
+  - `cible` : envoyer le drop à une personne spécifique uniquement.
+- Queue commune pour les drops globaux.
+- Queues séparées par utilisateur pour les drops ciblés.
+- Bouton Discord `Stopper le drop` pour l'auteur.
 - Connexion Discord OAuth dans l'app.
 - Option pour masquer ses propres drops.
 - Volume des drops réglable.
+- Position et taille des drops personnalisables.
+- Bouton de test local pour prévisualiser un drop sans l'envoyer au serveur.
+- Préférences d'application :
+  - minimiser en arrière-plan.
+  - démarrer avec Windows.
+  - démarrer minimisé avec Windows.
+  - quitter vraiment l'application.
+  - désinstaller l'application.
+- Icône tray Windows avec menu rapide.
 - Raccourcis globaux pour couper ou désactiver les drops.
+
+## Commandes Discord
+
+### `/drop`
+
+Envoie un fichier pris en charge par MemeDrop.
+
+Options :
+
+- `fichier` : image, vidéo ou son.
+- `legende` : texte optionnel.
+- `cible` : utilisateur Discord qui recevra le drop. Si vide, le drop est global.
+- `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
+
+### `/dropyt`
+
+Envoie une vidéo YouTube.
+
+Options :
+
+- `lien` : URL YouTube.
+- `legende` : texte optionnel.
+- `cible` : utilisateur Discord qui recevra le drop. Si vide, le drop est global.
+- `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
+
+## Queues
+
+Les drops globaux utilisent une queue commune et restent synchronisés entre les utilisateurs.
+
+Les drops ciblés utilisent une queue séparée par utilisateur. Ils n'impactent pas la queue globale et ne sont envoyés qu'à la cible.
+
+Un utilisateur ne reçoit qu'un seul drop à la fois. Si un drop global et un drop ciblé doivent arriver en même temps chez la même personne, le serveur attend que l'utilisateur soit libre.
 
 ## Configuration Discord
 
@@ -85,6 +132,24 @@ Puis cliquer sur `Se connecter avec Discord`.
 
 La configuration locale de l'app est stockée dans le dossier utilisateur de l'application. Elle est conservée entre les réinstallations.
 
+## Préférences
+
+Options disponibles :
+
+- `Minimiser en arrière-plan` : la croix cache la fenêtre dans le tray au lieu de quitter.
+- `Démarrer avec Windows` : lance MemeDrop à l'ouverture de session.
+- `Quitter MemeDrop` : ferme vraiment l'application.
+- `Désinstaller MemeDrop` : lance le désinstalleur Windows.
+
+Quand `Minimiser en arrière-plan` et `Démarrer avec Windows` sont activés ensemble, MemeDrop démarre directement minimisé dans le tray.
+
+Le tray Windows permet aussi :
+
+- afficher MemeDrop.
+- activer/désactiver les drops.
+- afficher/masquer ses propres drops.
+- quitter MemeDrop.
+
 ## Développement
 
 Installer les dépendances :
@@ -145,6 +210,7 @@ Si Electron Builder bloque sur les liens symboliques, active le Mode développeu
 - `Ctrl+Shift+D` : activer/désactiver tous les drops.
 - `Ctrl+Shift+S` : arrêter le drop en cours sans désactiver les suivants.
 - `Ctrl+Shift+M` : afficher/masquer ses propres drops.
+- `Ctrl+Shift+X` : stopper le drop en cours pour toutes les personnes qui l'ont reçu, si tu en es l'auteur.
 
 ## Notes
 
