@@ -16,6 +16,7 @@ Chaque utilisateur se connecte avec Discord dans l'app.
 
 - `/drop` : envoyer une image, vidéo ou piste audio.
 - `/dropyt` : envoyer une vidéo YouTube.
+- `/dropstatus` : voir les autres utilisateurs connectés à MemeDrop.
 - Options Discord :
   - `legende` : ajouter un texte au drop.
   - `anonyme` : masquer son pseudo et son avatar.
@@ -35,6 +36,7 @@ Chaque utilisateur se connecte avec Discord dans l'app.
   - quitter vraiment l'application.
   - désinstaller l'application.
 - Icône tray Windows avec menu rapide.
+- Page `Connecté(s)` dans l'app pour voir les autres utilisateurs connectés.
 - Raccourcis globaux pour couper ou désactiver les drops.
 
 ## Commandes Discord
@@ -60,6 +62,12 @@ Options :
 - `legende` : texte optionnel.
 - `cible` : utilisateur Discord qui recevra le drop. Si vide, le drop est global.
 - `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
+
+### `/dropstatus`
+
+Affiche en réponse éphémère les autres utilisateurs actuellement connectés à MemeDrop.
+
+Cette commande est utile avant un drop ciblé pour savoir qui peut recevoir un drop.
 
 ## Queues
 
@@ -131,6 +139,8 @@ Si besoin, ouvrir `Paramètres serveur` et renseigner :
 Puis cliquer sur `Se connecter avec Discord`.
 
 La configuration locale de l'app est stockée dans le dossier utilisateur de l'application. Elle est conservée entre les réinstallations.
+
+L'onglet `Connecté(s)` affiche les autres utilisateurs actuellement connectés à MemeDrop.
 
 ## Préférences
 
