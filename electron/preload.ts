@@ -5,6 +5,7 @@ import type {
   ConnectedUser,
   Drop,
   AppPreferences,
+  AppVersionInfo,
   OverlayDisplayInfo,
   OverlayDisplayPreferences,
   OverlayState,
@@ -44,6 +45,8 @@ contextBridge.exposeInMainWorld('memedrop', {
     onChannel('overlay-displays', handler),
   onAppPreferences: (handler: (preferences: AppPreferences) => void) =>
     onChannel('app-preferences', handler),
+  onAppVersionInfo: (handler: (info: AppVersionInfo) => void) =>
+    onChannel('app-version-info', handler),
   setDropsEnabled: (enabled: boolean) => ipcRenderer.invoke('set-drops-enabled', enabled),
   setHideOwnDrops: (enabled: boolean) => ipcRenderer.invoke('set-hide-own-drops', enabled),
   toggleDrops: () => ipcRenderer.invoke('toggle-drops'),
@@ -57,10 +60,12 @@ contextBridge.exposeInMainWorld('memedrop', {
   setOverlayDisplayPreferences: (preferences: OverlayDisplayPreferences) =>
     ipcRenderer.invoke('set-overlay-display-preferences', preferences),
   getAppPreferences: () => ipcRenderer.invoke('get-app-preferences'),
+  getAppVersionInfo: () => ipcRenderer.invoke('get-app-version-info'),
   setAppPreferences: (preferences: AppPreferences) =>
     ipcRenderer.invoke('set-app-preferences', preferences),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   uninstallApp: () => ipcRenderer.invoke('uninstall-app'),
+  openReleasePage: () => ipcRenderer.invoke('open-release-page'),
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
   getConnectedUsers: () => ipcRenderer.invoke('get-connected-users'),
   getShortcutStatus: () => ipcRenderer.invoke('get-shortcut-status'),

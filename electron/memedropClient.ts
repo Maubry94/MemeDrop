@@ -7,10 +7,11 @@ type MemeDropClientOptions = {
   userId: string | undefined
   userName: string | undefined
   userAvatarUrl: string | null | undefined
+  appVersion: string
   dropsEnabled: boolean
   onDrop: (drop: Drop) => void
   onClearDrop: () => void
-  onConnectedUsers: (users: ConnectedUser[]) => void
+  onConnectedUsers: (users: ConnectedUser[], latestAppVersion: string) => void
   onStatus: (status: ConnectionStatus) => void
 }
 
@@ -28,6 +29,7 @@ type ServerMessage =
   | {
       type: 'connected-users'
       users: ConnectedUser[]
+      latestAppVersion?: string
     }
 
 export type MemeDropClientController = {
@@ -43,6 +45,7 @@ const toWebSocketUrl = (
   userId: string | undefined,
   userName: string | undefined,
   userAvatarUrl: string | null | undefined,
+  appVersion: string,
 ) => {
   const normalizedUrl = serverUrl.match(/^https?:\/\//i) ? serverUrl : `https://${serverUrl}`
   const url = new URL(normalizedUrl)
@@ -67,6 +70,10 @@ const toWebSocketUrl = (
     url.searchParams.set('userAvatarUrl', userAvatarUrl)
   }
 
+  if (appVersion) {
+    url.searchParams.set('appVersion', appVersion)
+  }
+
   return url.toString()
 }
 
@@ -86,6 +93,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     userId,
     userName,
     userAvatarUrl,
+    appVersion,
     dropsEnabled,
     onDrop,
     onClearDrop,
@@ -138,6 +146,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
         userId?.trim(),
         userName?.trim(),
         userAvatarUrl,
+        appVersion,
       )
     } catch {
       onStatus({
@@ -179,7 +188,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
         }
 
         if (message.type === 'connected-users') {
-          onConnectedUsers(message.users)
+          onConnectedUsers(message.users, message.latestAppVersion ?? appVersion)
         }
       } catch (error) {
         console.error('Message serveur MemeDrop invalide:', error)

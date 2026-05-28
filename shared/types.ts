@@ -32,6 +32,17 @@ export type ConnectedUser = {
   avatarUrl: string | null
   connections: number
   dropsEnabled: boolean
+  appVersion: string | null
+  appVersions: string[]
+  latestAppVersion: string
+  updateAvailable: boolean
+}
+
+export type AppVersionInfo = {
+  currentVersion: string
+  latestVersion: string
+  updateAvailable: boolean
+  releaseUrl: string
 }
 
 export type ServerConfig = {

@@ -1,4 +1,7 @@
 import http from 'node:http'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 import { createDiscordOAuthHandlers } from './auth/discordOAuth.js'
 import { config } from './config.js'
 import { createDiscordBot } from './discord/client.js'
@@ -6,6 +9,22 @@ import { sendJsonResponse, sendTextResponse } from './http/responses.js'
 import { createMemeDropWebSocketServer } from './websocket.js'
 
 let discordStatus = 'starting'
+
+const getPackageVersion = () => {
+  try {
+    const packagePath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '../../package.json',
+    )
+    const packageJson = JSON.parse(readFileSync(packagePath, 'utf8')) as { version?: string }
+    return packageJson.version ?? '0.0.0'
+  } catch (error) {
+    console.warn('Version MemeDrop serveur introuvable:', error)
+    return '0.0.0'
+  }
+}
+
+const latestAppVersion = getPackageVersion()
 
 const oauthHandlers = createDiscordOAuthHandlers({
   clientId: config.discordClientId,
@@ -47,6 +66,7 @@ const server = http.createServer((request, response) => {
 const { broadcastDrop, clients, getConnectedUsers, stopDropByOwner } = createMemeDropWebSocketServer({
   server,
   serverKey: config.memedropServerKey,
+  latestAppVersion,
 })
 
 createDiscordBot({

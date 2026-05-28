@@ -9,6 +9,7 @@ import DropOverlay from './components/overlay/DropOverlay.vue'
 import { getMediaKind } from '../shared/media'
 import type {
   AppPreferences,
+  AppVersionInfo,
   ConnectedUser,
   ConnectionStatus,
   Drop,
@@ -53,6 +54,12 @@ const connectionStatus = ref<ConnectionStatus | null>(null)
 const appPreferences = ref<AppPreferences>({
   minimizeToTray: false,
   openAtLogin: false,
+})
+const appVersionInfo = ref<AppVersionInfo>({
+  currentVersion: '',
+  latestVersion: '',
+  updateAvailable: false,
+  releaseUrl: '',
 })
 const serverConfig = ref<ServerConfig>({
   serverUrl: '',
@@ -229,6 +236,13 @@ const requestAppPreferences = async () => {
   appPreferences.value = await window.memedrop.getAppPreferences()
 }
 
+const requestAppVersionInfo = async () => {
+  if (!window.memedrop) {
+    return
+  }
+  appVersionInfo.value = await window.memedrop.getAppVersionInfo()
+}
+
 const requestConnectionStatus = async () => {
   if (!window.memedrop) {
     return
@@ -310,6 +324,10 @@ const uninstallApp = async () => {
 
 const quitApp = async () => {
   await window.memedrop?.quitApp()
+}
+
+const openReleasePage = async () => {
+  await window.memedrop?.openReleasePage()
 }
 
 const requestServerConfig = async () => {
@@ -457,6 +475,7 @@ onMounted(async () => {
   await requestOverlayDisplayPreferences()
   await requestOverlayDisplays()
   await requestAppPreferences()
+  await requestAppVersionInfo()
   await requestConnectionStatus()
   await requestConnectedUsers()
   await requestShortcutConfigs()
@@ -536,6 +555,10 @@ onMounted(async () => {
     appPreferences.value = preferences
   })
 
+  const unsubAppVersionInfo = window.memedrop?.onAppVersionInfo((info) => {
+    appVersionInfo.value = info
+  })
+
   if (unsubDrop) unsubscribers.push(unsubDrop)
   if (unsubClearDrop) unsubscribers.push(unsubClearDrop)
   if (unsubTestDropCleared) unsubscribers.push(unsubTestDropCleared)
@@ -548,6 +571,7 @@ onMounted(async () => {
   if (unsubOverlayDisplayPreferences) unsubscribers.push(unsubOverlayDisplayPreferences)
   if (unsubOverlayDisplays) unsubscribers.push(unsubOverlayDisplays)
   if (unsubAppPreferences) unsubscribers.push(unsubAppPreferences)
+  if (unsubAppVersionInfo) unsubscribers.push(unsubAppVersionInfo)
 })
 
 onBeforeUnmount(() => {
@@ -618,7 +642,25 @@ onBeforeUnmount(() => {
         @save-server-config="saveServerConfig"
       />
 
-      <div v-else class="grid grid-cols-2 gap-1 rounded-lg bg-slate-900/70 p-1">
+      <div
+        v-if="isDiscordConnected && appVersionInfo.updateAvailable"
+        class="rounded-lg border border-amber-300/25 bg-amber-400/10 p-3 text-xs text-amber-100"
+      >
+        <p class="font-semibold">Une nouvelle version de MemeDrop est disponible.</p>
+        <p class="mt-1 text-amber-100/80">
+          Vous utilisez la version {{ appVersionInfo.currentVersion }}. Téléchargez la version
+          {{ appVersionInfo.latestVersion }} depuis GitHub.
+        </p>
+        <button
+          type="button"
+          class="mt-3 rounded-md border border-amber-200/30 bg-amber-300/15 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-amber-300/25"
+          @click="openReleasePage"
+        >
+          Télécharger la dernière version
+        </button>
+      </div>
+
+      <div v-if="isDiscordConnected" class="grid grid-cols-2 gap-1 rounded-lg bg-slate-900/70 p-1">
         <button
           type="button"
           class="rounded-md px-3 py-1.5 text-xs font-semibold"

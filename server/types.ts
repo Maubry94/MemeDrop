@@ -8,6 +8,7 @@ export type MemeDropClient = {
   userId: string
   userName: string
   userAvatarUrl: string
+  appVersion: string
   dropsEnabled: boolean
 }
 
@@ -37,6 +38,7 @@ export type StopDropByOwner = (
 export type MemeDropWebSocketServerOptions = {
   server: http.Server
   serverKey: string
+  latestAppVersion: string
 }
 
 export type MemeDropWebSocketMessage =

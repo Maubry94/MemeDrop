@@ -19,6 +19,7 @@ import type {
   DiscordUser,
   Drop,
   AppPreferences,
+  AppVersionInfo,
   ConnectedUser,
   OverlayDisplayPreferences,
   OverlayDisplayInfo,
@@ -65,6 +66,12 @@ let tray: Tray | null = null
 let dropsEnabled = true
 let hideOwnDrops = false
 let connectedUsers: ConnectedUser[] = []
+let appVersionInfo: AppVersionInfo = {
+  currentVersion: app.getVersion(),
+  latestVersion: app.getVersion(),
+  updateAvailable: false,
+  releaseUrl: `https://github.com/Maubry94/MemeDrop/releases/tag/${app.getVersion()}`,
+}
 let appPreferences: AppPreferences = {
   minimizeToTray: false,
   openAtLogin: false,
@@ -465,6 +472,43 @@ const requestJson = async <T>(url: URL, options?: RequestInit): Promise<T> => {
   return response.json() as Promise<T>
 }
 
+const compareAppVersions = (currentVersion: string, expectedVersion: string) => {
+  const currentParts = currentVersion.split(/[.-]/).map((part) => Number(part))
+  const expectedParts = expectedVersion.split(/[.-]/).map((part) => Number(part))
+  const partsLength = Math.max(currentParts.length, expectedParts.length)
+
+  for (let index = 0; index < partsLength; index += 1) {
+    const currentPart = currentParts[index] ?? 0
+    const expectedPart = expectedParts[index] ?? 0
+
+    if (!Number.isFinite(currentPart) || !Number.isFinite(expectedPart)) {
+      return currentVersion.localeCompare(expectedVersion)
+    }
+    if (currentPart !== expectedPart) {
+      return currentPart - expectedPart
+    }
+  }
+
+  return 0
+}
+
+const getReleaseUrl = (version: string) => {
+  return `https://github.com/Maubry94/MemeDrop/releases/tag/${version}`
+}
+
+const setLatestAppVersion = (latestVersion: string) => {
+  const currentVersion = app.getVersion()
+
+  appVersionInfo = {
+    currentVersion,
+    latestVersion,
+    updateAvailable: compareAppVersions(currentVersion, latestVersion) < 0,
+    releaseUrl: getReleaseUrl(latestVersion),
+  }
+
+  sendToWindows('app-version-info', appVersionInfo)
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const authenticateDiscord = async (): Promise<ServerConfig> => {
@@ -535,8 +579,10 @@ const startOrRestartMemeDropClient = () => {
     userId: discordUserId,
     userName: serverConfig.discordUserName,
     userAvatarUrl: serverConfig.discordUserAvatarUrl,
+    appVersion: app.getVersion(),
     dropsEnabled,
-    onConnectedUsers: (users: ConnectedUser[]) => {
+    onConnectedUsers: (users: ConnectedUser[], latestAppVersion: string) => {
+      setLatestAppVersion(latestAppVersion)
       connectedUsers = users
       sendToWindows('connected-users', connectedUsers)
     },
@@ -574,6 +620,8 @@ const getOverlayState = (): OverlayState => ({
 })
 
 const getAppPreferences = (): AppPreferences => ({ ...appPreferences })
+
+const getAppVersionInfo = (): AppVersionInfo => ({ ...appVersionInfo })
 
 const getShortcutStatus = () => shortcutStatus
 
@@ -661,6 +709,10 @@ const setHideOwnDrops = (enabled: boolean) => {
 
 const syncAppPreferences = () => {
   sendToWindows('app-preferences', getAppPreferences())
+}
+
+const syncAppVersionInfo = () => {
+  sendToWindows('app-version-info', getAppVersionInfo())
 }
 
 const setAppPreferences = (preferences: AppPreferences) => {
@@ -1055,6 +1107,7 @@ const createControlWindow = () => {
     syncOverlayDisplayPreferences()
     syncOverlayDisplays()
     syncAppPreferences()
+    syncAppVersionInfo()
     syncConnectionStatus()
     syncShortcutStatus()
     syncConnectedUsers()
@@ -1171,6 +1224,10 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     },
   )
   ipcMain.handle('get-app-preferences', () => getAppPreferences())
+  ipcMain.handle('get-app-version-info', () => getAppVersionInfo())
+  ipcMain.handle('open-release-page', () => {
+    void shell.openExternal(appVersionInfo.releaseUrl)
+  })
   ipcMain.handle('set-app-preferences', (_event, preferences: AppPreferences) => {
     setAppPreferences(preferences)
     return getAppPreferences()

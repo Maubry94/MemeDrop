@@ -38,6 +38,7 @@ const parseClientMessage = (data: WebSocket.RawData): MemeDropWebSocketMessage |
 export const createMemeDropWebSocketServer = ({
   server,
   serverKey,
+  latestAppVersion,
 }: MemeDropWebSocketServerOptions) => {
   const clients = new Map<WebSocket, MemeDropClient>()
   const wss = new WebSocketServer({ server, path: '/ws' })
@@ -62,6 +63,29 @@ export const createMemeDropWebSocketServer = ({
   const getClientLogSummary = () =>
     `${clients.size} connexion(s), ${getEligibleClients().length} client(s) identifié(s)`
 
+  const compareAppVersions = (currentVersion: string, expectedVersion: string) => {
+    const currentParts = currentVersion.split(/[.-]/).map((part) => Number(part))
+    const expectedParts = expectedVersion.split(/[.-]/).map((part) => Number(part))
+    const partsLength = Math.max(currentParts.length, expectedParts.length)
+
+    for (let index = 0; index < partsLength; index += 1) {
+      const currentPart = currentParts[index] ?? 0
+      const expectedPart = expectedParts[index] ?? 0
+
+      if (!Number.isFinite(currentPart) || !Number.isFinite(expectedPart)) {
+        return currentVersion.localeCompare(expectedVersion)
+      }
+      if (currentPart !== expectedPart) {
+        return currentPart - expectedPart
+      }
+    }
+
+    return 0
+  }
+
+  const isVersionOutdated = (appVersion: string) =>
+    Boolean(appVersion) && compareAppVersions(appVersion, latestAppVersion) < 0
+
   const getConnectedUsers = (): ConnectedUser[] => {
     const users = new Map<string, ConnectedUser>()
 
@@ -71,12 +95,20 @@ export const createMemeDropWebSocketServer = ({
       }
 
       const existing = users.get(client.userId)
+      const appVersions = Array.from(
+        new Set([...(existing?.appVersions ?? []), client.appVersion].filter(Boolean)),
+      ).sort((a, b) => compareAppVersions(b, a))
+
       users.set(client.userId, {
         id: client.userId,
         name: client.userName || client.userId,
         avatarUrl: client.userAvatarUrl || null,
         connections: (existing?.connections ?? 0) + 1,
         dropsEnabled: Boolean((existing?.dropsEnabled ?? false) || client.dropsEnabled),
+        appVersion: appVersions[0] ?? null,
+        appVersions,
+        latestAppVersion,
+        updateAvailable: appVersions.some(isVersionOutdated),
       })
     }
 
@@ -90,6 +122,7 @@ export const createMemeDropWebSocketServer = ({
       sendJson(socket, {
         type: 'connected-users',
         users: connectedUsers,
+        latestAppVersion,
       })
     }
   }
@@ -311,6 +344,7 @@ export const createMemeDropWebSocketServer = ({
     const userId = requestUrl.searchParams.get('userId') ?? ''
     const userName = requestUrl.searchParams.get('userName') ?? ''
     const userAvatarUrl = requestUrl.searchParams.get('userAvatarUrl') ?? ''
+    const appVersion = requestUrl.searchParams.get('appVersion') ?? ''
 
     if (serverKey && requestKey !== serverKey) {
       console.warn('Client MemeDrop refusé: clé invalide.')
@@ -322,6 +356,7 @@ export const createMemeDropWebSocketServer = ({
       userId,
       userName,
       userAvatarUrl,
+      appVersion,
       dropsEnabled: true,
     })
     console.log(`Client MemeDrop connecté (${getClientLogSummary()}).`)

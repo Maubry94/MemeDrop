@@ -31,6 +31,9 @@ interface Window {
     onAppPreferences: (
       handler: (preferences: import('../shared/types').AppPreferences) => void,
     ) => () => void
+    onAppVersionInfo: (
+      handler: (info: import('../shared/types').AppVersionInfo) => void,
+    ) => () => void
     setDropsEnabled: (
       enabled: boolean,
     ) => Promise<import('../shared/types').OverlayState>
@@ -49,11 +52,13 @@ interface Window {
       preferences: import('../shared/types').OverlayDisplayPreferences,
     ) => Promise<import('../shared/types').OverlayDisplayPreferences>
     getAppPreferences: () => Promise<import('../shared/types').AppPreferences>
+    getAppVersionInfo: () => Promise<import('../shared/types').AppVersionInfo>
     setAppPreferences: (
       preferences: import('../shared/types').AppPreferences,
     ) => Promise<import('../shared/types').AppPreferences>
     quitApp: () => Promise<void>
     uninstallApp: () => Promise<void>
+    openReleasePage: () => Promise<void>
     getConnectionStatus: () => Promise<import('../shared/types').ConnectionStatus | null>
     getConnectedUsers: () => Promise<import('../shared/types').ConnectedUser[]>
     getShortcutStatus: () => Promise<import('../shared/types').ShortcutStatus[]>
