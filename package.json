@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vue-tsc && vite build && npm run build:server && electron-builder",
     "build:server": "tsc -p tsconfig.server.json",
+    "discord:clear-global-commands": "node scripts/clearGlobalCommands.mjs",
+    "discord:clear-guild-commands": "node scripts/clearGuildCommands.mjs",
     "pack:win": "vue-tsc && vite build && npm run build:server && electron-builder --win --dir",
     "preview": "vite preview",
     "server:start": "node dist-server/server/index.js"
