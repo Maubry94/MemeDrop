@@ -23,6 +23,8 @@ import type {
   OverlayDisplayPreferences,
   OverlayDisplayInfo,
   OverlayState,
+  ShortcutActionId,
+  ShortcutConfig,
   ServerConfig,
   ShortcutStatus,
 } from '../shared/types'
@@ -71,6 +73,8 @@ let connectionStatus: ConnectionStatus | null = null
 let memeDropClient: MemeDropClientController | null = null
 let currentServerDrop: Drop | null = null
 let shortcutStatus: ShortcutStatus[] = []
+let shortcutConfigs: ShortcutConfig[] = []
+let shortcutCaptureAction: ShortcutActionId | null = null
 let overlayKeepAliveTimer: ReturnType<typeof setInterval> | null = null
 let controlWindowBoundsSaveTimer: ReturnType<typeof setTimeout> | null = null
 let isQuitting = false
@@ -90,6 +94,7 @@ type AppConfigFile = {
   server?: Partial<ServerConfig>
   overlay?: Partial<Pick<OverlayState, 'hideOwnDrops'> & OverlayDisplayPreferences>
   app?: Partial<AppPreferences>
+  shortcuts?: Partial<Record<ShortcutActionId, string>>
   controlWindow?: Partial<ControlWindowBounds>
 }
 
@@ -109,6 +114,32 @@ const loadAppEnv = () => {
 }
 
 const getConfigPath = () => path.join(app.getPath('userData'), 'config.json')
+
+const DEFAULT_SHORTCUTS: ShortcutConfig[] = [
+  {
+    action: 'toggleDrops',
+    accelerator: 'CommandOrControl+Shift+D',
+  },
+  {
+    action: 'skipDrop',
+    accelerator: 'CommandOrControl+Shift+S',
+  },
+  {
+    action: 'toggleOwnDrops',
+    accelerator: 'CommandOrControl+Shift+M',
+  },
+  {
+    action: 'stopGlobalDrop',
+    accelerator: 'CommandOrControl+Shift+X',
+  },
+]
+
+const SHORTCUT_LABELS: Record<ShortcutActionId, string> = {
+  toggleDrops: 'Activer/désactiver les drops',
+  skipDrop: 'Couper le drop actuel',
+  toggleOwnDrops: 'Afficher/masquer mes drops',
+  stopGlobalDrop: 'Couper le drop pour tout le monde',
+}
 
 const readAppConfig = (): AppConfigFile => {
   const configPath = getConfigPath()
@@ -273,6 +304,42 @@ const loadAppPreferences = () => {
 
   applyOpenAtLogin()
 }
+
+const normalizeShortcutConfigs = (
+  shortcuts: Partial<Record<ShortcutActionId, string>> = {},
+): ShortcutConfig[] =>
+  DEFAULT_SHORTCUTS.map((shortcut) => ({
+    action: shortcut.action,
+    accelerator: shortcuts[shortcut.action]?.trim() || shortcut.accelerator,
+  }))
+
+const loadShortcutConfigs = () => {
+  shortcutConfigs = normalizeShortcutConfigs(readAppConfig().shortcuts)
+}
+
+const getShortcutConfigs = (): ShortcutConfig[] => shortcutConfigs.map((shortcut) => ({ ...shortcut }))
+
+const saveShortcutConfigs = (shortcuts: ShortcutConfig[]) => {
+  const normalizedShortcuts = normalizeShortcutConfigs(
+    Object.fromEntries(
+      shortcuts.map((shortcut) => [shortcut.action, shortcut.accelerator]),
+    ) as Partial<Record<ShortcutActionId, string>>,
+  )
+  const nextConfig = {
+    ...readAppConfig(),
+    shortcuts: Object.fromEntries(
+      normalizedShortcuts.map((shortcut) => [shortcut.action, shortcut.accelerator]),
+    ) as Partial<Record<ShortcutActionId, string>>,
+  }
+
+  shortcutConfigs = normalizedShortcuts
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeFileSync(getConfigPath(), JSON.stringify(nextConfig, null, 2), 'utf8')
+
+  return getShortcutConfigs()
+}
+
+const resetShortcutConfigs = () => saveShortcutConfigs(DEFAULT_SHORTCUTS)
 
 const getControlWindowBounds = (): ControlWindowBounds => {
   const stored = readAppConfig().controlWindow ?? {}
@@ -640,32 +707,18 @@ const stopCurrentDropForEveryone = () => {
 const registerGlobalShortcuts = () => {
   globalShortcut.unregisterAll()
 
-  shortcutStatus = [
-    {
-      accelerator: 'CommandOrControl+Shift+D',
-      label: 'Activer/désactiver les drops',
-      registered: globalShortcut.register('CommandOrControl+Shift+D', () => {
-        setDropsEnabled(!dropsEnabled)
-      }),
-    },
-    {
-      accelerator: 'CommandOrControl+Shift+S',
-      label: 'Couper le drop actuel',
-      registered: globalShortcut.register('CommandOrControl+Shift+S', skipCurrentDrop),
-    },
-    {
-      accelerator: 'CommandOrControl+Shift+M',
-      label: 'Afficher/masquer mes drops',
-      registered: globalShortcut.register('CommandOrControl+Shift+M', () => {
-        setHideOwnDrops(!hideOwnDrops)
-      }),
-    },
-    {
-      accelerator: 'CommandOrControl+Shift+X',
-      label: 'Couper le drop pour tout le monde',
-      registered: globalShortcut.register('CommandOrControl+Shift+X', stopCurrentDropForEveryone),
-    },
-  ]
+  const shortcutHandlers: Record<ShortcutActionId, () => void> = {
+    toggleDrops: () => setDropsEnabled(!dropsEnabled),
+    skipDrop: skipCurrentDrop,
+    toggleOwnDrops: () => setHideOwnDrops(!hideOwnDrops),
+    stopGlobalDrop: stopCurrentDropForEveryone,
+  }
+
+  shortcutStatus = shortcutConfigs.map((shortcut) => ({
+    ...shortcut,
+    label: SHORTCUT_LABELS[shortcut.action],
+    registered: globalShortcut.register(shortcut.accelerator, shortcutHandlers[shortcut.action]),
+  }))
 
   for (const shortcut of shortcutStatus) {
     if (!shortcut.registered) {
@@ -674,6 +727,96 @@ const registerGlobalShortcuts = () => {
   }
 
   syncShortcutStatus()
+}
+
+const setShortcutCaptureMode = (enabled: boolean) => {
+  shortcutCaptureAction = null
+  if (enabled) {
+    globalShortcut.unregisterAll()
+    return
+  }
+
+  registerGlobalShortcuts()
+}
+
+const getShortcutAcceleratorPart = (input: Electron.Input): string | null => {
+  if (/^[a-z]$/i.test(input.key)) return input.key.toUpperCase()
+  if (/^[0-9]$/.test(input.key)) return input.key
+  if (/^F\d{1,2}$/i.test(input.key)) return input.key.toUpperCase()
+
+  const specialKeys: Record<string, string> = {
+    ArrowUp: 'Up',
+    ArrowDown: 'Down',
+    ArrowLeft: 'Left',
+    ArrowRight: 'Right',
+    Space: 'Space',
+    Enter: 'Enter',
+    Tab: 'Tab',
+    Backspace: 'Backspace',
+    Delete: 'Delete',
+    Insert: 'Insert',
+    Home: 'Home',
+    End: 'End',
+    PageUp: 'PageUp',
+    PageDown: 'PageDown',
+    Escape: 'Escape',
+  }
+
+  return specialKeys[input.key] ?? null
+}
+
+const captureShortcutInput = (input: Electron.Input) => {
+  if (!shortcutCaptureAction || input.type !== 'keyDown') {
+    return
+  }
+
+  const key = getShortcutAcceleratorPart(input)
+  if (!key) {
+    return
+  }
+
+  if (key === 'Escape') {
+    shortcutCaptureAction = null
+    registerGlobalShortcuts()
+    sendToWindows('shortcut-capture-cancelled', null)
+    return
+  }
+
+  const modifiers: string[] = []
+  if (input.control || input.meta) modifiers.push('CommandOrControl')
+  if (input.alt) modifiers.push('Alt')
+  if (input.shift) modifiers.push('Shift')
+
+  if (!modifiers.length && !key.startsWith('F')) {
+    return
+  }
+
+  const action = shortcutCaptureAction
+  const accelerator = [...modifiers, key].join('+')
+  const savedShortcuts = setShortcutConfigs(
+    shortcutConfigs.map((shortcut) =>
+      shortcut.action === action ? { ...shortcut, accelerator } : shortcut,
+    ),
+  )
+
+  shortcutCaptureAction = null
+  sendToWindows('shortcut-configs', savedShortcuts)
+}
+
+const startShortcutCapture = (action: ShortcutActionId) => {
+  if (!SHORTCUT_LABELS[action]) {
+    return getShortcutConfigs()
+  }
+
+  shortcutCaptureAction = action
+  globalShortcut.unregisterAll()
+  return getShortcutConfigs()
+}
+
+const setShortcutConfigs = (shortcuts: ShortcutConfig[]) => {
+  const savedShortcuts = saveShortcutConfigs(shortcuts)
+  registerGlobalShortcuts()
+  return savedShortcuts
 }
 
 const quitApp = () => {
@@ -893,7 +1036,7 @@ const createControlWindow = () => {
   controlWindow = new BrowserWindow({
     ...controlWindowBounds,
     minWidth: 500,
-    minHeight: 800,
+    minHeight: 370,
     resizable: true,
     minimizable: true,
     maximizable: false,
@@ -915,6 +1058,14 @@ const createControlWindow = () => {
     syncConnectionStatus()
     syncShortcutStatus()
     syncConnectedUsers()
+  })
+  controlWindow.webContents.on('before-input-event', (event, input) => {
+    if (!shortcutCaptureAction) {
+      return
+    }
+
+    event.preventDefault()
+    captureShortcutInput(input)
   })
   controlWindow.on('close', (event) => {
     saveControlWindowBounds()
@@ -977,6 +1128,7 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   loadAppEnv()
   loadOverlayPreferences()
   loadAppPreferences()
+  loadShortcutConfigs()
   Menu.setApplicationMenu(null)
   if (!VITE_DEV_SERVER_URL) {
     await startRendererServer()
@@ -1031,6 +1183,21 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   })
   ipcMain.handle('get-connection-status', () => connectionStatus)
   ipcMain.handle('get-shortcut-status', () => getShortcutStatus())
+  ipcMain.handle('get-shortcut-configs', () => getShortcutConfigs())
+  ipcMain.handle('start-shortcut-capture', (_event, action: ShortcutActionId) =>
+    startShortcutCapture(action),
+  )
+  ipcMain.handle('set-shortcut-capture-mode', (_event, enabled: boolean) => {
+    setShortcutCaptureMode(Boolean(enabled))
+  })
+  ipcMain.handle('set-shortcut-configs', (_event, shortcuts: ShortcutConfig[]) =>
+    setShortcutConfigs(shortcuts),
+  )
+  ipcMain.handle('reset-shortcut-configs', () => {
+    const shortcuts = resetShortcutConfigs()
+    registerGlobalShortcuts()
+    return shortcuts
+  })
   ipcMain.handle('get-connected-users', () => getConnectedUsers())
   ipcMain.handle('get-server-config', () => getServerConfig())
   ipcMain.handle('save-server-config', (_event, config: ServerConfig) => {

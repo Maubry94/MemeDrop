@@ -18,6 +18,8 @@ import type {
   OverlayPosition,
   OverlayState,
   ServerConfig,
+  ShortcutConfig,
+  ShortcutStatus,
 } from '../shared/types'
 
 type AppView = 'overlay' | 'control'
@@ -45,6 +47,8 @@ const isPreferencesOpen = ref(false)
 const isTestDropActive = ref(false)
 const activeDrop = ref<Drop | null>(null)
 const connectedUsers = ref<ConnectedUser[]>([])
+const shortcutConfigs = ref<ShortcutConfig[]>([])
+const shortcutStatuses = ref<ShortcutStatus[]>([])
 const connectionStatus = ref<ConnectionStatus | null>(null)
 const appPreferences = ref<AppPreferences>({
   minimizeToTray: false,
@@ -239,12 +243,49 @@ const requestConnectedUsers = async () => {
   connectedUsers.value = await window.memedrop.getConnectedUsers()
 }
 
+const requestShortcutConfigs = async () => {
+  if (!window.memedrop) {
+    return
+  }
+  shortcutConfigs.value = await window.memedrop.getShortcutConfigs()
+}
+
+const requestShortcutStatus = async () => {
+  if (!window.memedrop) {
+    return
+  }
+  shortcutStatuses.value = await window.memedrop.getShortcutStatus()
+}
+
 const updateAppPreferences = async (preferences: AppPreferences) => {
   if (!window.memedrop) {
     return
   }
 
   appPreferences.value = await window.memedrop.setAppPreferences(preferences)
+}
+
+const updateShortcutConfigs = async (shortcuts: ShortcutConfig[]) => {
+  if (!window.memedrop) {
+    return
+  }
+  shortcutConfigs.value = await window.memedrop.setShortcutConfigs(shortcuts)
+  shortcutStatuses.value = await window.memedrop.getShortcutStatus()
+}
+
+const startShortcutCapture = async (action: ShortcutConfig['action']) => {
+  if (!window.memedrop) {
+    return
+  }
+  shortcutConfigs.value = await window.memedrop.startShortcutCapture(action)
+}
+
+const resetShortcutConfigs = async () => {
+  if (!window.memedrop) {
+    return
+  }
+  shortcutConfigs.value = await window.memedrop.resetShortcutConfigs()
+  shortcutStatuses.value = await window.memedrop.getShortcutStatus()
 }
 
 const uninstallApp = async () => {
@@ -418,6 +459,8 @@ onMounted(async () => {
   await requestAppPreferences()
   await requestConnectionStatus()
   await requestConnectedUsers()
+  await requestShortcutConfigs()
+  await requestShortcutStatus()
   await requestServerConfig()
 
   const unsubDrop = window.memedrop?.onDrop((drop) => {
@@ -467,6 +510,14 @@ onMounted(async () => {
     connectedUsers.value = users
   })
 
+  const unsubShortcutStatus = window.memedrop?.onShortcutStatus((status) => {
+    shortcutStatuses.value = status
+  })
+
+  const unsubShortcutConfigs = window.memedrop?.onShortcutConfigs((shortcuts) => {
+    shortcutConfigs.value = shortcuts
+  })
+
   const unsubOverlay = window.memedrop?.onOverlayState((state) => {
     applyOverlayState(state)
   })
@@ -491,6 +542,8 @@ onMounted(async () => {
   if (unsubSkipCurrentDrop) unsubscribers.push(unsubSkipCurrentDrop)
   if (unsubStatus) unsubscribers.push(unsubStatus)
   if (unsubConnectedUsers) unsubscribers.push(unsubConnectedUsers)
+  if (unsubShortcutStatus) unsubscribers.push(unsubShortcutStatus)
+  if (unsubShortcutConfigs) unsubscribers.push(unsubShortcutConfigs)
   if (unsubOverlay) unsubscribers.push(unsubOverlay)
   if (unsubOverlayDisplayPreferences) unsubscribers.push(unsubOverlayDisplayPreferences)
   if (unsubOverlayDisplays) unsubscribers.push(unsubOverlayDisplays)
@@ -537,8 +590,13 @@ onBeforeUnmount(() => {
       <PreferencesModal
         v-if="isPreferencesOpen"
         :preferences="appPreferences"
+        :shortcut-configs="shortcutConfigs"
+        :shortcut-statuses="shortcutStatuses"
         @close="isPreferencesOpen = false"
         @update-preferences="updateAppPreferences"
+        @update-shortcuts="updateShortcutConfigs"
+        @start-shortcut-capture="startShortcutCapture"
+        @reset-shortcuts="resetShortcutConfigs"
         @quit-app="quitApp"
         @uninstall-app="uninstallApp"
       />
@@ -600,6 +658,7 @@ onBeforeUnmount(() => {
         :config-saved-message="configSavedMessage"
         :auth-message="discordAuthMessage"
         :connection-status="connectionStatus"
+        :shortcut-statuses="shortcutStatuses"
         @toggle-drops="toggleDrops"
         @skip-current-drop="skipCurrentDrop"
         @toggle-hide-own-drops="toggleHideOwnDrops"

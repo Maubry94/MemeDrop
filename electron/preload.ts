@@ -9,6 +9,7 @@ import type {
   OverlayDisplayPreferences,
   OverlayState,
   ServerConfig,
+  ShortcutConfig,
   ShortcutStatus,
 } from '../shared/types'
 
@@ -31,6 +32,10 @@ contextBridge.exposeInMainWorld('memedrop', {
     onChannel('connected-users', handler),
   onShortcutStatus: (handler: (status: ShortcutStatus[]) => void) =>
     onChannel('shortcut-status', handler),
+  onShortcutConfigs: (handler: (shortcuts: ShortcutConfig[]) => void) =>
+    onChannel('shortcut-configs', handler),
+  onShortcutCaptureCancelled: (handler: () => void) =>
+    onChannel('shortcut-capture-cancelled', handler),
   onOverlayState: (handler: (state: OverlayState) => void) =>
     onChannel('overlay-state', handler),
   onOverlayDisplayPreferences: (handler: (preferences: OverlayDisplayPreferences) => void) =>
@@ -59,6 +64,14 @@ contextBridge.exposeInMainWorld('memedrop', {
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
   getConnectedUsers: () => ipcRenderer.invoke('get-connected-users'),
   getShortcutStatus: () => ipcRenderer.invoke('get-shortcut-status'),
+  getShortcutConfigs: () => ipcRenderer.invoke('get-shortcut-configs'),
+  startShortcutCapture: (action: ShortcutConfig['action']) =>
+    ipcRenderer.invoke('start-shortcut-capture', action),
+  setShortcutCaptureMode: (enabled: boolean) =>
+    ipcRenderer.invoke('set-shortcut-capture-mode', enabled),
+  setShortcutConfigs: (shortcuts: ShortcutConfig[]) =>
+    ipcRenderer.invoke('set-shortcut-configs', shortcuts),
+  resetShortcutConfigs: () => ipcRenderer.invoke('reset-shortcut-configs'),
   getServerConfig: () => ipcRenderer.invoke('get-server-config'),
   saveServerConfig: (config: ServerConfig) => ipcRenderer.invoke('save-server-config', config),
   authenticateDiscord: () => ipcRenderer.invoke('authenticate-discord'),

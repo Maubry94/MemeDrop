@@ -1,22 +1,75 @@
 <script setup lang="ts">
-import type { AppPreferences } from '../../../shared/types'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { AppPreferences, ShortcutActionId, ShortcutConfig, ShortcutStatus } from '../../../shared/types'
 
-defineProps<{
+const props = defineProps<{
   preferences: AppPreferences
+  shortcutConfigs: ShortcutConfig[]
+  shortcutStatuses: ShortcutStatus[]
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   close: []
   updatePreferences: [preferences: AppPreferences]
+  updateShortcuts: [shortcuts: ShortcutConfig[]]
+  startShortcutCapture: [action: ShortcutActionId]
+  resetShortcuts: []
   quitApp: []
   uninstallApp: []
 }>()
+
+const editingShortcut = ref<ShortcutActionId | null>(null)
+
+const fallbackLabels: Record<ShortcutActionId, string> = {
+  toggleDrops: 'Activer/désactiver les drops',
+  skipDrop: 'Couper le drop actuel',
+  toggleOwnDrops: 'Afficher/masquer mes drops',
+  stopGlobalDrop: 'Couper le drop pour tout le monde',
+}
+
+const shortcutStatusesByAction = computed(() =>
+  Object.fromEntries(props.shortcutStatuses.map((status) => [status.action, status])) as Partial<
+    Record<ShortcutActionId, ShortcutStatus>
+  >,
+)
+
+const shortcutLabel = (shortcut: ShortcutConfig) =>
+  shortcutStatusesByAction.value[shortcut.action]?.label ?? fallbackLabels[shortcut.action]
+
+const shortcutRegistered = (shortcut: ShortcutConfig) =>
+  shortcutStatusesByAction.value[shortcut.action]?.registered ?? true
+
+const formatAccelerator = (accelerator: string) =>
+  accelerator.replace('CommandOrControl', 'Ctrl').replace(/\+/g, ' + ')
+
+const startEditingShortcut = (action: ShortcutActionId) => {
+  editingShortcut.value = action
+  emit('startShortcutCapture', action)
+}
+
+let unsubscribeShortcutConfigs: (() => void) | undefined
+let unsubscribeShortcutCaptureCancelled: (() => void) | undefined
+
+onMounted(() => {
+  unsubscribeShortcutConfigs = window.memedrop?.onShortcutConfigs(() => {
+    editingShortcut.value = null
+  })
+  unsubscribeShortcutCaptureCancelled = window.memedrop?.onShortcutCaptureCancelled(() => {
+    editingShortcut.value = null
+  })
+})
+
+onBeforeUnmount(() => {
+  void window.memedrop?.setShortcutCaptureMode(false)
+  unsubscribeShortcutConfigs?.()
+  unsubscribeShortcutCaptureCancelled?.()
+})
 </script>
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
     <section
-      class="w-full max-w-sm rounded-lg border border-white/10 bg-slate-950 p-4 text-slate-100 shadow-2xl"
+      class="max-h-[92vh] w-full max-w-sm overflow-y-auto rounded-lg border border-white/10 bg-slate-950 p-4 text-slate-100 shadow-2xl"
     >
       <div class="flex items-center justify-between gap-3">
         <h2 class="text-sm font-semibold">Préférences</h2>
@@ -77,6 +130,53 @@ defineEmits<{
             "
           />
         </label>
+      </div>
+
+      <div class="mt-5 border-t border-white/10 pt-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-xs font-semibold text-slate-300">Raccourcis clavier</p>
+          <button
+            type="button"
+            class="rounded-md border border-white/10 bg-slate-900/70 px-2 py-1 text-[11px] font-semibold text-slate-300 hover:bg-slate-900"
+            @click="$emit('resetShortcuts')"
+          >
+            Réinitialiser
+          </button>
+        </div>
+
+        <div class="mt-2 space-y-2">
+          <div
+            v-for="shortcut in shortcutConfigs"
+            :key="shortcut.action"
+            class="rounded-lg border border-white/10 bg-slate-900/70 p-3"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate text-xs font-semibold text-slate-100">
+                  {{ shortcutLabel(shortcut) }}
+                </p>
+                <p
+                  class="mt-0.5 text-[11px]"
+                  :class="shortcutRegistered(shortcut) ? 'text-slate-400' : 'text-rose-300'"
+                >
+                  {{ shortcutRegistered(shortcut) ? 'Disponible' : 'Indisponible' }}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                class="shrink-0 rounded-md border border-white/10 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-900"
+                @click="startEditingShortcut(shortcut.action)"
+              >
+                {{
+                  editingShortcut === shortcut.action
+                    ? 'Appuie...'
+                    : formatAccelerator(shortcut.accelerator)
+                }}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="mt-5 border-t border-rose-400/20 pt-4">

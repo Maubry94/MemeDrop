@@ -15,6 +15,10 @@ interface Window {
     onShortcutStatus: (
       handler: (status: import('../shared/types').ShortcutStatus[]) => void,
     ) => () => void
+    onShortcutConfigs: (
+      handler: (shortcuts: import('../shared/types').ShortcutConfig[]) => void,
+    ) => () => void
+    onShortcutCaptureCancelled: (handler: () => void) => () => void
     onOverlayState: (
       handler: (state: import('../shared/types').OverlayState) => void,
     ) => () => void
@@ -53,6 +57,15 @@ interface Window {
     getConnectionStatus: () => Promise<import('../shared/types').ConnectionStatus | null>
     getConnectedUsers: () => Promise<import('../shared/types').ConnectedUser[]>
     getShortcutStatus: () => Promise<import('../shared/types').ShortcutStatus[]>
+    getShortcutConfigs: () => Promise<import('../shared/types').ShortcutConfig[]>
+    startShortcutCapture: (
+      action: import('../shared/types').ShortcutActionId,
+    ) => Promise<import('../shared/types').ShortcutConfig[]>
+    setShortcutCaptureMode: (enabled: boolean) => Promise<void>
+    setShortcutConfigs: (
+      shortcuts: import('../shared/types').ShortcutConfig[],
+    ) => Promise<import('../shared/types').ShortcutConfig[]>
+    resetShortcutConfigs: () => Promise<import('../shared/types').ShortcutConfig[]>
     getServerConfig: () => Promise<import('../shared/types').ServerConfig>
     saveServerConfig: (
       config: import('../shared/types').ServerConfig,

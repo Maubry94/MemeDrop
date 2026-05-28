@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import type { ConnectionStatus, OverlayDisplayInfo, ServerConfig } from '../../../shared/types'
+import type {
+  ConnectionStatus,
+  OverlayDisplayInfo,
+  ServerConfig,
+  ShortcutStatus,
+} from '../../../shared/types'
 import DiscordAccount from './DiscordAccount.vue'
 import ServerSettings from './ServerSettings.vue'
 
@@ -20,6 +25,7 @@ defineProps<{
   configSavedMessage: string | null
   authMessage: string | null
   connectionStatus: ConnectionStatus | null
+  shortcutStatuses: ShortcutStatus[]
 }>()
 
 defineEmits<{
@@ -196,8 +202,9 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
   </div>
 
   <div class="rounded-lg border border-white/10 bg-slate-900/70 p-2 text-[11px] text-slate-300">
-    Ctrl+Shift+D (désactiver les drop)<br />Ctrl+Shift+S (couper le drop actuel)<br />Ctrl+Shift+M
-    (masquer mes drops)<br />Ctrl+Shift+X (stop global auteur)
+    <span v-for="shortcut in shortcutStatuses" :key="shortcut.action" class="block">
+      {{ shortcut.accelerator.replace('CommandOrControl', 'Ctrl') }} ({{ shortcut.label }})
+    </span>
   </div>
 
   <button

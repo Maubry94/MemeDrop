@@ -73,8 +73,14 @@ export type OverlayDisplayInfo = {
   }
 }
 
-export type ShortcutStatus = {
+export type ShortcutActionId = 'toggleDrops' | 'skipDrop' | 'toggleOwnDrops' | 'stopGlobalDrop'
+
+export type ShortcutConfig = {
+  action: ShortcutActionId
   accelerator: string
+}
+
+export type ShortcutStatus = ShortcutConfig & {
   label: string
   registered: boolean
 }
