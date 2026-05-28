@@ -13,6 +13,7 @@ import type {
   ConnectionStatus,
   Drop,
   OverlayAnchor,
+  OverlayDisplayInfo,
   OverlayDisplayPreferences,
   OverlayPosition,
   OverlayState,
@@ -31,6 +32,8 @@ const isControlView = computed(() => view === 'control')
 const controlTab = ref<ControlTab>('control')
 
 const overlayPosition = ref<OverlayPosition>('full')
+const overlayDisplayId = ref('primary')
+const overlayDisplays = ref<OverlayDisplayInfo[]>([])
 const dropVolume = ref(100)
 const dropSize = ref(100)
 const customX = ref(50)
@@ -170,6 +173,7 @@ const requestOverlayState = async () => {
 }
 
 const getCurrentOverlayDisplayPreferences = (): OverlayDisplayPreferences => ({
+  displayId: overlayDisplayId.value,
   position: overlayPosition.value,
   volume: dropVolume.value,
   size: dropSize.value,
@@ -180,6 +184,7 @@ const getCurrentOverlayDisplayPreferences = (): OverlayDisplayPreferences => ({
 
 const applyOverlayDisplayPreferences = (preferences: OverlayDisplayPreferences) => {
   syncingDisplayPreferences = true
+  overlayDisplayId.value = preferences.displayId
   overlayPosition.value = preferences.position
   dropVolume.value = preferences.volume
   dropSize.value = preferences.size
@@ -194,6 +199,13 @@ const requestOverlayDisplayPreferences = async () => {
     return
   }
   applyOverlayDisplayPreferences(await window.memedrop.getOverlayDisplayPreferences())
+}
+
+const requestOverlayDisplays = async () => {
+  if (!window.memedrop) {
+    return
+  }
+  overlayDisplays.value = await window.memedrop.getOverlayDisplays()
 }
 
 const saveOverlayDisplayPreferences = async () => {
@@ -364,6 +376,10 @@ watch(overlayPosition, () => {
   void saveOverlayDisplayPreferences()
 })
 
+watch(overlayDisplayId, () => {
+  void saveOverlayDisplayPreferences()
+})
+
 watch(dropVolume, () => {
   void saveOverlayDisplayPreferences()
 })
@@ -398,6 +414,7 @@ watch(dropsEnabled, async (value) => {
 onMounted(async () => {
   await requestOverlayState()
   await requestOverlayDisplayPreferences()
+  await requestOverlayDisplays()
   await requestAppPreferences()
   await requestConnectionStatus()
   await requestConnectedUsers()
@@ -460,6 +477,10 @@ onMounted(async () => {
     },
   )
 
+  const unsubOverlayDisplays = window.memedrop?.onOverlayDisplays((displays) => {
+    overlayDisplays.value = displays
+  })
+
   const unsubAppPreferences = window.memedrop?.onAppPreferences((preferences) => {
     appPreferences.value = preferences
   })
@@ -472,6 +493,7 @@ onMounted(async () => {
   if (unsubConnectedUsers) unsubscribers.push(unsubConnectedUsers)
   if (unsubOverlay) unsubscribers.push(unsubOverlay)
   if (unsubOverlayDisplayPreferences) unsubscribers.push(unsubOverlayDisplayPreferences)
+  if (unsubOverlayDisplays) unsubscribers.push(unsubOverlayDisplays)
   if (unsubAppPreferences) unsubscribers.push(unsubAppPreferences)
 })
 
@@ -569,6 +591,8 @@ onBeforeUnmount(() => {
         :drop-size="dropSize"
         :is-test-drop-active="isTestDropActive"
         :overlay-position="overlayPosition"
+        :overlay-display-id="overlayDisplayId"
+        :overlay-displays="overlayDisplays"
         :custom-x="customX"
         :custom-y="customY"
         :custom-anchor="customAnchor"
@@ -583,6 +607,7 @@ onBeforeUnmount(() => {
         @update-drop-volume="dropVolume = $event"
         @update-drop-size="dropSize = $event"
         @update-overlay-position="overlayPosition = $event as OverlayPosition"
+        @update-overlay-display-id="overlayDisplayId = $event"
         @update-custom-x="customX = $event"
         @update-custom-y="customY = $event"
         @update-custom-anchor="customAnchor = $event as OverlayAnchor"

@@ -21,6 +21,7 @@ import type {
   AppPreferences,
   ConnectedUser,
   OverlayDisplayPreferences,
+  OverlayDisplayInfo,
   OverlayState,
   ServerConfig,
   ShortcutStatus,
@@ -177,6 +178,7 @@ const getOverlayDisplayPreferences = (): OverlayDisplayPreferences => {
   const stored = readAppConfig().overlay ?? {}
 
   return {
+    displayId: String(stored.displayId ?? 'primary'),
     position: stored.position ?? 'full',
     volume: Number(stored.volume ?? 100),
     size: Number(stored.size ?? 100),
@@ -193,6 +195,7 @@ const saveOverlayDisplayPreferences = (
     ...readAppConfig(),
     overlay: {
       ...readAppConfig().overlay,
+      displayId: preferences.displayId,
       position: preferences.position,
       volume: preferences.volume,
       size: preferences.size,
@@ -206,6 +209,37 @@ const saveOverlayDisplayPreferences = (
   writeFileSync(getConfigPath(), JSON.stringify(nextConfig, null, 2), 'utf8')
 
   return getOverlayDisplayPreferences()
+}
+
+const getOverlayDisplays = (): OverlayDisplayInfo[] => {
+  const primaryDisplayId = String(screen.getPrimaryDisplay().id)
+
+  return screen.getAllDisplays().map((display, index) => ({
+    id: String(display.id),
+    label:
+      display.id === screen.getPrimaryDisplay().id
+        ? `Écran ${index + 1} (principal)`
+        : `Écran ${index + 1}`,
+    isPrimary: String(display.id) === primaryDisplayId,
+    bounds: {
+      x: display.bounds.x,
+      y: display.bounds.y,
+      width: display.bounds.width,
+      height: display.bounds.height,
+    },
+  }))
+}
+
+const getOverlayTargetDisplay = () => {
+  const preferences = getOverlayDisplayPreferences()
+  const displays = screen.getAllDisplays()
+  const primaryDisplay = screen.getPrimaryDisplay()
+
+  if (preferences.displayId === 'primary') {
+    return primaryDisplay
+  }
+
+  return displays.find((display) => String(display.id) === preferences.displayId) ?? primaryDisplay
 }
 
 const saveAppPreferences = () => {
@@ -488,7 +522,7 @@ const keepOverlayAboveFullscreen = () => {
     return
   }
 
-  overlayWindow.setBounds(screen.getPrimaryDisplay().bounds)
+  overlayWindow.setBounds(getOverlayTargetDisplay().bounds)
   overlayWindow.setAlwaysOnTop(true, 'screen-saver')
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   overlayWindow.showInactive()
@@ -518,6 +552,10 @@ const syncOverlayState = () => {
 
 const syncOverlayDisplayPreferences = () => {
   sendToWindows('overlay-display-preferences', getOverlayDisplayPreferences())
+}
+
+const syncOverlayDisplays = () => {
+  sendToWindows('overlay-displays', getOverlayDisplays())
 }
 
 const syncConnectionStatus = () => {
@@ -807,12 +845,13 @@ const loadView = (window: BrowserWindow, view: 'overlay' | 'control') => {
 }
 
 const createOverlayWindow = () => {
-  const { width, height } = screen.getPrimaryDisplay().bounds
+  const overlayDisplay = getOverlayTargetDisplay()
+  const { width, height, x, y } = overlayDisplay.bounds
   overlayWindow = new BrowserWindow({
     width,
     height,
-    x: 0,
-    y: 0,
+    x,
+    y,
     icon: windowIcon,
     frame: false,
     transparent: true,
@@ -834,6 +873,7 @@ const createOverlayWindow = () => {
   overlayWindow.webContents.on('did-finish-load', () => {
     syncOverlayState()
     syncOverlayDisplayPreferences()
+    syncOverlayDisplays()
     syncConnectionStatus()
     syncShortcutStatus()
     syncConnectedUsers()
@@ -870,6 +910,7 @@ const createControlWindow = () => {
     controlWindow?.setTitle(getAppTitle())
     syncOverlayState()
     syncOverlayDisplayPreferences()
+    syncOverlayDisplays()
     syncAppPreferences()
     syncConnectionStatus()
     syncShortcutStatus()
@@ -940,9 +981,18 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   if (!VITE_DEV_SERVER_URL) {
     await startRendererServer()
   }
-  screen.on('display-added', keepOverlayAboveFullscreen)
-  screen.on('display-removed', keepOverlayAboveFullscreen)
-  screen.on('display-metrics-changed', keepOverlayAboveFullscreen)
+  screen.on('display-added', () => {
+    syncOverlayDisplays()
+    keepOverlayAboveFullscreen()
+  })
+  screen.on('display-removed', () => {
+    syncOverlayDisplays()
+    keepOverlayAboveFullscreen()
+  })
+  screen.on('display-metrics-changed', () => {
+    syncOverlayDisplays()
+    keepOverlayAboveFullscreen()
+  })
   createWindows()
   createTray()
 
@@ -958,11 +1008,13 @@ if (hasInstanceLock) app.whenReady().then(async () => {
 
   ipcMain.handle('get-overlay-state', () => getOverlayState())
   ipcMain.handle('get-overlay-display-preferences', () => getOverlayDisplayPreferences())
+  ipcMain.handle('get-overlay-displays', () => getOverlayDisplays())
   ipcMain.handle(
     'set-overlay-display-preferences',
     (_event, preferences: OverlayDisplayPreferences) => {
       const savedPreferences = saveOverlayDisplayPreferences(preferences)
       syncOverlayDisplayPreferences()
+      keepOverlayAboveFullscreen()
       return savedPreferences
     },
   )

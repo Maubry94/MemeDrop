@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ConnectionStatus, ServerConfig } from '../../../shared/types'
+import type { ConnectionStatus, OverlayDisplayInfo, ServerConfig } from '../../../shared/types'
 import DiscordAccount from './DiscordAccount.vue'
 import ServerSettings from './ServerSettings.vue'
 
@@ -10,6 +10,8 @@ defineProps<{
   dropVolume: number
   dropSize: number
   isTestDropActive: boolean
+  overlayDisplayId: string
+  overlayDisplays: OverlayDisplayInfo[]
   overlayPosition: string
   customX: number
   customY: number
@@ -27,6 +29,7 @@ defineEmits<{
   stopCurrentDropForEveryone: []
   updateDropVolume: [value: number]
   updateDropSize: [value: number]
+  updateOverlayDisplayId: [value: string]
   updateOverlayPosition: [value: string]
   updateCustomX: [value: number]
   updateCustomY: [value: number]
@@ -71,6 +74,24 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
       Stop global
     </button>
   </div>
+
+  <label class="flex flex-col gap-1 text-xs text-slate-300">
+    Écran de l'overlay
+    <select
+      :value="overlayDisplayId"
+      class="w-full rounded-lg border border-white/10 bg-slate-900/70 px-2 py-1 text-sm text-slate-100"
+      @change="$emit('updateOverlayDisplayId', ($event.target as HTMLSelectElement).value)"
+    >
+      <option value="primary">Toujours l'écran principal</option>
+      <option
+        v-for="display in overlayDisplays"
+        :key="display.id"
+        :value="display.id"
+      >
+        {{ display.label }} · {{ display.bounds.width }}×{{ display.bounds.height }}
+      </option>
+    </select>
+  </label>
 
   <label class="flex flex-col gap-1 text-xs text-slate-300">
     Position de l'overlay

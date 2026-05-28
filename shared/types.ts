@@ -52,12 +52,25 @@ export type OverlayAnchor = 'full' | 'top-left' | 'top-right' | 'bottom-left' | 
 export type OverlayPosition = OverlayAnchor | 'custom'
 
 export type OverlayDisplayPreferences = {
+  displayId: string
   position: OverlayPosition
   volume: number
   size: number
   customX: number
   customY: number
   customAnchor: OverlayAnchor
+}
+
+export type OverlayDisplayInfo = {
+  id: string
+  label: string
+  isPrimary: boolean
+  bounds: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
 }
 
 export type ShortcutStatus = {
