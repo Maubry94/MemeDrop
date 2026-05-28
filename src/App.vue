@@ -580,10 +580,16 @@ onBeforeUnmount(() => {
         <span class="text-sm font-semibold">MemeDrop</span>
         <button
           type="button"
-          class="rounded-md border border-white/10 bg-slate-900/70 px-2 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-900"
+          class="flex size-8 items-center justify-center rounded-md border border-white/10 bg-slate-900/70 text-slate-300 hover:bg-slate-900"
+          title="Préférences"
+          aria-label="Préférences"
           @click="isPreferencesOpen = true"
         >
-          Préférences
+          <span
+            class="size-4 bg-current"
+            style="mask: url('/icons/gear.svg') center / contain no-repeat; -webkit-mask: url('/icons/gear.svg') center / contain no-repeat;"
+            aria-hidden="true"
+          />
         </button>
       </div>
 

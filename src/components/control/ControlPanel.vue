@@ -8,7 +8,7 @@ import type {
 import DiscordAccount from './DiscordAccount.vue'
 import ServerSettings from './ServerSettings.vue'
 
-defineProps<{
+const props = defineProps<{
   dropsEnabled: boolean
   hideOwnDrops: boolean
   canStopGlobalDrop: boolean
@@ -46,6 +46,16 @@ defineEmits<{
 }>()
 
 const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: true })
+
+const getShortcutLabel = (action: ShortcutStatus['action']) => {
+  const shortcut = props.shortcutStatuses.find((status) => status.action === action)
+  return shortcut?.accelerator.replace('CommandOrControl', 'Ctrl').replace(/\+/g, ' + ') ?? ''
+}
+
+const getShortcutTitle = (action: ShortcutStatus['action'], fallback: string) => {
+  const shortcut = getShortcutLabel(action)
+  return shortcut ? `${fallback}\nRaccourci : ${shortcut}` : fallback
+}
 </script>
 
 <template>
@@ -53,6 +63,7 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
     <button
       type="button"
       class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
+      :title="getShortcutTitle('toggleDrops', dropsEnabled ? 'Désactiver les drops' : 'Activer les drops')"
       @click="$emit('toggleDrops')"
     >
       {{ dropsEnabled ? 'Désactiver' : 'Activer' }}
@@ -60,6 +71,7 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
     <button
       type="button"
       class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
+      :title="getShortcutTitle('skipDrop', 'Couper le drop actuel')"
       @click="$emit('skipCurrentDrop')"
     >
       Couper
@@ -67,6 +79,7 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
     <button
       type="button"
       class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
+      :title="getShortcutTitle('toggleOwnDrops', hideOwnDrops ? 'Voir mes drops' : 'Masquer mes drops')"
       @click="$emit('toggleHideOwnDrops')"
     >
       {{ hideOwnDrops ? 'Voir mes drops' : 'Masquer mes drops' }}
@@ -74,12 +87,17 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
     <button
       type="button"
       class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90 disabled:cursor-default disabled:opacity-50"
+      :title="getShortcutTitle('stopGlobalDrop', 'Stopper le drop pour tout le monde')"
       :disabled="!canStopGlobalDrop"
       @click="$emit('stopCurrentDropForEveryone')"
     >
       Stop global
     </button>
   </div>
+
+  <p class="-mt-1 text-[11px] text-slate-500">
+    Les raccourcis sont modifiables dans les préférences.
+  </p>
 
   <label class="flex flex-col gap-1 text-xs text-slate-300">
     Écran de l'overlay
@@ -199,12 +217,6 @@ const modelServerConfig = defineModel<ServerConfig>('serverConfig', { required: 
     :class="connectionStatus?.level === 'error' ? 'text-rose-300' : 'text-emerald-300'"
   >
     {{ connectionStatus?.message ?? 'Serveur MemeDrop : en attente de connexion…' }}
-  </div>
-
-  <div class="rounded-lg border border-white/10 bg-slate-900/70 p-2 text-[11px] text-slate-300">
-    <span v-for="shortcut in shortcutStatuses" :key="shortcut.action" class="block">
-      {{ shortcut.accelerator.replace('CommandOrControl', 'Ctrl') }} ({{ shortcut.label }})
-    </span>
   </div>
 
   <button

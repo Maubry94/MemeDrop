@@ -75,10 +75,16 @@ onBeforeUnmount(() => {
         <h2 class="text-sm font-semibold">Préférences</h2>
         <button
           type="button"
-          class="rounded-md border border-white/10 bg-slate-900/70 px-2 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-900"
+          class="flex size-8 items-center justify-center rounded-md border border-white/10 bg-slate-900/70 text-slate-300 hover:bg-slate-900"
+          title="Fermer"
+          aria-label="Fermer"
           @click="$emit('close')"
         >
-          Fermer
+          <span
+            class="size-4 bg-current"
+            style="mask: url('/icons/cross.svg') center / contain no-repeat; -webkit-mask: url('/icons/cross.svg') center / contain no-repeat;"
+            aria-hidden="true"
+          />
         </button>
       </div>
 
