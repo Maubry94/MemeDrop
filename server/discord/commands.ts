@@ -67,11 +67,16 @@ const createSlashCommands = () => {
     .setName('download')
     .setDescription('Télécharger la dernière version de MemeDrop')
 
+  const helpCommand = new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Afficher l’aide des commandes MemeDrop')
+
   return [
     dropCommand.toJSON(),
     dropYouTubeCommand.toJSON(),
     dropStatusCommand.toJSON(),
     downloadCommand.toJSON(),
+    helpCommand.toJSON(),
   ]
 }
 

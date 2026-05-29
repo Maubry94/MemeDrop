@@ -14,7 +14,7 @@ import type { BroadcastDrop, GetConnectedUsers, StopDropByOwner } from '../types
 import { isSupportedAttachment } from '../utils/attachments.js'
 import { getYouTubeVideoId, isValidYouTubeVideoId } from '../utils/youtube.js'
 
-const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'dropstatus', 'download'])
+const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'dropstatus', 'download', 'help'])
 
 type BaseDrop = Omit<Drop, 'id' | 'url' | 'contentType' | 'fileName' | 'youtubeVideoId' | 'targetUserId' | 'targetUserName'>
 
@@ -299,6 +299,54 @@ const handleDownload = async (
   })
 }
 
+const handleHelp = async (
+  interaction: ChatInputCommandInteraction,
+  latestAppVersion: string,
+) => {
+  const embed = new EmbedBuilder()
+    .setTitle('Aide MemeDrop')
+    .setDescription(
+      'MemeDrop envoie les memes postés depuis Discord vers les overlays desktop des personnes connectées.',
+    )
+    .setColor(0x38bdf8)
+    .addFields(
+      {
+        name: '/drop',
+        value:
+          'Envoie une image, une vidéo, un son ou un fichier pris en charge. Options : `fichier`, `legende`, `cible`, `anonyme`.',
+      },
+      {
+        name: '/dropyt',
+        value:
+          'Envoie une vidéo YouTube. Options : `lien`, `legende`, `cible`, `anonyme`.',
+      },
+      {
+        name: '/dropstatus',
+        value: 'Affiche les utilisateurs actuellement connectés à MemeDrop.',
+      },
+      {
+        name: '/download',
+        value: `Affiche le bouton de téléchargement de la dernière version de l'app (${latestAppVersion}).`,
+      },
+      {
+        name: 'Drops ciblés',
+        value:
+          '`cible` propose uniquement les utilisateurs connectés à MemeDrop avec les drops activés. Si aucune cible n’est choisie, le drop est envoyé à tout le monde.',
+      },
+      {
+        name: 'Options utiles',
+        value:
+          '`legende` ajoute un texte au drop. `anonyme` masque ton pseudo et ton avatar. Le bouton `Stopper le drop` arrête ton drop en cours.',
+      },
+    )
+
+  await interaction.reply({
+    embeds: [embed],
+    components: createDownloadButtonComponents(latestAppVersion),
+    flags: MessageFlags.Ephemeral,
+  })
+}
+
 const handleTargetAutocomplete = async (
   interaction: AutocompleteInteraction,
   getConnectedUsers: GetConnectedUsers,
@@ -368,6 +416,11 @@ export const createInteractionHandler =
 
     if (interaction.commandName === 'download') {
       await handleDownload(interaction, latestAppVersion)
+      return
+    }
+
+    if (interaction.commandName === 'help') {
+      await handleHelp(interaction, latestAppVersion)
       return
     }
 
