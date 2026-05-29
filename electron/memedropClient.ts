@@ -1,6 +1,8 @@
 import WebSocket from 'ws'
 import type { ConnectedUser, ConnectionStatus, Drop } from '../shared/types'
 
+const SERVER_HEARTBEAT_TIMEOUT_MS = 75000
+
 type MemeDropClientOptions = {
   serverUrl: string | undefined
   accessKey: string | undefined
@@ -116,6 +118,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
 
   let socket: WebSocket | null = null
   let reconnectTimer: NodeJS.Timeout | null = null
+  let heartbeatTimer: NodeJS.Timeout | null = null
   let stopped = false
 
   const clearReconnectTimer = () => {
@@ -123,6 +126,30 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
     }
+  }
+
+  const clearHeartbeatTimer = () => {
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer)
+      heartbeatTimer = null
+    }
+  }
+
+  const resetHeartbeatTimer = () => {
+    clearHeartbeatTimer()
+
+    if (stopped) {
+      return
+    }
+
+    heartbeatTimer = setTimeout(() => {
+      onStatus({
+        level: 'error',
+        message: 'Serveur MemeDrop : connexion inactive, reconnexion...',
+      })
+      socket?.terminate()
+      scheduleReconnect()
+    }, SERVER_HEARTBEAT_TIMEOUT_MS)
   }
 
   const scheduleReconnect = () => {
@@ -164,6 +191,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     socket = new WebSocket(wsUrl)
 
     socket.on('open', () => {
+      resetHeartbeatTimer()
       onStatus({
         level: 'info',
         message: 'Serveur MemeDrop : connecté.',
@@ -175,6 +203,8 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     })
 
     socket.on('message', (data) => {
+      resetHeartbeatTimer()
+
       try {
         const message = JSON.parse(data.toString()) as ServerMessage
 
@@ -195,7 +225,13 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
       }
     })
 
+    socket.on('ping', () => {
+      resetHeartbeatTimer()
+    })
+
     socket.on('close', () => {
+      clearHeartbeatTimer()
+
       if (stopped) {
         return
       }
@@ -246,6 +282,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     stop: () => {
       stopped = true
       clearReconnectTimer()
+      clearHeartbeatTimer()
       socket?.close()
       socket = null
     },

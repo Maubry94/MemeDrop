@@ -8,6 +8,7 @@ import type {
 } from './types.js'
 
 const IMAGE_DISPLAY_MS = 9000
+const HEARTBEAT_INTERVAL_MS = 30000
 
 const sendJson = (socket: WebSocket, payload: unknown) => {
   if (socket.readyState === WebSocket.OPEN) {
@@ -41,6 +42,7 @@ export const createMemeDropWebSocketServer = ({
   latestAppVersion,
 }: MemeDropWebSocketServerOptions) => {
   const clients = new Map<WebSocket, MemeDropClient>()
+  const socketAlive = new WeakMap<WebSocket, boolean>()
   const wss = new WebSocketServer({ server, path: '/ws' })
   const globalQueue: Drop[] = []
   const targetedQueues = new Map<string, Drop[]>()
@@ -380,6 +382,7 @@ export const createMemeDropWebSocketServer = ({
       appVersion,
       dropsEnabled: true,
     })
+    socketAlive.set(socket, true)
     console.log(`Client MemeDrop connecté (${getClientLogSummary()}).`)
     sendJson(socket, { type: 'hello' })
     broadcastConnectedUsers()
@@ -410,9 +413,14 @@ export const createMemeDropWebSocketServer = ({
       }
     })
 
+    socket.on('pong', () => {
+      socketAlive.set(socket, true)
+    })
+
     socket.on('close', () => {
       const job = activeJobBySocket.get(socket)
       clients.delete(socket)
+      socketAlive.delete(socket)
 
       if (job) {
         activeJobBySocket.delete(socket)
@@ -431,6 +439,26 @@ export const createMemeDropWebSocketServer = ({
       broadcastConnectedUsers()
       scheduleDrops()
     })
+  })
+
+  const heartbeatTimer = setInterval(() => {
+    for (const socket of wss.clients) {
+      if (socket.readyState !== WebSocket.OPEN) {
+        continue
+      }
+
+      if (socketAlive.get(socket) === false) {
+        socket.terminate()
+        continue
+      }
+
+      socketAlive.set(socket, false)
+      socket.ping()
+    }
+  }, HEARTBEAT_INTERVAL_MS)
+
+  wss.on('close', () => {
+    clearInterval(heartbeatTimer)
   })
 
   const broadcastDrop = (drop: Drop) => {

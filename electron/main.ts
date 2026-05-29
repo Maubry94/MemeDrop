@@ -1,4 +1,14 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, shell, Tray } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  powerMonitor,
+  screen,
+  shell,
+  Tray,
+} from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -84,6 +94,7 @@ let shortcutConfigs: ShortcutConfig[] = []
 let shortcutCaptureAction: ShortcutActionId | null = null
 let overlayKeepAliveTimer: ReturnType<typeof setInterval> | null = null
 let controlWindowBoundsSaveTimer: ReturnType<typeof setTimeout> | null = null
+let resumeReconnectTimer: ReturnType<typeof setTimeout> | null = null
 let isQuitting = false
 let rendererServer: http.Server | null = null
 let rendererServerUrl: string | null = null
@@ -612,6 +623,17 @@ const startOrRestartMemeDropClient = () => {
       setConnectionStatus(status)
     },
   })
+}
+
+const scheduleMemeDropReconnect = () => {
+  if (resumeReconnectTimer) {
+    clearTimeout(resumeReconnectTimer)
+  }
+
+  resumeReconnectTimer = setTimeout(() => {
+    resumeReconnectTimer = null
+    startOrRestartMemeDropClient()
+  }, 5000)
 }
 
 const getOverlayState = (): OverlayState => ({
@@ -1198,6 +1220,13 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     syncOverlayDisplays()
     keepOverlayAboveFullscreen()
   })
+  powerMonitor.on('resume', () => {
+    setConnectionStatus({
+      level: 'info',
+      message: 'Serveur MemeDrop : réveil du PC, reconnexion...',
+    })
+    scheduleMemeDropReconnect()
+  })
   createWindows()
   createTray()
 
@@ -1313,6 +1342,10 @@ app.on('will-quit', () => {
   if (controlWindowBoundsSaveTimer) {
     clearTimeout(controlWindowBoundsSaveTimer)
     controlWindowBoundsSaveTimer = null
+  }
+  if (resumeReconnectTimer) {
+    clearTimeout(resumeReconnectTimer)
+    resumeReconnectTimer = null
   }
   saveControlWindowBounds()
   tray?.destroy()
