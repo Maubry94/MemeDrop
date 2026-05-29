@@ -132,6 +132,21 @@ export const createMemeDropWebSocketServer = ({
       .filter(([, client]) => client.userId === userId)
       .map(([socket]) => socket)
 
+  const getDeliveryTargetsForDrop = (drop: Drop) => {
+    if (!drop.targetUserId) {
+      return getEligibleClients()
+    }
+
+    const targets = getClientsByUserId(drop.targetUserId)
+    const ownerId = drop.ownerId ?? drop.authorId
+
+    if (!ownerId || ownerId === drop.targetUserId) {
+      return targets
+    }
+
+    return Array.from(new Set([...targets, ...getClientsByUserId(ownerId)]))
+  }
+
   const hasBusyClient = (sockets: WebSocket[]) =>
     sockets.some((socket) => activeJobBySocket.has(socket))
 
@@ -230,8 +245,8 @@ export const createMemeDropWebSocketServer = ({
         continue
       }
 
-      const targets = getClientsByUserId(targetUserId)
-      if (!targets.length) {
+      const primaryTargets = getClientsByUserId(targetUserId)
+      if (!primaryTargets.length) {
         queue.shift()
         if (!queue.length) {
           targetedQueues.delete(targetUserId)
@@ -239,14 +254,20 @@ export const createMemeDropWebSocketServer = ({
         continue
       }
 
-      if (hasBusyClient(targets)) {
+      const nextDrop = queue[0]
+      if (!nextDrop) {
+        targetedQueues.delete(targetUserId)
         continue
       }
 
-      const nextDrop = queue.shift()
-      if (nextDrop) {
-        startJob(nextDrop, targets, 'targeted')
+      const deliveryTargets = getDeliveryTargetsForDrop(nextDrop)
+
+      if (hasBusyClient(deliveryTargets)) {
+        continue
       }
+
+      queue.shift()
+      startJob(nextDrop, deliveryTargets, 'targeted')
       if (!queue.length) {
         targetedQueues.delete(targetUserId)
       }

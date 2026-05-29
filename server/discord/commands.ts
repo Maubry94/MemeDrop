@@ -16,11 +16,12 @@ const createSlashCommands = () => {
         .setDescription('Légende optionnelle')
         .setRequired(false),
     )
-    .addUserOption((option) =>
+    .addStringOption((option) =>
       option
         .setName('cible')
         .setDescription('Envoyer le drop uniquement à cette personne')
-        .setRequired(false),
+        .setRequired(false)
+        .setAutocomplete(true),
     )
     .addBooleanOption((option) =>
       option
@@ -44,11 +45,12 @@ const createSlashCommands = () => {
         .setDescription('Légende optionnelle')
         .setRequired(false),
     )
-    .addUserOption((option) =>
+    .addStringOption((option) =>
       option
         .setName('cible')
         .setDescription('Envoyer le drop uniquement à cette personne')
-        .setRequired(false),
+        .setRequired(false)
+        .setAutocomplete(true),
     )
     .addBooleanOption((option) =>
       option

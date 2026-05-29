@@ -4,6 +4,7 @@ import {
   ButtonStyle,
   ChatInputCommandInteraction,
   MessageFlags,
+  type AutocompleteInteraction,
   User,
   type Interaction,
 } from 'discord.js'
@@ -15,6 +16,11 @@ import { getYouTubeVideoId, isValidYouTubeVideoId } from '../utils/youtube.js'
 const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'dropstatus'])
 
 type BaseDrop = Omit<Drop, 'id' | 'url' | 'contentType' | 'fileName' | 'youtubeVideoId' | 'targetUserId' | 'targetUserName'>
+
+type DropTarget = {
+  id: string
+  name: string
+}
 
 type DiscordApiErrorLike = {
   code?: number
@@ -49,31 +55,58 @@ const createStopButtonComponents = (dropId: string) => [
   ),
 ]
 
-const getTargetUser = (interaction: ChatInputCommandInteraction) => interaction.options.getUser('cible')
+const getAvailableDropTargets = (getConnectedUsers: GetConnectedUsers, requesterId?: string) =>
+  getConnectedUsers()
+    .filter((user) => user.dropsEnabled && user.id !== requesterId)
+    .sort((a, b) => a.name.localeCompare(b.name))
 
-const withTarget = (drop: Drop, targetUser: User | null): Drop => ({
+const getTargetUser = async (
+  interaction: ChatInputCommandInteraction,
+  getConnectedUsers: GetConnectedUsers,
+): Promise<DropTarget | null> => {
+  const targetUserId = interaction.options.getString('cible')
+
+  if (!targetUserId) {
+    return null
+  }
+
+  const targetUser = getAvailableDropTargets(getConnectedUsers, interaction.user.id).find(
+    (user) => user.id === targetUserId,
+  )
+
+  if (!targetUser) {
+    return null
+  }
+
+  return {
+    id: targetUser.id,
+    name: await resolveConnectedUserName(interaction, targetUser),
+  }
+}
+
+const withTarget = (drop: Drop, targetUser: DropTarget | null): Drop => ({
   ...drop,
   targetUserId: targetUser?.id ?? null,
-  targetUserName: targetUser?.username ?? null,
+  targetUserName: targetUser?.name ?? null,
 })
 
-const createSentMessage = (sentCount: number, targetUser: User | null): string => {
+const createSentMessage = (sentCount: number, targetUser: DropTarget | null): string => {
   if (!sentCount && targetUser) {
-    return `Aucun client MemeDrop connecté pour ${targetUser.username}.`
+    return `Aucun client MemeDrop connecté pour ${targetUser.name}.`
   }
 
   if (!sentCount) {
     return 'Aucun client MemeDrop connecté.'
   }
 
-  return targetUser ? `Drop envoyé à ${targetUser.username} !` : 'Drop envoyé !'
+  return targetUser ? `Drop envoyé à ${targetUser.name} !` : 'Drop envoyé !'
 }
 
 const editDropReply = async (
   interaction: ChatInputCommandInteraction,
   dropId: string,
   sentCount: number,
-  targetUser: User | null,
+  targetUser: DropTarget | null,
   fallbackMessage: string,
 ) => {
   if (!sentCount) {
@@ -92,10 +125,17 @@ const handleYouTubeDrop = async (
   caption: string | null,
   isAnonymous: boolean,
   broadcastDrop: BroadcastDrop,
+  getConnectedUsers: GetConnectedUsers,
 ) => {
   const link = interaction.options.getString('lien', true)
   const youtubeVideoId = getYouTubeVideoId(link)
-  const targetUser = getTargetUser(interaction)
+  const hasTarget = Boolean(interaction.options.getString('cible'))
+  const targetUser = await getTargetUser(interaction, getConnectedUsers)
+
+  if (hasTarget && !targetUser) {
+    await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
+    return
+  }
 
   if (!youtubeVideoId || !isValidYouTubeVideoId(youtubeVideoId)) {
     await interaction.editReply('Lien YouTube invalide.')
@@ -121,12 +161,19 @@ const handleFileDrop = async (
   caption: string | null,
   isAnonymous: boolean,
   broadcastDrop: BroadcastDrop,
+  getConnectedUsers: GetConnectedUsers,
 ) => {
   const attachment = interaction.options.getAttachment('fichier')
-  const targetUser = getTargetUser(interaction)
+  const hasTarget = Boolean(interaction.options.getString('cible'))
+  const targetUser = await getTargetUser(interaction, getConnectedUsers)
 
   if (!attachment) {
     await interaction.editReply('Pas de fichier fourni.')
+    return
+  }
+
+  if (hasTarget && !targetUser) {
+    await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
     return
   }
 
@@ -214,6 +261,39 @@ const handleDropStatus = async (
   })
 }
 
+const handleTargetAutocomplete = async (
+  interaction: AutocompleteInteraction,
+  getConnectedUsers: GetConnectedUsers,
+) => {
+  if (!SUPPORTED_COMMANDS.has(interaction.commandName)) {
+    return false
+  }
+
+  const focusedOption = interaction.options.getFocused(true)
+
+  if (focusedOption.name !== 'cible') {
+    return false
+  }
+
+  const search = String(focusedOption.value).trim().toLowerCase()
+  const users = getAvailableDropTargets(getConnectedUsers, interaction.user.id)
+  const matchingUsers = users
+    .filter((user) => {
+      const name = user.name.toLowerCase()
+      return !search || name.includes(search) || user.id.includes(search)
+    })
+    .slice(0, 25)
+
+  await interaction.respond(
+    matchingUsers.map((user) => ({
+      name: user.name,
+      value: user.id,
+    })),
+  )
+
+  return true
+}
+
 export const createInteractionHandler =
   ({
     broadcastDrop,
@@ -226,6 +306,11 @@ export const createInteractionHandler =
   }) =>
   async (interaction: Interaction) => {
   if (await handleStopButton(interaction, stopDropByOwner)) {
+    return
+  }
+
+  if (interaction.isAutocomplete()) {
+    await handleTargetAutocomplete(interaction, getConnectedUsers)
     return
   }
 
@@ -249,11 +334,11 @@ export const createInteractionHandler =
     const isAnonymous = interaction.options.getBoolean('anonyme') ?? false
 
     if (interaction.commandName === 'dropyt') {
-      await handleYouTubeDrop(interaction, caption, isAnonymous, broadcastDrop)
+      await handleYouTubeDrop(interaction, caption, isAnonymous, broadcastDrop, getConnectedUsers)
       return
     }
 
-    await handleFileDrop(interaction, caption, isAnonymous, broadcastDrop)
+    await handleFileDrop(interaction, caption, isAnonymous, broadcastDrop, getConnectedUsers)
   } catch (error) {
     if ((error as DiscordApiErrorLike)?.code === 10062) {
       console.error(

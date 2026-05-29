@@ -49,7 +49,7 @@ Options :
 
 - `fichier` : image, vidéo ou son.
 - `legende` : texte optionnel.
-- `cible` : utilisateur Discord qui recevra le drop. Si vide, le drop est global.
+- `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le drop est global.
 - `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
 
 ### `/dropyt`
@@ -60,7 +60,7 @@ Options :
 
 - `lien` : URL YouTube.
 - `legende` : texte optionnel.
-- `cible` : utilisateur Discord qui recevra le drop. Si vide, le drop est global.
+- `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le drop est global.
 - `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
 
 ### `/dropstatus`
