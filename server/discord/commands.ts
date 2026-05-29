@@ -63,7 +63,16 @@ const createSlashCommands = () => {
     .setName('dropstatus')
     .setDescription('Voir les utilisateurs connectés à MemeDrop')
 
-  return [dropCommand.toJSON(), dropYouTubeCommand.toJSON(), dropStatusCommand.toJSON()]
+  const downloadCommand = new SlashCommandBuilder()
+    .setName('download')
+    .setDescription('Télécharger la dernière version de MemeDrop')
+
+  return [
+    dropCommand.toJSON(),
+    dropYouTubeCommand.toJSON(),
+    dropStatusCommand.toJSON(),
+    downloadCommand.toJSON(),
+  ]
 }
 
 export const registerSlashCommands = async (

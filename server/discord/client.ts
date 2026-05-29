@@ -6,6 +6,7 @@ import type { DiscordBotOptions } from '../types.js'
 export const createDiscordBot = ({
   token,
   guildId,
+  latestAppVersion,
   broadcastDrop,
   getConnectedUsers,
   stopDropByOwner,
@@ -28,13 +29,18 @@ export const createDiscordBot = ({
 
     if (discord.user) {
       await registerSlashCommands(token, guildId, discord.user.id)
-      console.log('Commandes /drop, /dropyt et /dropstatus enregistrées.')
+      console.log('Commandes /drop, /dropyt, /dropstatus et /download enregistrées.')
     }
   })
 
   discord.on(
     'interactionCreate',
-    createInteractionHandler({ broadcastDrop, getConnectedUsers, stopDropByOwner }),
+    createInteractionHandler({
+      latestAppVersion,
+      broadcastDrop,
+      getConnectedUsers,
+      stopDropByOwner,
+    }),
   )
 
   discord.on('error', (error) => {

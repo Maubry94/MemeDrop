@@ -58,6 +58,7 @@ export type MemeDropWebSocketMessage =
 export type DiscordBotOptions = {
   token?: string
   guildId?: string
+  latestAppVersion: string
   broadcastDrop: BroadcastDrop
   getConnectedUsers: GetConnectedUsers
   stopDropByOwner: StopDropByOwner

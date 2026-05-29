@@ -17,6 +17,7 @@ Chaque utilisateur se connecte avec Discord dans l'app.
 - `/drop` : envoyer une image, vidéo ou piste audio.
 - `/dropyt` : envoyer une vidéo YouTube.
 - `/dropstatus` : voir les autres utilisateurs connectés à MemeDrop.
+- `/download` : obtenir la dernière version de MemeDrop.
 - Options Discord :
   - `legende` : ajouter un texte au drop.
   - `anonyme` : masquer son pseudo et son avatar.
@@ -68,6 +69,10 @@ Options :
 Affiche en réponse éphémère les autres utilisateurs actuellement connectés à MemeDrop.
 
 Cette commande est utile avant un drop ciblé pour savoir qui peut recevoir un drop.
+
+### `/download`
+
+Affiche en réponse éphémère un bouton pour télécharger la dernière version de l'app desktop MemeDrop.
 
 ## Queues
 

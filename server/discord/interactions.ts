@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChatInputCommandInteraction,
+  EmbedBuilder,
   MessageFlags,
   type AutocompleteInteraction,
   User,
@@ -13,7 +14,7 @@ import type { BroadcastDrop, GetConnectedUsers, StopDropByOwner } from '../types
 import { isSupportedAttachment } from '../utils/attachments.js'
 import { getYouTubeVideoId, isValidYouTubeVideoId } from '../utils/youtube.js'
 
-const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'dropstatus'])
+const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'dropstatus', 'download'])
 
 type BaseDrop = Omit<Drop, 'id' | 'url' | 'contentType' | 'fileName' | 'youtubeVideoId' | 'targetUserId' | 'targetUserName'>
 
@@ -52,6 +53,18 @@ const createStopButtonComponents = (dropId: string) => [
       .setCustomId(`stop-drop:${dropId}`)
       .setLabel('Stopper le drop')
       .setStyle(ButtonStyle.Danger),
+  ),
+]
+
+const getReleaseUrl = (version: string) =>
+  `https://github.com/Maubry94/MemeDrop/releases/tag/${version}`
+
+const createDownloadButtonComponents = (latestAppVersion: string) => [
+  new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setLabel('Télécharger MemeDrop')
+      .setStyle(ButtonStyle.Link)
+      .setURL(getReleaseUrl(latestAppVersion)),
   ),
 ]
 
@@ -261,6 +274,31 @@ const handleDropStatus = async (
   })
 }
 
+const handleDownload = async (
+  interaction: ChatInputCommandInteraction,
+  latestAppVersion: string,
+) => {
+  const releaseUrl = getReleaseUrl(latestAppVersion)
+  const embed = new EmbedBuilder()
+    .setTitle(`MemeDrop ${latestAppVersion}`)
+    .setDescription(
+      "Télécharge la dernière version de l'application desktop pour recevoir les drops sur ton PC.",
+    )
+    .setColor(0x38bdf8)
+    .addFields({
+      name: 'Dernière version',
+      value: latestAppVersion,
+      inline: true,
+    })
+    .setURL(releaseUrl)
+
+  await interaction.reply({
+    embeds: [embed],
+    components: createDownloadButtonComponents(latestAppVersion),
+    flags: MessageFlags.Ephemeral,
+  })
+}
+
 const handleTargetAutocomplete = async (
   interaction: AutocompleteInteraction,
   getConnectedUsers: GetConnectedUsers,
@@ -296,10 +334,12 @@ const handleTargetAutocomplete = async (
 
 export const createInteractionHandler =
   ({
+    latestAppVersion,
     broadcastDrop,
     getConnectedUsers,
     stopDropByOwner,
   }: {
+    latestAppVersion: string
     broadcastDrop: BroadcastDrop
     getConnectedUsers: GetConnectedUsers
     stopDropByOwner: StopDropByOwner
@@ -323,6 +363,11 @@ export const createInteractionHandler =
   try {
     if (interaction.commandName === 'dropstatus') {
       await handleDropStatus(interaction, getConnectedUsers)
+      return
+    }
+
+    if (interaction.commandName === 'download') {
+      await handleDownload(interaction, latestAppVersion)
       return
     }
 

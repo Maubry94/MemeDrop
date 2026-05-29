@@ -72,6 +72,7 @@ const { broadcastDrop, clients, getConnectedUsers, stopDropByOwner } = createMem
 createDiscordBot({
   token: config.discordBotToken,
   guildId: config.discordGuildId,
+  latestAppVersion,
   broadcastDrop,
   getConnectedUsers,
   stopDropByOwner,
