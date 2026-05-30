@@ -4,6 +4,7 @@ export type Drop = {
   contentType: string | null
   fileName: string | null
   youtubeVideoId?: string | null
+  tiktokVideoId?: string | null
   caption: string | null
   authorId: string | null
   ownerId?: string | null

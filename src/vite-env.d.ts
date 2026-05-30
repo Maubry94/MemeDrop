@@ -53,6 +53,7 @@ interface Window {
     ) => Promise<import('../shared/types').OverlayDisplayPreferences>
     getAppPreferences: () => Promise<import('../shared/types').AppPreferences>
     getAppVersionInfo: () => Promise<import('../shared/types').AppVersionInfo>
+    getTikTokPreloadUrl: () => Promise<string>
     setAppPreferences: (
       preferences: import('../shared/types').AppPreferences,
     ) => Promise<import('../shared/types').AppPreferences>

@@ -12,11 +12,12 @@ import {
 import type { ConnectedUser, Drop } from '../../shared/types.js'
 import type { BroadcastDrop, GetConnectedUsers, StopDropByOwner } from '../types.js'
 import { isSupportedAttachment } from '../utils/attachments.js'
+import { resolveTikTokVideo } from '../utils/tiktok.js'
 import { getYouTubeVideoId, isValidYouTubeVideoId } from '../utils/youtube.js'
 
-const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'dropstatus', 'download', 'help'])
+const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'droptt', 'dropstatus', 'download', 'help'])
 
-type BaseDrop = Omit<Drop, 'id' | 'url' | 'contentType' | 'fileName' | 'youtubeVideoId' | 'targetUserId' | 'targetUserName'>
+type BaseDrop = Omit<Drop, 'id' | 'url' | 'contentType' | 'fileName' | 'youtubeVideoId' | 'tiktokVideoId' | 'targetUserId' | 'targetUserName'>
 
 type DropTarget = {
   id: string
@@ -167,6 +168,43 @@ const handleYouTubeDrop = async (
 
   console.log(`Drop YouTube diffusé à ${sentCount} client(s): ${youtubeVideoId}.`)
   await editDropReply(interaction, dropId, sentCount, targetUser, 'Drop YouTube envoyé !')
+}
+
+const handleTikTokDrop = async (
+  interaction: ChatInputCommandInteraction,
+  caption: string | null,
+  isAnonymous: boolean,
+  broadcastDrop: BroadcastDrop,
+  getConnectedUsers: GetConnectedUsers,
+) => {
+  const link = interaction.options.getString('lien', true)
+  const hasTarget = Boolean(interaction.options.getString('cible'))
+  const targetUser = await getTargetUser(interaction, getConnectedUsers)
+
+  if (hasTarget && !targetUser) {
+    await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
+    return
+  }
+
+  const tiktokVideo = await resolveTikTokVideo(link)
+
+  if (!tiktokVideo) {
+    await interaction.editReply('Lien TikTok invalide ou impossible à résoudre.')
+    return
+  }
+
+  const dropId = `tiktok-${tiktokVideo.id}-${Date.now()}`
+  const sentCount = broadcastDrop(withTarget({
+    id: dropId,
+    url: tiktokVideo.url,
+    contentType: 'video/tiktok',
+    fileName: null,
+    tiktokVideoId: tiktokVideo.id,
+    ...createBaseDrop(interaction, caption, isAnonymous),
+  }, targetUser))
+
+  console.log(`Drop TikTok diffusé à ${sentCount} client(s): ${tiktokVideo.id}.`)
+  await editDropReply(interaction, dropId, sentCount, targetUser, 'Drop TikTok envoyé !')
 }
 
 const handleFileDrop = async (
@@ -321,6 +359,11 @@ const handleHelp = async (
           'Envoie une vidéo YouTube. Options : `lien`, `legende`, `cible`, `anonyme`.',
       },
       {
+        name: '/droptt',
+        value:
+          'Envoie une vidéo TikTok. Options : `lien`, `legende`, `cible`, `anonyme`.',
+      },
+      {
         name: '/dropstatus',
         value: 'Affiche les utilisateurs actuellement connectés à MemeDrop.',
       },
@@ -433,6 +476,11 @@ export const createInteractionHandler =
 
     if (interaction.commandName === 'dropyt') {
       await handleYouTubeDrop(interaction, caption, isAnonymous, broadcastDrop, getConnectedUsers)
+      return
+    }
+
+    if (interaction.commandName === 'droptt') {
+      await handleTikTokDrop(interaction, caption, isAnonymous, broadcastDrop, getConnectedUsers)
       return
     }
 

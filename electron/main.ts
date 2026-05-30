@@ -9,7 +9,7 @@ import {
   shell,
   Tray,
 } from 'electron'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import {
@@ -69,6 +69,7 @@ const hasInstanceLock = VITE_DEV_SERVER_URL ? true : app.requestSingleInstanceLo
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 const windowIcon = path.join(process.env.VITE_PUBLIC, 'memeDrop.png')
 const getAppTitle = () => `MemeDrop v${app.getVersion()}`
+const getTikTokPreloadUrl = () => pathToFileURL(path.join(__dirname, 'tiktokPreload.mjs')).toString()
 
 let overlayWindow: BrowserWindow | null = null
 let controlWindow: BrowserWindow | null = null
@@ -1079,6 +1080,7 @@ const createOverlayWindow = () => {
     focusable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
+      webviewTag: true,
     },
   })
 
@@ -1254,6 +1256,7 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   )
   ipcMain.handle('get-app-preferences', () => getAppPreferences())
   ipcMain.handle('get-app-version-info', () => getAppVersionInfo())
+  ipcMain.handle('get-tiktok-preload-url', () => getTikTokPreloadUrl())
   ipcMain.handle('open-release-page', () => {
     void shell.openExternal(appVersionInfo.releaseUrl)
   })

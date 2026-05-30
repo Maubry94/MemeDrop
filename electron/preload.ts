@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('memedrop', {
     ipcRenderer.invoke('set-overlay-display-preferences', preferences),
   getAppPreferences: () => ipcRenderer.invoke('get-app-preferences'),
   getAppVersionInfo: () => ipcRenderer.invoke('get-app-version-info'),
+  getTikTokPreloadUrl: () => ipcRenderer.invoke('get-tiktok-preload-url'),
   setAppPreferences: (preferences: AppPreferences) =>
     ipcRenderer.invoke('set-app-preferences', preferences),
   quitApp: () => ipcRenderer.invoke('quit-app'),

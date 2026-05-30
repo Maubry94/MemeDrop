@@ -59,6 +59,35 @@ const createSlashCommands = () => {
         .setRequired(false),
     )
 
+  const dropTikTokCommand = new SlashCommandBuilder()
+    .setName('droptt')
+    .setDescription('Envoyer une vidéo TikTok via MemeDrop')
+    .addStringOption((option) =>
+      option
+        .setName('lien')
+        .setDescription('Lien TikTok')
+        .setRequired(true),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('legende')
+        .setDescription('Légende optionnelle')
+        .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('cible')
+        .setDescription('Envoyer le drop uniquement à cette personne')
+        .setRequired(false)
+        .setAutocomplete(true),
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName('anonyme')
+        .setDescription('Masquer ton pseudo et ton avatar sur le drop')
+        .setRequired(false),
+    )
+
   const dropStatusCommand = new SlashCommandBuilder()
     .setName('dropstatus')
     .setDescription('Voir les utilisateurs connectés à MemeDrop')
@@ -74,6 +103,7 @@ const createSlashCommands = () => {
   return [
     dropCommand.toJSON(),
     dropYouTubeCommand.toJSON(),
+    dropTikTokCommand.toJSON(),
     dropStatusCommand.toJSON(),
     downloadCommand.toJSON(),
     helpCommand.toJSON(),

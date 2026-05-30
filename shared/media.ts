@@ -1,6 +1,6 @@
 import type { Drop } from './types.js'
 
-export type MediaKind = 'none' | 'image' | 'video' | 'audio' | 'youtube' | 'file'
+export type MediaKind = 'none' | 'image' | 'video' | 'audio' | 'youtube' | 'tiktok' | 'file'
 
 export const getMediaKind = (drop: Drop | null): MediaKind => {
   if (!drop) {
@@ -9,6 +9,7 @@ export const getMediaKind = (drop: Drop | null): MediaKind => {
 
   const type = drop.contentType?.toLowerCase() ?? ''
   if (type === 'video/youtube' || drop.youtubeVideoId) return 'youtube'
+  if (type === 'video/tiktok' || drop.tiktokVideoId) return 'tiktok'
   if (type.startsWith('image/')) return 'image'
   if (type.startsWith('video/')) return 'video'
   if (type.startsWith('audio/')) return 'audio'

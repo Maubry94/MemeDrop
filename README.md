@@ -16,6 +16,7 @@ Chaque utilisateur se connecte avec Discord dans l'app.
 
 - `/drop` : envoyer une image, vidéo ou piste audio.
 - `/dropyt` : envoyer une vidéo YouTube.
+- `/droptt` : envoyer une vidéo TikTok.
 - `/dropstatus` : voir les autres utilisateurs connectés à MemeDrop.
 - `/download` : obtenir la dernière version de MemeDrop.
 - `/help` : afficher l'aide des commandes MemeDrop.
@@ -61,6 +62,17 @@ Envoie une vidéo YouTube.
 Options :
 
 - `lien` : URL YouTube.
+- `legende` : texte optionnel.
+- `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le drop est global.
+- `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
+
+### `/droptt`
+
+Envoie une vidéo TikTok.
+
+Options :
+
+- `lien` : URL TikTok.
 - `legende` : texte optionnel.
 - `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le drop est global.
 - `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
