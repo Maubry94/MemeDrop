@@ -71,10 +71,10 @@ const getShortcutTitle = (action: ShortcutStatus['action'], fallback: string) =>
     <button
       type="button"
       class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
-      :title="getShortcutTitle('skipDrop', 'Couper le drop actuel')"
+      :title="getShortcutTitle('skipDrop', 'Masquer le drop actuel')"
       @click="$emit('skipCurrentDrop')"
     >
-      Couper
+      Masquer
     </button>
     <button
       type="button"
@@ -86,12 +86,12 @@ const getShortcutTitle = (action: ShortcutStatus['action'], fallback: string) =>
     </button>
     <button
       type="button"
-      class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90 disabled:cursor-default disabled:opacity-50"
-      :title="getShortcutTitle('stopGlobalDrop', 'Stopper le drop pour tout le monde')"
+      class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90 disabled:cursor-not-allowed disabled:opacity-50"
+      :title="getShortcutTitle('stopGlobalDrop', 'Stopper le drop envoyé')"
       :disabled="!canStopGlobalDrop"
       @click="$emit('stopCurrentDropForEveryone')"
     >
-      Stop global
+      Stopper
     </button>
   </div>
 

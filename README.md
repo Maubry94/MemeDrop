@@ -256,9 +256,9 @@ Si Electron Builder bloque sur les liens symboliques, active le Mode développeu
 ## Raccourcis
 
 - `Ctrl+Shift+D` : activer/désactiver tous les drops.
-- `Ctrl+Shift+S` : arrêter le drop en cours sans désactiver les suivants.
+- `Ctrl+Shift+S` : masquer le drop actuel uniquement chez toi.
 - `Ctrl+Shift+M` : afficher/masquer ses propres drops.
-- `Ctrl+Shift+X` : stopper le drop en cours pour toutes les personnes qui l'ont reçu, si tu en es l'auteur.
+- `Ctrl+Shift+X` : stopper le drop envoyé pour toutes les personnes qui l'ont reçu.
 
 ## Notes
 

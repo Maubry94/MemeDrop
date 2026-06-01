@@ -155,9 +155,9 @@ const DEFAULT_SHORTCUTS: ShortcutConfig[] = [
 
 const SHORTCUT_LABELS: Record<ShortcutActionId, string> = {
   toggleDrops: 'Activer/désactiver les drops',
-  skipDrop: 'Couper le drop actuel',
+  skipDrop: 'Masquer le drop actuel',
   toggleOwnDrops: 'Afficher/masquer mes drops',
-  stopGlobalDrop: 'Couper le drop pour tout le monde',
+  stopGlobalDrop: 'Stopper le drop envoyé',
 }
 
 const readAppConfig = (): AppConfigFile => {
