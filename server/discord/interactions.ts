@@ -39,6 +39,12 @@ type DiscordApiErrorLike = {
   code?: number
 }
 
+type DropReplyOptions = {
+  title: string
+  description: string
+  color?: number
+}
+
 const getUserAvatarUrl = (user: User): string =>
   user.displayAvatarURL({
     extension: 'png',
@@ -67,6 +73,31 @@ const createStopButtonComponents = (dropId: string) => [
       .setStyle(ButtonStyle.Danger),
   ),
 ]
+
+const createInfoEmbed = ({
+  title,
+  description,
+  color = 0x38bdf8,
+}: DropReplyOptions) =>
+  new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .setColor(color)
+
+const editErrorReply = (
+  interaction: ChatInputCommandInteraction,
+  title: string,
+  description: string,
+) =>
+  interaction.editReply({
+    embeds: [
+      createInfoEmbed({
+        title,
+        description,
+        color: 0xf43f5e,
+      }),
+    ],
+  })
 
 const getReleaseUrl = (version: string) =>
   `https://github.com/Maubry94/MemeDrop/releases/tag/${version}`
@@ -174,21 +205,65 @@ const createSentMessage = (sentCount: number, targetUser: DropTarget | null): st
   return targetUser ? `Drop envoyé à ${targetUser.name} !` : 'Drop envoyé !'
 }
 
+const createDropSentEmbed = (
+  drop: Drop,
+  sentCount: number,
+  targetUser: DropTarget | null,
+  title: string,
+) => {
+  const embed = createInfoEmbed({
+    title,
+    description: 'Le drop a été ajouté à la queue MemeDrop.',
+    color: 0x34d399,
+  }).addFields(
+    {
+      name: 'Type',
+      value: getDropKindLabel(drop),
+      inline: true,
+    },
+    {
+      name: 'Cible',
+      value: targetUser?.name ?? 'Tout le monde',
+      inline: true,
+    },
+    {
+      name: 'Destinataires',
+      value: String(sentCount),
+      inline: true,
+    },
+  )
+
+  if (drop.caption) {
+    embed.addFields({
+      name: 'Légende',
+      value: drop.caption.slice(0, 1024),
+    })
+  }
+
+  embed.setFooter({ text: 'Tu peux stopper ce drop tant qu’il est en cours.' })
+
+  return embed
+}
+
 const editDropReply = async (
   interaction: ChatInputCommandInteraction,
-  dropId: string,
+  drop: Drop,
   sentCount: number,
   targetUser: DropTarget | null,
   fallbackMessage: string,
 ) => {
   if (!sentCount) {
-    await interaction.editReply(createSentMessage(sentCount, targetUser))
+    await editErrorReply(
+      interaction,
+      targetUser ? 'Cible indisponible' : 'Aucun destinataire',
+      createSentMessage(sentCount, targetUser),
+    )
     return
   }
 
   await interaction.editReply({
-    content: targetUser ? createSentMessage(sentCount, targetUser) : fallbackMessage,
-    components: createStopButtonComponents(dropId),
+    embeds: [createDropSentEmbed(drop, sentCount, targetUser, fallbackMessage)],
+    components: createStopButtonComponents(drop.id),
   })
 }
 
@@ -204,7 +279,7 @@ const editDropReplyAndRemember = async (
     addRecentDrop(recentDrops, drop)
   }
 
-  await editDropReply(interaction, drop.id, sentCount, targetUser, fallbackMessage)
+  await editDropReply(interaction, drop, sentCount, targetUser, fallbackMessage)
   return sentCount > 0
 }
 
@@ -222,12 +297,20 @@ const handleYouTubeDrop = async (
   const targetUser = await getTargetUser(interaction, getConnectedUsers)
 
   if (hasTarget && !targetUser) {
-    await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
+    await editErrorReply(
+      interaction,
+      'Cible indisponible',
+      'La personne doit être connectée à MemeDrop avec les drops activés.',
+    )
     return false
   }
 
   if (!youtubeVideoId || !isValidYouTubeVideoId(youtubeVideoId)) {
-    await interaction.editReply('Lien YouTube invalide.')
+    await editErrorReply(
+      interaction,
+      'Lien YouTube invalide',
+      'Vérifie que le lien pointe vers une vidéo YouTube publique.',
+    )
     return false
   }
 
@@ -248,7 +331,7 @@ const handleYouTubeDrop = async (
     drop,
     sentCount,
     targetUser,
-    'Drop YouTube envoyé !',
+    'Drop YouTube envoyé',
     recentDrops,
   )
 }
@@ -266,14 +349,22 @@ const handleTikTokDrop = async (
   const targetUser = await getTargetUser(interaction, getConnectedUsers)
 
   if (hasTarget && !targetUser) {
-    await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
+    await editErrorReply(
+      interaction,
+      'Cible indisponible',
+      'La personne doit être connectée à MemeDrop avec les drops activés.',
+    )
     return false
   }
 
   const tiktokVideo = await resolveTikTokVideo(link)
 
   if (!tiktokVideo) {
-    await interaction.editReply('Lien TikTok invalide ou impossible à résoudre.')
+    await editErrorReply(
+      interaction,
+      'Lien TikTok indisponible',
+      'Essaie avec le lien complet de la vidéo plutôt qu’un lien raccourci.',
+    )
     return false
   }
 
@@ -294,7 +385,7 @@ const handleTikTokDrop = async (
     drop,
     sentCount,
     targetUser,
-    'Drop TikTok envoyé !',
+    'Drop TikTok envoyé',
     recentDrops,
   )
 }
@@ -312,17 +403,29 @@ const handleFileDrop = async (
   const targetUser = await getTargetUser(interaction, getConnectedUsers)
 
   if (!attachment) {
-    await interaction.editReply('Pas de fichier fourni.')
+    await editErrorReply(
+      interaction,
+      'Fichier manquant',
+      'Ajoute une image, une vidéo, un son ou un fichier pris en charge.',
+    )
     return false
   }
 
   if (hasTarget && !targetUser) {
-    await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
+    await editErrorReply(
+      interaction,
+      'Cible indisponible',
+      'La personne doit être connectée à MemeDrop avec les drops activés.',
+    )
     return false
   }
 
   if (!isSupportedAttachment(attachment)) {
-    await interaction.editReply('Format non supporté. Envoie une image, une vidéo ou un son.')
+    await editErrorReply(
+      interaction,
+      'Format non supporté',
+      'Envoie une image, une vidéo ou un son pris en charge par MemeDrop.',
+    )
     return false
   }
 
@@ -341,7 +444,7 @@ const handleFileDrop = async (
     drop,
     sentCount,
     targetUser,
-    'Drop envoyé !',
+    'Drop envoyé',
     recentDrops,
   )
 }
@@ -360,12 +463,20 @@ const handleRedrop = async (
   const targetUser = await getTargetUser(interaction, getConnectedUsers)
 
   if (!recentDrop) {
-    await interaction.editReply("Ce drop n'est plus disponible dans l'historique récent.")
+    await editErrorReply(
+      interaction,
+      'Drop introuvable',
+      "Ce drop n’est plus disponible dans ton historique récent.",
+    )
     return false
   }
 
   if (hasTarget && !targetUser) {
-    await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
+    await editErrorReply(
+      interaction,
+      'Cible indisponible',
+      'La personne doit être connectée à MemeDrop avec les drops activés.',
+    )
     return false
   }
 
@@ -383,7 +494,7 @@ const handleRedrop = async (
     drop,
     sentCount,
     targetUser,
-    'Drop renvoyé !',
+    'Drop renvoyé',
     recentDrops,
   )
 }
@@ -400,7 +511,15 @@ const handleStopButton = async (
   const stopped = stopDropByOwner(dropId, interaction.user.id)
 
   await interaction.update({
-    content: stopped ? 'Drop stoppé.' : 'Drop déjà terminé ou introuvable.',
+    embeds: [
+      createInfoEmbed({
+        title: stopped ? 'Drop stoppé' : 'Drop introuvable',
+        description: stopped
+          ? 'Le drop a été stoppé pour toutes les personnes qui l’avaient reçu.'
+          : 'Ce drop est déjà terminé ou n’est plus dans la queue.',
+        color: stopped ? 0x34d399 : 0xf59e0b,
+      }),
+    ],
     components: [],
   })
 
@@ -521,39 +640,25 @@ const handleHelp = async (
     .setColor(0x38bdf8)
     .addFields(
       {
-        name: '/drop',
+        name: 'Envoyer',
         value:
-          'Envoie une image, une vidéo, un son ou un fichier pris en charge. Options : `fichier`, `legende`, `cible`, `anonyme`.',
+          '`/drop` fichier\n`/dropyt` vidéo YouTube\n`/droptt` vidéo TikTok\n`/redrop` drop récent',
       },
       {
-        name: '/dropyt',
+        name: 'Infos',
+        value: '`/dropstatus` utilisateurs disponibles\n`/download` télécharger l’app',
+      },
+      {
+        name: 'Options communes',
         value:
-          'Envoie une vidéo YouTube. Options : `lien`, `legende`, `cible`, `anonyme`.',
+          '`legende` ajoute un texte. `cible` propose les utilisateurs connectés avec les drops activés. `anonyme` masque ton pseudo et ton avatar.',
       },
       {
-        name: '/droptt',
-        value:
-          'Envoie une vidéo TikTok. Options : `lien`, `legende`, `cible`, `anonyme`.',
-      },
-      {
-        name: '/dropstatus',
-        value: 'Affiche les utilisateurs actuellement connectés à MemeDrop.',
-      },
-      {
-        name: '/download',
-        value: `Affiche le bouton de téléchargement de la dernière version de l'app (${latestAppVersion}).`,
-      },
-      {
-        name: 'Drops ciblés',
-        value:
-          '`cible` propose uniquement les utilisateurs connectés à MemeDrop avec les drops activés. Si aucune cible n’est choisie, le drop est envoyé à tout le monde.',
-      },
-      {
-        name: 'Options utiles',
-        value:
-          '`legende` ajoute un texte au drop. `anonyme` masque ton pseudo et ton avatar. Le bouton `Stopper le drop` arrête ton drop en cours.',
+        name: 'Contrôler',
+        value: 'Le bouton `Stopper le drop` arrête ton drop envoyé tant qu’il est en cours.',
       },
     )
+    .setFooter({ text: `Dernière version MemeDrop : ${latestAppVersion}` })
 
   await interaction.reply({
     embeds: [embed],
@@ -691,7 +796,11 @@ export const createInteractionHandler =
       })
 
       if (!userHasAllowedRole(interaction, allowedRoleIds)) {
-        await interaction.editReply("Tu n'as pas le rôle requis pour envoyer des drops.")
+        await editErrorReply(
+          interaction,
+          'Drop non autorisé',
+          "Tu n'as pas le rôle requis pour envoyer des drops.",
+        )
         return
       }
 
@@ -702,8 +811,10 @@ export const createInteractionHandler =
       )
 
       if (remainingCooldown > 0) {
-        await interaction.editReply(
-          `Doucement. Tu pourras renvoyer un drop dans ${remainingCooldown} seconde(s).`,
+        await editErrorReply(
+          interaction,
+          'Cooldown actif',
+          `Tu pourras renvoyer un drop dans ${remainingCooldown} seconde(s).`,
         )
         return
       }
