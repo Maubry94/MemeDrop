@@ -1,5 +1,6 @@
 import { Client, GatewayIntentBits } from 'discord.js'
 import { registerSlashCommands } from './commands.js'
+import { discordCommands } from './commands/index.js'
 import { createInteractionHandler } from './interactions.js'
 import type { DiscordBotOptions } from '../types.js'
 
@@ -31,7 +32,9 @@ export const createDiscordBot = ({
 
     if (discord.user) {
       await registerSlashCommands(token, guildId, discord.user.id)
-      console.log('Commandes /drop, /dropyt, /droptt, /redrop, /dropstatus, /download et /help enregistrées.')
+      console.log(
+        `Commandes ${discordCommands.map((command) => `/${command.data.name}`).join(', ')} enregistrées.`,
+      )
     }
   })
 
