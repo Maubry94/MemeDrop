@@ -47,20 +47,11 @@ defineProps<{
             </p>
           </div>
 
-          <div class="flex shrink-0 items-center gap-2">
-            <span
-              v-if="user.updateAvailable"
-              class="rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[10px] font-semibold text-amber-100"
-              :title="`Dernière version disponible : ${user.latestAppVersion}`"
-            >
-              MàJ
-            </span>
-            <span
-              class="h-2.5 w-2.5 shrink-0 rounded-full"
-              :class="user.dropsEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'"
-              :title="user.dropsEnabled ? 'Drops activés' : 'Drops désactivés'"
-            />
-          </div>
+          <span
+            class="h-2.5 w-2.5 shrink-0 rounded-full"
+            :class="user.dropsEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'"
+            :title="user.dropsEnabled ? 'Drops activés' : 'Drops désactivés'"
+          />
         </div>
       </div>
     </div>

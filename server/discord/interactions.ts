@@ -423,6 +423,12 @@ const resolveConnectedUserName = async (
   }
 }
 
+const formatConnectedUserStatus = (user: ConnectedUser) => {
+  const connections = user.connections > 1 ? ` · ${user.connections} connexions` : ''
+  const version = user.appVersions.length ? ` · v${user.appVersions.join(', v')}` : ''
+  return `${user.dropsEnabled ? 'Drops activés' : 'Drops désactivés'}${connections}${version}`
+}
+
 const handleDropStatus = async (
   interaction: ChatInputCommandInteraction,
   getConnectedUsers: GetConnectedUsers,
@@ -443,14 +449,37 @@ const handleDropStatus = async (
       name: await resolveConnectedUserName(interaction, user),
     })),
   )
+  const availableUsers = resolvedUsers.filter((user) => user.dropsEnabled)
+  const unavailableUsers = resolvedUsers.filter((user) => !user.dropsEnabled)
 
-  const lines = resolvedUsers.map((user) => {
-    const suffix = user.connections > 1 ? ` (${user.connections} connexions)` : ''
-    return `- ${user.name}${suffix}`
-  })
+  const formatUserLines = (items: ConnectedUser[]) =>
+    items.map((user) => `• **${user.name}**\n${formatConnectedUserStatus(user)}`).join('\n')
+
+  const embed = new EmbedBuilder()
+    .setTitle('Utilisateurs MemeDrop')
+    .setColor(availableUsers.length ? 0x34d399 : 0xf59e0b)
+    .setDescription(
+      availableUsers.length
+        ? `${availableUsers.length} utilisateur(s) disponible(s) pour recevoir un drop.`
+        : 'Aucun utilisateur disponible pour recevoir un drop.',
+    )
+
+  if (availableUsers.length) {
+    embed.addFields({
+      name: 'Disponibles',
+      value: formatUserLines(availableUsers).slice(0, 1024),
+    })
+  }
+
+  if (unavailableUsers.length) {
+    embed.addFields({
+      name: 'Connectés, drops désactivés',
+      value: formatUserLines(unavailableUsers).slice(0, 1024),
+    })
+  }
 
   await interaction.reply({
-    content: `Utilisateurs connectés à MemeDrop :\n${lines.join('\n')}`,
+    embeds: [embed],
     flags: MessageFlags.Ephemeral,
   })
 }
