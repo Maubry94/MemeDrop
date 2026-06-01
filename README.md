@@ -17,6 +17,7 @@ Chaque utilisateur se connecte avec Discord dans l'app.
 - `/drop` : envoyer une image, vidéo ou piste audio.
 - `/dropyt` : envoyer une vidéo YouTube.
 - `/droptt` : envoyer une vidéo TikTok.
+- `/redrop` : renvoyer un drop récent.
 - `/dropstatus` : voir les autres utilisateurs connectés à MemeDrop.
 - `/download` : obtenir la dernière version de MemeDrop.
 - `/help` : afficher l'aide des commandes MemeDrop.
@@ -77,6 +78,15 @@ Options :
 - `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le drop est global.
 - `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
 
+### `/redrop`
+
+Renvoie un drop récent envoyé par la même personne.
+
+Options :
+
+- `drop` : drop récent à renvoyer.
+- `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le redrop est global.
+
 ### `/dropstatus`
 
 Affiche en réponse éphémère les autres utilisateurs actuellement connectés à MemeDrop.
@@ -130,10 +140,16 @@ DISCORD_BOT_TOKEN=your-discord-bot-token
 DISCORD_GUILD_ID=your-guild-id
 DISCORD_CLIENT_ID=your-discord-application-client-id
 DISCORD_CLIENT_SECRET=your-discord-application-client-secret
+MEMEDROP_ALLOWED_ROLE_IDS=
+MEMEDROP_DROP_COOLDOWN_SECONDS=0
 MEMEDROP_SERVER_KEY=choose-a-shared-secret
 MEMEDROP_SERVER_URL=https://memedrop.example.com
 PUBLIC_BASE_URL=https://memedrop.example.com
 ```
+
+`MEMEDROP_ALLOWED_ROLE_IDS` peut contenir une liste d'IDs de rôles Discord séparés par des virgules. Si la valeur est vide, tout le monde peut envoyer des drops.
+
+`MEMEDROP_DROP_COOLDOWN_SECONDS` limite la fréquence d'envoi des drops par utilisateur. `0` désactive le cooldown.
 
 Lance le serveur :
 

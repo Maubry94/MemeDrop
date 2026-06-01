@@ -7,6 +7,8 @@ export const createDiscordBot = ({
   token,
   guildId,
   latestAppVersion,
+  allowedRoleIds,
+  dropCooldownSeconds,
   broadcastDrop,
   getConnectedUsers,
   stopDropByOwner,
@@ -29,7 +31,7 @@ export const createDiscordBot = ({
 
     if (discord.user) {
       await registerSlashCommands(token, guildId, discord.user.id)
-      console.log('Commandes /drop, /dropyt, /droptt, /dropstatus, /download et /help enregistrées.')
+      console.log('Commandes /drop, /dropyt, /droptt, /redrop, /dropstatus, /download et /help enregistrées.')
     }
   })
 
@@ -37,6 +39,8 @@ export const createDiscordBot = ({
     'interactionCreate',
     createInteractionHandler({
       latestAppVersion,
+      allowedRoleIds,
+      dropCooldownSeconds,
       broadcastDrop,
       getConnectedUsers,
       stopDropByOwner,

@@ -73,6 +73,8 @@ createDiscordBot({
   token: config.discordBotToken,
   guildId: config.discordGuildId,
   latestAppVersion,
+  allowedRoleIds: config.memedropAllowedRoleIds,
+  dropCooldownSeconds: config.memedropDropCooldownSeconds,
   broadcastDrop,
   getConnectedUsers,
   stopDropByOwner,

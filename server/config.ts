@@ -8,6 +8,8 @@ export const config: {
   discordGuildId: string | undefined
   discordClientId: string | undefined
   discordClientSecret: string | undefined
+  memedropAllowedRoleIds: string[]
+  memedropDropCooldownSeconds: number
   memedropServerKey: string
   publicBaseUrl: string | undefined
 } = {
@@ -16,6 +18,11 @@ export const config: {
   discordGuildId: process.env.DISCORD_GUILD_ID,
   discordClientId: process.env.DISCORD_CLIENT_ID,
   discordClientSecret: process.env.DISCORD_CLIENT_SECRET,
+  memedropAllowedRoleIds: (process.env.MEMEDROP_ALLOWED_ROLE_IDS ?? '')
+    .split(',')
+    .map((roleId) => roleId.trim())
+    .filter(Boolean),
+  memedropDropCooldownSeconds: Number(process.env.MEMEDROP_DROP_COOLDOWN_SECONDS ?? 0),
   memedropServerKey: process.env.MEMEDROP_SERVER_KEY ?? '',
   publicBaseUrl: process.env.PUBLIC_BASE_URL,
 }

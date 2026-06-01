@@ -92,6 +92,24 @@ const createSlashCommands = () => {
     .setName('dropstatus')
     .setDescription('Voir les utilisateurs connectés à MemeDrop')
 
+  const redropCommand = new SlashCommandBuilder()
+    .setName('redrop')
+    .setDescription('Renvoyer un drop récent')
+    .addStringOption((option) =>
+      option
+        .setName('drop')
+        .setDescription('Drop récent à renvoyer')
+        .setRequired(true)
+        .setAutocomplete(true),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('cible')
+        .setDescription('Envoyer le drop uniquement à cette personne')
+        .setRequired(false)
+        .setAutocomplete(true),
+    )
+
   const downloadCommand = new SlashCommandBuilder()
     .setName('download')
     .setDescription('Télécharger la dernière version de MemeDrop')
@@ -104,6 +122,7 @@ const createSlashCommands = () => {
     dropCommand.toJSON(),
     dropYouTubeCommand.toJSON(),
     dropTikTokCommand.toJSON(),
+    redropCommand.toJSON(),
     dropStatusCommand.toJSON(),
     downloadCommand.toJSON(),
     helpCommand.toJSON(),

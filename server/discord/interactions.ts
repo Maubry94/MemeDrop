@@ -6,6 +6,7 @@ import {
   EmbedBuilder,
   MessageFlags,
   type AutocompleteInteraction,
+  type GuildMemberRoleManager,
   User,
   type Interaction,
 } from 'discord.js'
@@ -15,13 +16,23 @@ import { isSupportedAttachment } from '../utils/attachments.js'
 import { resolveTikTokVideo } from '../utils/tiktok.js'
 import { getYouTubeVideoId, isValidYouTubeVideoId } from '../utils/youtube.js'
 
-const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'droptt', 'dropstatus', 'download', 'help'])
+const SUPPORTED_COMMANDS = new Set(['drop', 'dropyt', 'droptt', 'redrop', 'dropstatus', 'download', 'help'])
+const DROP_COMMANDS = new Set(['drop', 'dropyt', 'droptt', 'redrop'])
+const RECENT_DROP_LIMIT = 25
 
 type BaseDrop = Omit<Drop, 'id' | 'url' | 'contentType' | 'fileName' | 'youtubeVideoId' | 'tiktokVideoId' | 'targetUserId' | 'targetUserName'>
 
 type DropTarget = {
   id: string
   name: string
+}
+
+type RecentDrop = {
+  id: string
+  ownerId: string
+  label: string
+  drop: Drop
+  createdAt: number
 }
 
 type DiscordApiErrorLike = {
@@ -68,6 +79,53 @@ const createDownloadButtonComponents = (latestAppVersion: string) => [
       .setURL(getReleaseUrl(latestAppVersion)),
   ),
 ]
+
+const getDropKindLabel = (drop: Drop) => {
+  if (drop.contentType === 'video/youtube') return 'YouTube'
+  if (drop.contentType === 'video/tiktok') return 'TikTok'
+  if (drop.contentType?.startsWith('image/')) return 'Image'
+  if (drop.contentType?.startsWith('video/')) return 'Vidéo'
+  if (drop.contentType?.startsWith('audio/')) return 'Audio'
+  return 'Drop'
+}
+
+const createRecentDropLabel = (drop: Drop) => {
+  const title = drop.caption || drop.fileName || drop.url
+  const target = drop.targetUserName ? ` -> ${drop.targetUserName}` : ''
+  return `${getDropKindLabel(drop)} · ${title}${target}`.slice(0, 100)
+}
+
+const addRecentDrop = (recentDrops: RecentDrop[], drop: Drop) => {
+  const ownerId = drop.ownerId ?? drop.authorId
+
+  if (!ownerId) {
+    return
+  }
+
+  recentDrops.unshift({
+    id: `${drop.id}-${Date.now()}`,
+    ownerId,
+    label: createRecentDropLabel(drop),
+    drop,
+    createdAt: Date.now(),
+  })
+
+  recentDrops.splice(RECENT_DROP_LIMIT)
+}
+
+const userHasAllowedRole = (interaction: ChatInputCommandInteraction, allowedRoleIds: string[]) => {
+  if (!allowedRoleIds.length) {
+    return true
+  }
+
+  const roles = interaction.member?.roles as GuildMemberRoleManager | string[] | undefined
+
+  if (Array.isArray(roles)) {
+    return roles.some((roleId) => allowedRoleIds.includes(roleId))
+  }
+
+  return Boolean(roles?.cache.some((role) => allowedRoleIds.includes(role.id)))
+}
 
 const getAvailableDropTargets = (getConnectedUsers: GetConnectedUsers, requesterId?: string) =>
   getConnectedUsers()
@@ -134,12 +192,29 @@ const editDropReply = async (
   })
 }
 
+const editDropReplyAndRemember = async (
+  interaction: ChatInputCommandInteraction,
+  drop: Drop,
+  sentCount: number,
+  targetUser: DropTarget | null,
+  fallbackMessage: string,
+  recentDrops: RecentDrop[],
+) => {
+  if (sentCount) {
+    addRecentDrop(recentDrops, drop)
+  }
+
+  await editDropReply(interaction, drop.id, sentCount, targetUser, fallbackMessage)
+  return sentCount > 0
+}
+
 const handleYouTubeDrop = async (
   interaction: ChatInputCommandInteraction,
   caption: string | null,
   isAnonymous: boolean,
   broadcastDrop: BroadcastDrop,
   getConnectedUsers: GetConnectedUsers,
+  recentDrops: RecentDrop[],
 ) => {
   const link = interaction.options.getString('lien', true)
   const youtubeVideoId = getYouTubeVideoId(link)
@@ -148,26 +223,34 @@ const handleYouTubeDrop = async (
 
   if (hasTarget && !targetUser) {
     await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
-    return
+    return false
   }
 
   if (!youtubeVideoId || !isValidYouTubeVideoId(youtubeVideoId)) {
     await interaction.editReply('Lien YouTube invalide.')
-    return
+    return false
   }
 
   const dropId = `youtube-${youtubeVideoId}-${Date.now()}`
-  const sentCount = broadcastDrop(withTarget({
+  const drop = withTarget({
     id: dropId,
     url: link,
     contentType: 'video/youtube',
     fileName: null,
     youtubeVideoId,
     ...createBaseDrop(interaction, caption, isAnonymous),
-  }, targetUser))
+  }, targetUser)
+  const sentCount = broadcastDrop(drop)
 
   console.log(`Drop YouTube diffusé à ${sentCount} client(s): ${youtubeVideoId}.`)
-  await editDropReply(interaction, dropId, sentCount, targetUser, 'Drop YouTube envoyé !')
+  return editDropReplyAndRemember(
+    interaction,
+    drop,
+    sentCount,
+    targetUser,
+    'Drop YouTube envoyé !',
+    recentDrops,
+  )
 }
 
 const handleTikTokDrop = async (
@@ -176,6 +259,7 @@ const handleTikTokDrop = async (
   isAnonymous: boolean,
   broadcastDrop: BroadcastDrop,
   getConnectedUsers: GetConnectedUsers,
+  recentDrops: RecentDrop[],
 ) => {
   const link = interaction.options.getString('lien', true)
   const hasTarget = Boolean(interaction.options.getString('cible'))
@@ -183,28 +267,36 @@ const handleTikTokDrop = async (
 
   if (hasTarget && !targetUser) {
     await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
-    return
+    return false
   }
 
   const tiktokVideo = await resolveTikTokVideo(link)
 
   if (!tiktokVideo) {
     await interaction.editReply('Lien TikTok invalide ou impossible à résoudre.')
-    return
+    return false
   }
 
   const dropId = `tiktok-${tiktokVideo.id}-${Date.now()}`
-  const sentCount = broadcastDrop(withTarget({
+  const drop = withTarget({
     id: dropId,
     url: tiktokVideo.url,
     contentType: 'video/tiktok',
     fileName: null,
     tiktokVideoId: tiktokVideo.id,
     ...createBaseDrop(interaction, caption, isAnonymous),
-  }, targetUser))
+  }, targetUser)
+  const sentCount = broadcastDrop(drop)
 
   console.log(`Drop TikTok diffusé à ${sentCount} client(s): ${tiktokVideo.id}.`)
-  await editDropReply(interaction, dropId, sentCount, targetUser, 'Drop TikTok envoyé !')
+  return editDropReplyAndRemember(
+    interaction,
+    drop,
+    sentCount,
+    targetUser,
+    'Drop TikTok envoyé !',
+    recentDrops,
+  )
 }
 
 const handleFileDrop = async (
@@ -213,6 +305,7 @@ const handleFileDrop = async (
   isAnonymous: boolean,
   broadcastDrop: BroadcastDrop,
   getConnectedUsers: GetConnectedUsers,
+  recentDrops: RecentDrop[],
 ) => {
   const attachment = interaction.options.getAttachment('fichier')
   const hasTarget = Boolean(interaction.options.getString('cible'))
@@ -220,29 +313,79 @@ const handleFileDrop = async (
 
   if (!attachment) {
     await interaction.editReply('Pas de fichier fourni.')
-    return
+    return false
   }
 
   if (hasTarget && !targetUser) {
     await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
-    return
+    return false
   }
 
   if (!isSupportedAttachment(attachment)) {
     await interaction.editReply('Format non supporté. Envoie une image, une vidéo ou un son.')
-    return
+    return false
   }
 
-  const sentCount = broadcastDrop(withTarget({
+  const drop = withTarget({
     id: attachment.id,
     url: attachment.url,
     contentType: attachment.contentType ?? null,
     fileName: attachment.name ?? null,
     ...createBaseDrop(interaction, caption, isAnonymous),
-  }, targetUser))
+  }, targetUser)
+  const sentCount = broadcastDrop(drop)
 
   console.log(`Drop fichier diffusé à ${sentCount} client(s): ${attachment.name ?? attachment.id}.`)
-  await editDropReply(interaction, attachment.id, sentCount, targetUser, 'Drop envoyé !')
+  return editDropReplyAndRemember(
+    interaction,
+    drop,
+    sentCount,
+    targetUser,
+    'Drop envoyé !',
+    recentDrops,
+  )
+}
+
+const handleRedrop = async (
+  interaction: ChatInputCommandInteraction,
+  broadcastDrop: BroadcastDrop,
+  getConnectedUsers: GetConnectedUsers,
+  recentDrops: RecentDrop[],
+) => {
+  const recentDropId = interaction.options.getString('drop', true)
+  const recentDrop = recentDrops.find(
+    (entry) => entry.id === recentDropId && entry.ownerId === interaction.user.id,
+  )
+  const hasTarget = Boolean(interaction.options.getString('cible'))
+  const targetUser = await getTargetUser(interaction, getConnectedUsers)
+
+  if (!recentDrop) {
+    await interaction.editReply("Ce drop n'est plus disponible dans l'historique récent.")
+    return false
+  }
+
+  if (hasTarget && !targetUser) {
+    await interaction.editReply("Cette personne n'est plus disponible pour recevoir un drop.")
+    return false
+  }
+
+  const drop = withTarget({
+    ...recentDrop.drop,
+    id: `redrop-${recentDrop.drop.id}-${Date.now()}`,
+    ownerId: interaction.user.id,
+    createdAt: new Date().toISOString(),
+  }, targetUser)
+  const sentCount = broadcastDrop(drop)
+
+  console.log(`Redrop diffusé à ${sentCount} client(s): ${recentDrop.drop.id}.`)
+  return editDropReplyAndRemember(
+    interaction,
+    drop,
+    sentCount,
+    targetUser,
+    'Drop renvoyé !',
+    recentDrops,
+  )
 }
 
 const handleStopButton = async (
@@ -393,12 +536,30 @@ const handleHelp = async (
 const handleTargetAutocomplete = async (
   interaction: AutocompleteInteraction,
   getConnectedUsers: GetConnectedUsers,
+  recentDrops: RecentDrop[],
 ) => {
   if (!SUPPORTED_COMMANDS.has(interaction.commandName)) {
     return false
   }
 
   const focusedOption = interaction.options.getFocused(true)
+
+  if (focusedOption.name === 'drop' && interaction.commandName === 'redrop') {
+    const search = String(focusedOption.value).trim().toLowerCase()
+    const matchingDrops = recentDrops
+      .filter((drop) => drop.ownerId === interaction.user.id)
+      .filter((drop) => !search || drop.label.toLowerCase().includes(search))
+      .slice(0, 25)
+
+    await interaction.respond(
+      matchingDrops.map((drop) => ({
+        name: drop.label,
+        value: drop.id,
+      })),
+    )
+
+    return true
+  }
 
   if (focusedOption.name !== 'cible') {
     return false
@@ -423,76 +584,154 @@ const handleTargetAutocomplete = async (
   return true
 }
 
+const getCooldownRemainingSeconds = (
+  userId: string,
+  cooldownSeconds: number,
+  cooldowns: Map<string, number>,
+) => {
+  if (cooldownSeconds <= 0) {
+    return 0
+  }
+
+  const lastDropAt = cooldowns.get(userId)
+  if (!lastDropAt) {
+    return 0
+  }
+
+  const elapsedSeconds = Math.floor((Date.now() - lastDropAt) / 1000)
+  return Math.max(0, cooldownSeconds - elapsedSeconds)
+}
+
 export const createInteractionHandler =
   ({
     latestAppVersion,
+    allowedRoleIds,
+    dropCooldownSeconds,
     broadcastDrop,
     getConnectedUsers,
     stopDropByOwner,
   }: {
     latestAppVersion: string
+    allowedRoleIds: string[]
+    dropCooldownSeconds: number
     broadcastDrop: BroadcastDrop
     getConnectedUsers: GetConnectedUsers
     stopDropByOwner: StopDropByOwner
-  }) =>
-  async (interaction: Interaction) => {
-  if (await handleStopButton(interaction, stopDropByOwner)) {
-    return
-  }
+  }) => {
+  const cooldowns = new Map<string, number>()
+  const recentDrops: RecentDrop[] = []
 
-  if (interaction.isAutocomplete()) {
-    await handleTargetAutocomplete(interaction, getConnectedUsers)
-    return
-  }
-
-  if (!interaction.isChatInputCommand() || !SUPPORTED_COMMANDS.has(interaction.commandName)) {
-    return
-  }
-
-  console.log(`Commande /${interaction.commandName} reçue de ${interaction.user.tag}.`)
-
-  try {
-    if (interaction.commandName === 'dropstatus') {
-      await handleDropStatus(interaction, getConnectedUsers)
+  return async (interaction: Interaction) => {
+    if (await handleStopButton(interaction, stopDropByOwner)) {
       return
     }
 
-    if (interaction.commandName === 'download') {
-      await handleDownload(interaction, latestAppVersion)
+    if (interaction.isAutocomplete()) {
+      await handleTargetAutocomplete(interaction, getConnectedUsers, recentDrops)
       return
     }
 
-    if (interaction.commandName === 'help') {
-      await handleHelp(interaction, latestAppVersion)
+    if (!interaction.isChatInputCommand() || !SUPPORTED_COMMANDS.has(interaction.commandName)) {
       return
     }
 
-    await interaction.deferReply({
-      flags: MessageFlags.Ephemeral,
-    })
+    console.log(`Commande /${interaction.commandName} reçue de ${interaction.user.tag}.`)
 
-    const caption = interaction.options.getString('legende')
-    const isAnonymous = interaction.options.getBoolean('anonyme') ?? false
+    try {
+      if (interaction.commandName === 'dropstatus') {
+        await handleDropStatus(interaction, getConnectedUsers)
+        return
+      }
 
-    if (interaction.commandName === 'dropyt') {
-      await handleYouTubeDrop(interaction, caption, isAnonymous, broadcastDrop, getConnectedUsers)
-      return
-    }
+      if (interaction.commandName === 'download') {
+        await handleDownload(interaction, latestAppVersion)
+        return
+      }
 
-    if (interaction.commandName === 'droptt') {
-      await handleTikTokDrop(interaction, caption, isAnonymous, broadcastDrop, getConnectedUsers)
-      return
-    }
+      if (interaction.commandName === 'help') {
+        await handleHelp(interaction, latestAppVersion)
+        return
+      }
 
-    await handleFileDrop(interaction, caption, isAnonymous, broadcastDrop, getConnectedUsers)
-  } catch (error) {
-    if ((error as DiscordApiErrorLike)?.code === 10062) {
-      console.error(
-        `Interaction Discord inconnue pour /${interaction.commandName}. Le drop n'a pas été ajouté à la queue. Vérifie qu'un seul serveur MemeDrop utilise ce bot et que le serveur répond en moins de 3 secondes.`,
+      if (!DROP_COMMANDS.has(interaction.commandName)) {
+        return
+      }
+
+      await interaction.deferReply({
+        flags: MessageFlags.Ephemeral,
+      })
+
+      if (!userHasAllowedRole(interaction, allowedRoleIds)) {
+        await interaction.editReply("Tu n'as pas le rôle requis pour envoyer des drops.")
+        return
+      }
+
+      const remainingCooldown = getCooldownRemainingSeconds(
+        interaction.user.id,
+        dropCooldownSeconds,
+        cooldowns,
       )
-      return
-    }
 
-    console.error('Erreur lors du traitement de /drop:', error)
+      if (remainingCooldown > 0) {
+        await interaction.editReply(
+          `Doucement. Tu pourras renvoyer un drop dans ${remainingCooldown} seconde(s).`,
+        )
+        return
+      }
+
+      const caption = interaction.options.getString('legende')
+      const isAnonymous = interaction.options.getBoolean('anonyme') ?? false
+
+      if (interaction.commandName === 'dropyt') {
+        const wasSent = await handleYouTubeDrop(
+          interaction,
+          caption,
+          isAnonymous,
+          broadcastDrop,
+          getConnectedUsers,
+          recentDrops,
+        )
+        if (wasSent) cooldowns.set(interaction.user.id, Date.now())
+        return
+      }
+
+      if (interaction.commandName === 'droptt') {
+        const wasSent = await handleTikTokDrop(
+          interaction,
+          caption,
+          isAnonymous,
+          broadcastDrop,
+          getConnectedUsers,
+          recentDrops,
+        )
+        if (wasSent) cooldowns.set(interaction.user.id, Date.now())
+        return
+      }
+
+      if (interaction.commandName === 'redrop') {
+        const wasSent = await handleRedrop(interaction, broadcastDrop, getConnectedUsers, recentDrops)
+        if (wasSent) cooldowns.set(interaction.user.id, Date.now())
+        return
+      }
+
+      const wasSent = await handleFileDrop(
+        interaction,
+        caption,
+        isAnonymous,
+        broadcastDrop,
+        getConnectedUsers,
+        recentDrops,
+      )
+      if (wasSent) cooldowns.set(interaction.user.id, Date.now())
+    } catch (error) {
+      if ((error as DiscordApiErrorLike)?.code === 10062) {
+        console.error(
+          `Interaction Discord inconnue pour /${interaction.commandName}. Le drop n'a pas été ajouté à la queue. Vérifie qu'un seul serveur MemeDrop utilise ce bot et que le serveur répond en moins de 3 secondes.`,
+        )
+        return
+      }
+
+      console.error('Erreur lors du traitement de /drop:', error)
+    }
   }
 }
