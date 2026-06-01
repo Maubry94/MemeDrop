@@ -24,10 +24,17 @@ export const redropCommand: MemeDropCommand = {
         .setDescription('Envoyer le drop uniquement à cette personne')
         .setRequired(false)
         .setAutocomplete(true),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('legende')
+        .setDescription('Remplacer la légende du drop')
+        .setRequired(false),
     ),
   isDropCommand: true,
   execute: async (interaction, { broadcastDrop, getConnectedUsers, recentDrops }) => {
     const recentDropId = interaction.options.getString('drop', true)
+    const caption = interaction.options.getString('legende')
     const recentDrop = recentDrops.find(
       (entry) => entry.id === recentDropId && entry.ownerId === interaction.user.id,
     )
@@ -55,6 +62,7 @@ export const redropCommand: MemeDropCommand = {
     const drop = withTarget({
       ...recentDrop.drop,
       id: `redrop-${recentDrop.drop.id}-${Date.now()}`,
+      caption: caption ?? recentDrop.drop.caption,
       ownerId: interaction.user.id,
       createdAt: new Date().toISOString(),
     }, targetUser)

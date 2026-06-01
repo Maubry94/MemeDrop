@@ -86,6 +86,7 @@ Options :
 
 - `drop` : drop récent à renvoyer.
 - `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le redrop est global.
+- `legende` : remplace la légende du drop renvoyé. Si vide, la légende d'origine est conservée.
 
 ### `/dropstatus`
 
