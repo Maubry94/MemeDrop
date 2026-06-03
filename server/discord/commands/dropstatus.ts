@@ -34,7 +34,7 @@ export const dropStatusCommand: MemeDropCommand = {
     const unavailableUsers = resolvedUsers.filter((user) => !user.dropsEnabled)
 
     const formatUserLines = (items: ConnectedUser[]) =>
-      items.map((user) => `• **${user.name}**\n${formatConnectedUserStatus(user)}`).join('\n')
+      items.map((user) => `• **${user.name}** · ${formatConnectedUserStatus(user)}`).join('\n')
 
     const embed = new EmbedBuilder()
       .setTitle('Utilisateurs MemeDrop')
