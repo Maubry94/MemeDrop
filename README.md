@@ -141,12 +141,15 @@ DISCORD_BOT_TOKEN=your-discord-bot-token
 DISCORD_GUILD_ID=your-guild-id
 DISCORD_CLIENT_ID=your-discord-application-client-id
 DISCORD_CLIENT_SECRET=your-discord-application-client-secret
+MEMEDROP_ALLOWED_CHANNEL_IDS=
 MEMEDROP_ALLOWED_ROLE_IDS=
 MEMEDROP_DROP_COOLDOWN_SECONDS=0
 MEMEDROP_SERVER_KEY=choose-a-shared-secret
 MEMEDROP_SERVER_URL=https://memedrop.example.com
 PUBLIC_BASE_URL=https://memedrop.example.com
 ```
+
+`MEMEDROP_ALLOWED_CHANNEL_IDS` peut contenir une liste d'IDs de salons Discord séparés par des virgules. Si la valeur est vide, les commandes MemeDrop sont autorisées dans tous les salons du serveur.
 
 `MEMEDROP_ALLOWED_ROLE_IDS` peut contenir une liste d'IDs de rôles Discord séparés par des virgules. Si la valeur est vide, tout le monde peut envoyer des drops.
 

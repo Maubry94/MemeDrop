@@ -9,6 +9,7 @@ export const createDiscordBot = ({
   guildId,
   latestAppVersion,
   allowedRoleIds,
+  allowedChannelIds,
   dropCooldownSeconds,
   broadcastDrop,
   getConnectedUsers,
@@ -43,6 +44,7 @@ export const createDiscordBot = ({
     createInteractionHandler({
       latestAppVersion,
       allowedRoleIds,
+      allowedChannelIds,
       dropCooldownSeconds,
       broadcastDrop,
       getConnectedUsers,

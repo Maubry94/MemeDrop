@@ -88,6 +88,7 @@ export const createInteractionHandler =
   ({
     latestAppVersion,
     allowedRoleIds,
+    allowedChannelIds,
     dropCooldownSeconds,
     broadcastDrop,
     getConnectedUsers,
@@ -95,6 +96,7 @@ export const createInteractionHandler =
   }: {
     latestAppVersion: string
     allowedRoleIds: string[]
+    allowedChannelIds: string[]
     dropCooldownSeconds: number
     broadcastDrop: BroadcastDrop
     getConnectedUsers: GetConnectedUsers
@@ -137,6 +139,20 @@ export const createInteractionHandler =
 
     try {
       if (!command.isDropCommand) {
+        if (allowedChannelIds.length && !allowedChannelIds.includes(interaction.channelId)) {
+          await interaction.reply({
+            embeds: [
+              createInfoEmbed({
+                title: 'Commande non autorisée ici',
+                description: 'Les commandes MemeDrop ne sont pas activées dans ce salon.',
+                color: 0xf59e0b,
+              }),
+            ],
+            flags: MessageFlags.Ephemeral,
+          })
+          return
+        }
+
         await command.execute(interaction, context)
         return
       }
@@ -144,6 +160,15 @@ export const createInteractionHandler =
       await interaction.deferReply({
         flags: MessageFlags.Ephemeral,
       })
+
+      if (allowedChannelIds.length && !allowedChannelIds.includes(interaction.channelId)) {
+        await editErrorReply(
+          interaction,
+          'Commande non autorisée ici',
+          'Les commandes MemeDrop ne sont pas activées dans ce salon.',
+        )
+        return
+      }
 
       if (!userHasAllowedRole(interaction, allowedRoleIds)) {
         await editErrorReply(

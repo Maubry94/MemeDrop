@@ -74,6 +74,7 @@ createDiscordBot({
   guildId: config.discordGuildId,
   latestAppVersion,
   allowedRoleIds: config.memedropAllowedRoleIds,
+  allowedChannelIds: config.memedropAllowedChannelIds,
   dropCooldownSeconds: config.memedropDropCooldownSeconds,
   broadcastDrop,
   getConnectedUsers,

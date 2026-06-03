@@ -9,6 +9,7 @@ export const config: {
   discordClientId: string | undefined
   discordClientSecret: string | undefined
   memedropAllowedRoleIds: string[]
+  memedropAllowedChannelIds: string[]
   memedropDropCooldownSeconds: number
   memedropServerKey: string
   publicBaseUrl: string | undefined
@@ -21,6 +22,10 @@ export const config: {
   memedropAllowedRoleIds: (process.env.MEMEDROP_ALLOWED_ROLE_IDS ?? '')
     .split(',')
     .map((roleId) => roleId.trim())
+    .filter(Boolean),
+  memedropAllowedChannelIds: (process.env.MEMEDROP_ALLOWED_CHANNEL_IDS ?? '')
+    .split(',')
+    .map((channelId) => channelId.trim())
     .filter(Boolean),
   memedropDropCooldownSeconds: Number(process.env.MEMEDROP_DROP_COOLDOWN_SECONDS ?? 0),
   memedropServerKey: process.env.MEMEDROP_SERVER_KEY ?? '',

@@ -60,6 +60,7 @@ export type DiscordBotOptions = {
   guildId?: string
   latestAppVersion: string
   allowedRoleIds: string[]
+  allowedChannelIds: string[]
   dropCooldownSeconds: number
   broadcastDrop: BroadcastDrop
   getConnectedUsers: GetConnectedUsers
