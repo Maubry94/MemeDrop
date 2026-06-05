@@ -1,5 +1,6 @@
 import { ipcRenderer, contextBridge } from 'electron'
 import type { IpcRendererEvent } from 'electron'
+import type { MemeDropPreloadApi, Unsubscribe } from '../shared/preloadApi'
 import type {
   ConnectionStatus,
   ConnectedUser,
@@ -14,15 +15,13 @@ import type {
   ShortcutStatus,
 } from '../shared/types'
 
-type Unsubscribe = () => void
-
 const onChannel = <T>(channel: string, handler: (payload: T) => void): Unsubscribe => {
   const listener = (_event: IpcRendererEvent, payload: T) => handler(payload)
   ipcRenderer.on(channel, listener)
   return () => ipcRenderer.off(channel, listener)
 }
 
-contextBridge.exposeInMainWorld('memedrop', {
+const memedropApi = {
   onDrop: (handler: (drop: Drop) => void) => onChannel('drop-received', handler),
   onClearDrop: (handler: () => void) => onChannel('clear-drop', handler),
   onTestDropCleared: (handler: () => void) => onChannel('test-drop-cleared', handler),
@@ -84,4 +83,6 @@ contextBridge.exposeInMainWorld('memedrop', {
   disconnectDiscord: () => ipcRenderer.invoke('disconnect-discord'),
   emitTestDrop: (drop: Drop) => ipcRenderer.invoke('emit-test-drop', drop),
   clearTestDrop: () => ipcRenderer.invoke('clear-test-drop'),
-})
+} satisfies MemeDropPreloadApi
+
+contextBridge.exposeInMainWorld('memedrop', memedropApi)
