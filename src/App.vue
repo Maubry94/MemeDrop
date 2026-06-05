@@ -1,462 +1,128 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { CSSProperties } from 'vue'
-import ConnectedUsersView from './components/control/ConnectedUsersView.vue'
-import ControlPanel from './components/control/ControlPanel.vue'
-import LoginView from './components/control/LoginView.vue'
-import PreferencesModal from './components/control/PreferencesModal.vue'
-import DropOverlay from './components/overlay/DropOverlay.vue'
-import { getMediaKind } from '../shared/media'
-import type {
-  AppPreferences,
-  AppVersionInfo,
-  ConnectedUser,
-  ConnectionStatus,
-  Drop,
-  OverlayAnchor,
-  OverlayDisplayInfo,
-  OverlayDisplayPreferences,
-  OverlayPosition,
-  OverlayState,
-  ServerConfig,
-  ShortcutConfig,
-  ShortcutStatus,
-} from '../shared/types'
+import { computed, watch } from 'vue'
+import ControlApp from './components/ControlApp.vue'
+import OverlayApp from './components/OverlayApp.vue'
+import { useActiveDrop } from './composables/useActiveDrop'
+import { useControlActions } from './composables/useControlActions'
+import { useControlState } from './composables/useControlState'
+import { useMemedropBridge } from './composables/useMemedropBridge'
+import { useOverlayPreferences } from './composables/useOverlayPreferences'
 
 type AppView = 'overlay' | 'control'
-type ControlTab = 'control' | 'connected'
-
-const TEST_DROP_ID = 'memedrop-test-preview'
 
 const viewParam = new URLSearchParams(window.location.search).get('view')
 const view: AppView = viewParam === 'control' ? 'control' : 'overlay'
 const isOverlayView = computed(() => view === 'overlay')
 const isControlView = computed(() => view === 'control')
-const controlTab = ref<ControlTab>('control')
 
-const overlayPosition = ref<OverlayPosition>('full')
-const overlayDisplayId = ref('primary')
-const overlayDisplays = ref<OverlayDisplayInfo[]>([])
-const dropVolume = ref(100)
-const dropSize = ref(100)
-const customX = ref(50)
-const customY = ref(50)
-const customAnchor = ref<OverlayAnchor>('full')
-const dropsEnabled = ref(true)
-const hideOwnDrops = ref(false)
-const isPreferencesOpen = ref(false)
-const isTestDropActive = ref(false)
-const activeDrop = ref<Drop | null>(null)
-const connectedUsers = ref<ConnectedUser[]>([])
-const shortcutConfigs = ref<ShortcutConfig[]>([])
-const shortcutStatuses = ref<ShortcutStatus[]>([])
-const connectionStatus = ref<ConnectionStatus | null>(null)
-const appPreferences = ref<AppPreferences>({
-  minimizeToTray: false,
-  openAtLogin: false,
-})
-const appVersionInfo = ref<AppVersionInfo>({
-  currentVersion: '',
-  latestVersion: '',
-  updateAvailable: false,
-  releaseUrl: '',
-})
-const serverConfig = ref<ServerConfig>({
-  serverUrl: '',
-  accessKey: '',
-  discordUserId: '',
-  discordUserName: '',
-  discordUserAvatarUrl: null,
-})
-const configSavedMessage = ref<string | null>(null)
-const isSavingConfig = ref(false)
-const discordAuthMessage = ref<string | null>(null)
-const isAuthenticatingDiscord = ref(false)
-const unsubscribers: Array<() => void> = []
+const {
+  controlTab,
+  dropsEnabled,
+  hideOwnDrops,
+  isPreferencesOpen,
+  connectedUsers,
+  shortcutConfigs,
+  shortcutStatuses,
+  connectionStatus,
+  appPreferences,
+  appVersionInfo,
+  serverConfig,
+  isDiscordConnected,
+  otherConnectedUsers,
+  applyOverlayState,
+  isSyncingOverlayState,
+} = useControlState()
 
-const DISPLAY_MS = 9000
-let activeDropTimer: number | undefined
-let syncingState = false
-let syncingDisplayPreferences = false
+const {
+  overlayPosition,
+  overlayDisplayId,
+  overlayDisplays,
+  dropVolume,
+  dropSize,
+  customX,
+  customY,
+  customAnchor,
+  overlayClasses,
+  overlayCustomStyle,
+  applyOverlayDisplayPreferences,
+} = useOverlayPreferences()
 
-const activeKind = computed(() => getMediaKind(activeDrop.value))
-const hasDrop = computed(() => Boolean(activeDrop.value) && dropsEnabled.value)
-const isDiscordConnected = computed(() => Boolean(serverConfig.value.discordUserId))
-const otherConnectedUsers = computed(() =>
-  connectedUsers.value.filter((user) => user.id !== serverConfig.value.discordUserId),
-)
-const canStopGlobalDrop = computed(
-  () =>
-    Boolean(activeDrop.value?.id) &&
-    Boolean(serverConfig.value.discordUserId) &&
-    (activeDrop.value?.ownerId ?? activeDrop.value?.authorId) === serverConfig.value.discordUserId,
-)
-
-const overlayClasses = computed(() => {
-  if (overlayPosition.value === 'custom') {
-    return 'p-10'
-  }
-
-  switch (overlayPosition.value) {
-    case 'full':
-      return 'items-center justify-center p-10'
-    case 'top-left':
-      return 'items-start justify-start p-10'
-    case 'top-right':
-      return 'items-start justify-end p-10'
-    case 'bottom-left':
-      return 'items-end justify-start p-10'
-    case 'bottom-right':
-    default:
-      return 'items-end justify-end p-10'
-  }
+const {
+  activeDrop,
+  activeKind,
+  hasDrop,
+  isTestDropActive,
+  canStopGlobalDrop,
+  completeActiveDrop,
+  receiveDrop,
+  clearServerDrop,
+  clearTestDrop,
+  skipCurrentDrop,
+  completeLocalDrop,
+  stopCurrentDropForEveryone,
+  triggerTestDrop,
+} = useActiveDrop({
+  isOverlayView,
+  dropsEnabled: computed(() => dropsEnabled.value),
+  serverConfig: computed(() => serverConfig.value),
 })
 
-const overlayCustomStyle = computed<CSSProperties>(() => {
-  if (overlayPosition.value !== 'custom') {
-    return {}
-  }
-
-  return {
-    left: `${customX.value}%`,
-    top: `${customY.value}%`,
-    transform: `translate(-${customX.value}%, -${customY.value}%)`,
-  }
+useMemedropBridge({
+  applyOverlayState,
+  applyOverlayDisplayPreferences,
+  setOverlayDisplays: (displays) => {
+    overlayDisplays.value = displays
+  },
+  setAppPreferences: (preferences) => {
+    appPreferences.value = preferences
+  },
+  setAppVersionInfo: (info) => {
+    appVersionInfo.value = info
+  },
+  setConnectionStatus: (status) => {
+    connectionStatus.value = status
+  },
+  setConnectedUsers: (users) => {
+    connectedUsers.value = users
+  },
+  setShortcutConfigs: (shortcuts) => {
+    shortcutConfigs.value = shortcuts
+  },
+  setShortcutStatus: (status) => {
+    shortcutStatuses.value = status
+  },
+  setServerConfig: (config) => {
+    serverConfig.value = config
+  },
+  receiveDrop,
+  clearServerDrop,
+  clearTestDrop,
+  completeLocalDrop,
 })
 
-const clearActiveDropTimer = () => {
-  if (activeDropTimer) {
-    window.clearTimeout(activeDropTimer)
-    activeDropTimer = undefined
-  }
-}
-
-const completeActiveDrop = async (expectedDropId?: string) => {
-  const drop = activeDrop.value
-  if (!drop) {
-    return
-  }
-
-  if (expectedDropId && drop.id !== expectedDropId) {
-    return
-  }
-
-  clearActiveDropTimer()
-  activeDrop.value = null
-  if (drop.id === TEST_DROP_ID) {
-    isTestDropActive.value = false
-    return
-  }
-  await window.memedrop?.completeCurrentDrop(drop.id)
-}
-
-const scheduleActiveDrop = () => {
-  clearActiveDropTimer()
-  if (!activeDrop.value || !isOverlayView.value) {
-    return
-  }
-
-  if (activeDrop.value.id === TEST_DROP_ID) {
-    return
-  }
-
-  if (activeKind.value !== 'image') {
-    return
-  }
-
-  activeDropTimer = window.setTimeout(() => {
-    void completeActiveDrop(activeDrop.value?.id)
-  }, DISPLAY_MS)
-}
-
-const applyOverlayState = (state: OverlayState) => {
-  syncingState = true
-  dropsEnabled.value = state.dropsEnabled
-  hideOwnDrops.value = state.hideOwnDrops
-  syncingState = false
-}
-
-const requestOverlayState = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  applyOverlayState(await window.memedrop.getOverlayState())
-}
-
-const getCurrentOverlayDisplayPreferences = (): OverlayDisplayPreferences => ({
-  displayId: overlayDisplayId.value,
-  position: overlayPosition.value,
-  volume: dropVolume.value,
-  size: dropSize.value,
-  customX: customX.value,
-  customY: customY.value,
-  customAnchor: customAnchor.value,
-})
-
-const applyOverlayDisplayPreferences = (preferences: OverlayDisplayPreferences) => {
-  syncingDisplayPreferences = true
-  overlayDisplayId.value = preferences.displayId
-  overlayPosition.value = preferences.position
-  dropVolume.value = preferences.volume
-  dropSize.value = preferences.size
-  customX.value = preferences.customX
-  customY.value = preferences.customY
-  customAnchor.value = preferences.customAnchor
-  syncingDisplayPreferences = false
-}
-
-const requestOverlayDisplayPreferences = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  applyOverlayDisplayPreferences(await window.memedrop.getOverlayDisplayPreferences())
-}
-
-const requestOverlayDisplays = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  overlayDisplays.value = await window.memedrop.getOverlayDisplays()
-}
-
-const saveOverlayDisplayPreferences = async () => {
-  if (syncingDisplayPreferences || !window.memedrop) {
-    return
-  }
-
-  applyOverlayDisplayPreferences(
-    await window.memedrop.setOverlayDisplayPreferences(getCurrentOverlayDisplayPreferences()),
-  )
-}
-
-const requestAppPreferences = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  appPreferences.value = await window.memedrop.getAppPreferences()
-}
-
-const requestAppVersionInfo = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  appVersionInfo.value = await window.memedrop.getAppVersionInfo()
-}
-
-const requestConnectionStatus = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  connectionStatus.value = await window.memedrop.getConnectionStatus()
-}
-
-const requestConnectedUsers = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  connectedUsers.value = await window.memedrop.getConnectedUsers()
-}
-
-const requestShortcutConfigs = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  shortcutConfigs.value = await window.memedrop.getShortcutConfigs()
-}
-
-const requestShortcutStatus = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  shortcutStatuses.value = await window.memedrop.getShortcutStatus()
-}
-
-const updateAppPreferences = async (preferences: AppPreferences) => {
-  if (!window.memedrop) {
-    return
-  }
-
-  appPreferences.value = await window.memedrop.setAppPreferences(preferences)
-}
-
-const updateShortcutConfigs = async (shortcuts: ShortcutConfig[]) => {
-  if (!window.memedrop) {
-    return
-  }
-  shortcutConfigs.value = await window.memedrop.setShortcutConfigs(shortcuts)
-  shortcutStatuses.value = await window.memedrop.getShortcutStatus()
-}
-
-const startShortcutCapture = async (action: ShortcutConfig['action']) => {
-  if (!window.memedrop) {
-    return
-  }
-  shortcutConfigs.value = await window.memedrop.startShortcutCapture(action)
-}
-
-const resetShortcutConfigs = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  shortcutConfigs.value = await window.memedrop.resetShortcutConfigs()
-  shortcutStatuses.value = await window.memedrop.getShortcutStatus()
-}
-
-const uninstallApp = async () => {
-  const confirmed = window.confirm(
-    'Désinstaller MemeDrop ? L’application va lancer le programme de désinstallation Windows.',
-  )
-
-  if (!confirmed) {
-    return
-  }
-
-  try {
-    await window.memedrop?.uninstallApp()
-  } catch (error) {
-    window.alert(
-      error instanceof Error
-        ? error.message
-        : "La désinstallation n'a pas pu être lancée.",
-    )
-  }
-}
-
-const quitApp = async () => {
-  await window.memedrop?.quitApp()
-}
-
-const openReleasePage = async () => {
-  await window.memedrop?.openReleasePage()
-}
-
-const requestServerConfig = async () => {
-  if (!window.memedrop) {
-    return
-  }
-  serverConfig.value = await window.memedrop.getServerConfig()
-}
-
-const saveServerConfig = async () => {
-  if (!window.memedrop) {
-    return
-  }
-
-  isSavingConfig.value = true
-  configSavedMessage.value = null
-
-  try {
-    serverConfig.value = await window.memedrop.saveServerConfig({ ...serverConfig.value })
-    configSavedMessage.value = 'Configuration enregistrée.'
-  } catch (error) {
-    console.error('Enregistrement serveur impossible:', error)
-    configSavedMessage.value = 'Enregistrement impossible.'
-  } finally {
-    isSavingConfig.value = false
-  }
-}
-
-const authenticateDiscord = async () => {
-  if (!window.memedrop) {
-    return
-  }
-
-  isAuthenticatingDiscord.value = true
-  discordAuthMessage.value = 'Connexion Discord en cours...'
-
-  try {
-    serverConfig.value = await window.memedrop.saveServerConfig({ ...serverConfig.value })
-    serverConfig.value = await window.memedrop.authenticateDiscord()
-    discordAuthMessage.value = `Connecté avec Discord: ${serverConfig.value.discordUserName}`
-  } catch (error) {
-    console.error('Connexion Discord impossible:', error)
-    discordAuthMessage.value =
-      error instanceof Error
-        ? `Connexion Discord impossible: ${error.message}`
-        : 'Connexion Discord impossible.'
-  } finally {
-    isAuthenticatingDiscord.value = false
-  }
-}
-
-const disconnectDiscord = async () => {
-  if (!window.memedrop) {
-    return
-  }
-
-  serverConfig.value = await window.memedrop.disconnectDiscord()
-  discordAuthMessage.value = null
-}
-
-const toggleDrops = async () => {
-  const state = await window.memedrop?.toggleDrops()
-  if (state) {
-    applyOverlayState(state)
-  }
-}
-
-const toggleHideOwnDrops = async () => {
-  const state = await window.memedrop?.toggleHideOwnDrops()
-  if (state) {
-    applyOverlayState(state)
-  }
-}
-
-const skipCurrentDrop = async () => {
-  await window.memedrop?.skipCurrentDrop()
-}
-
-const stopCurrentDropForEveryone = async () => {
-  await window.memedrop?.stopCurrentDropForEveryone()
-}
-
-const triggerTestDrop = async () => {
-  if (isTestDropActive.value) {
-    isTestDropActive.value = false
-    await window.memedrop?.clearTestDrop()
-    return
-  }
-
-  isTestDropActive.value = true
-  await window.memedrop?.emitTestDrop({
-    id: TEST_DROP_ID,
-    url: 'https://media.giphy.com/media/5GoVLqeAOo6PK/giphy.gif',
-    contentType: 'image/gif',
-    fileName: 'test.gif',
-    caption: 'Drop de test (dev)',
-    authorId: null,
-    author: 'MemeDrop',
-    authorAvatarUrl: null,
-    createdAt: new Date().toISOString(),
-  })
-}
-
-watch(overlayPosition, () => {
-  void saveOverlayDisplayPreferences()
-})
-
-watch(overlayDisplayId, () => {
-  void saveOverlayDisplayPreferences()
-})
-
-watch(dropVolume, () => {
-  void saveOverlayDisplayPreferences()
-})
-
-watch(dropSize, () => {
-  void saveOverlayDisplayPreferences()
-})
-
-watch(customX, () => {
-  void saveOverlayDisplayPreferences()
-})
-
-watch(customY, () => {
-  void saveOverlayDisplayPreferences()
-})
-
-watch(customAnchor, () => {
-  void saveOverlayDisplayPreferences()
+const {
+  configSavedMessage,
+  isSavingConfig,
+  discordAuthMessage,
+  isAuthenticatingDiscord,
+  updateAppPreferences,
+  updateShortcutConfigs,
+  startShortcutCapture,
+  resetShortcutConfigs,
+  uninstallApp,
+  quitApp,
+  openReleasePage,
+  saveServerConfig,
+  authenticateDiscord,
+  disconnectDiscord,
+  toggleDrops,
+  toggleHideOwnDrops,
+} = useControlActions({
+  appPreferences,
+  serverConfig,
+  shortcutConfigs,
+  shortcutStatuses,
+  applyOverlayState,
 })
 
 watch(dropsEnabled, async (value) => {
@@ -464,270 +130,81 @@ watch(dropsEnabled, async (value) => {
     void completeActiveDrop()
   }
 
-  if (syncingState || !isControlView.value) {
+  if (isSyncingOverlayState() || !isControlView.value) {
     return
   }
   await window.memedrop?.setDropsEnabled(value)
-})
-
-onMounted(async () => {
-  await requestOverlayState()
-  await requestOverlayDisplayPreferences()
-  await requestOverlayDisplays()
-  await requestAppPreferences()
-  await requestAppVersionInfo()
-  await requestConnectionStatus()
-  await requestConnectedUsers()
-  await requestShortcutConfigs()
-  await requestShortcutStatus()
-  await requestServerConfig()
-
-  const unsubDrop = window.memedrop?.onDrop((drop) => {
-    activeDrop.value = drop
-    isTestDropActive.value = drop.id === TEST_DROP_ID
-
-    if (!isOverlayView.value) {
-      return
-    }
-
-    if (!dropsEnabled.value || getMediaKind(drop) === 'file') {
-      void completeActiveDrop(drop.id)
-      return
-    }
-    scheduleActiveDrop()
-  })
-
-  const unsubClearDrop = window.memedrop?.onClearDrop(() => {
-    if (activeDrop.value?.id === TEST_DROP_ID) {
-      return
-    }
-
-    clearActiveDropTimer()
-    activeDrop.value = null
-  })
-
-  const unsubTestDropCleared = window.memedrop?.onTestDropCleared(() => {
-    if (activeDrop.value?.id === TEST_DROP_ID) {
-      clearActiveDropTimer()
-      activeDrop.value = null
-    }
-
-    isTestDropActive.value = false
-  })
-
-  const unsubSkipCurrentDrop = window.memedrop?.onSkipCurrentDrop(() => {
-    if (isOverlayView.value) {
-      void completeActiveDrop()
-    }
-  })
-
-  const unsubStatus = window.memedrop?.onConnectionStatus((status) => {
-    connectionStatus.value = status
-  })
-
-  const unsubConnectedUsers = window.memedrop?.onConnectedUsers((users) => {
-    connectedUsers.value = users
-  })
-
-  const unsubShortcutStatus = window.memedrop?.onShortcutStatus((status) => {
-    shortcutStatuses.value = status
-  })
-
-  const unsubShortcutConfigs = window.memedrop?.onShortcutConfigs((shortcuts) => {
-    shortcutConfigs.value = shortcuts
-  })
-
-  const unsubOverlay = window.memedrop?.onOverlayState((state) => {
-    applyOverlayState(state)
-  })
-
-  const unsubOverlayDisplayPreferences = window.memedrop?.onOverlayDisplayPreferences(
-    (preferences) => {
-      applyOverlayDisplayPreferences(preferences)
-    },
-  )
-
-  const unsubOverlayDisplays = window.memedrop?.onOverlayDisplays((displays) => {
-    overlayDisplays.value = displays
-  })
-
-  const unsubAppPreferences = window.memedrop?.onAppPreferences((preferences) => {
-    appPreferences.value = preferences
-  })
-
-  const unsubAppVersionInfo = window.memedrop?.onAppVersionInfo((info) => {
-    appVersionInfo.value = info
-  })
-
-  if (unsubDrop) unsubscribers.push(unsubDrop)
-  if (unsubClearDrop) unsubscribers.push(unsubClearDrop)
-  if (unsubTestDropCleared) unsubscribers.push(unsubTestDropCleared)
-  if (unsubSkipCurrentDrop) unsubscribers.push(unsubSkipCurrentDrop)
-  if (unsubStatus) unsubscribers.push(unsubStatus)
-  if (unsubConnectedUsers) unsubscribers.push(unsubConnectedUsers)
-  if (unsubShortcutStatus) unsubscribers.push(unsubShortcutStatus)
-  if (unsubShortcutConfigs) unsubscribers.push(unsubShortcutConfigs)
-  if (unsubOverlay) unsubscribers.push(unsubOverlay)
-  if (unsubOverlayDisplayPreferences) unsubscribers.push(unsubOverlayDisplayPreferences)
-  if (unsubOverlayDisplays) unsubscribers.push(unsubOverlayDisplays)
-  if (unsubAppPreferences) unsubscribers.push(unsubAppPreferences)
-  if (unsubAppVersionInfo) unsubscribers.push(unsubAppVersionInfo)
-})
-
-onBeforeUnmount(() => {
-  clearActiveDropTimer()
-  unsubscribers.forEach((unsubscribe) => unsubscribe())
 })
 </script>
 
 <template>
   <div class="h-full w-full">
-    <div v-if="isOverlayView" class="relative h-full w-full">
-      <DropOverlay
-        :active-drop="activeDrop"
-        :active-kind="activeKind"
-        :has-drop="hasDrop"
-        :overlay-classes="overlayClasses"
-        :custom-style="overlayCustomStyle"
-        :volume="dropVolume"
-        :size="dropSize"
-        :is-custom-position="overlayPosition === 'custom'"
-        @advance="completeActiveDrop"
-      />
-    </div>
+    <OverlayApp
+      v-if="isOverlayView"
+      :active-drop="activeDrop"
+      :active-kind="activeKind"
+      :has-drop="hasDrop"
+      :overlay-classes="overlayClasses"
+      :overlay-custom-style="overlayCustomStyle"
+      :drop-volume="dropVolume"
+      :drop-size="dropSize"
+      :is-custom-position="overlayPosition === 'custom'"
+      @advance="completeActiveDrop"
+    />
 
-    <div
+    <ControlApp
       v-else
-      class="flex h-full w-full flex-col gap-4 overflow-y-auto bg-slate-950 p-4 text-sm text-slate-100"
-    >
-      <div class="flex items-center justify-between">
-        <span class="text-sm font-semibold">MemeDrop</span>
-        <button
-          type="button"
-          class="flex size-8 items-center justify-center rounded-md border border-white/10 bg-slate-900/70 text-slate-300 hover:bg-slate-900"
-          title="Préférences"
-          aria-label="Préférences"
-          @click="isPreferencesOpen = true"
-        >
-          <span
-            class="size-4 bg-current"
-            style="mask: url('/icons/gear.svg') center / contain no-repeat; -webkit-mask: url('/icons/gear.svg') center / contain no-repeat;"
-            aria-hidden="true"
-          />
-        </button>
-      </div>
-
-      <PreferencesModal
-        v-if="isPreferencesOpen"
-        :preferences="appPreferences"
-        :shortcut-configs="shortcutConfigs"
-        :shortcut-statuses="shortcutStatuses"
-        @close="isPreferencesOpen = false"
-        @update-preferences="updateAppPreferences"
-        @update-shortcuts="updateShortcutConfigs"
-        @start-shortcut-capture="startShortcutCapture"
-        @reset-shortcuts="resetShortcutConfigs"
-        @quit-app="quitApp"
-        @uninstall-app="uninstallApp"
-      />
-
-      <LoginView
-        v-if="!isDiscordConnected"
-        v-model="serverConfig"
-        :is-authenticating="isAuthenticatingDiscord"
-        :auth-message="discordAuthMessage"
-        :is-saving-config="isSavingConfig"
-        :config-saved-message="configSavedMessage"
-        @authenticate="authenticateDiscord"
-        @save-server-config="saveServerConfig"
-      />
-
-      <div
-        v-if="isDiscordConnected && appVersionInfo.updateAvailable"
-        class="rounded-lg border border-amber-300/25 bg-amber-400/10 p-3 text-xs text-amber-100"
-      >
-        <p class="font-semibold">Une nouvelle version de MemeDrop est disponible.</p>
-        <p class="mt-1 text-amber-100/80">
-          Vous utilisez la version {{ appVersionInfo.currentVersion }}. Téléchargez la version
-          {{ appVersionInfo.latestVersion }} depuis GitHub.
-        </p>
-        <button
-          type="button"
-          class="mt-3 rounded-md border border-amber-200/30 bg-amber-300/15 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-amber-300/25"
-          @click="openReleasePage"
-        >
-          Télécharger la dernière version
-        </button>
-      </div>
-
-      <div v-if="isDiscordConnected" class="grid grid-cols-2 gap-1 rounded-lg bg-slate-900/70 p-1">
-        <button
-          type="button"
-          class="rounded-md px-3 py-1.5 text-xs font-semibold"
-          :class="
-            controlTab === 'control'
-              ? 'bg-slate-700 text-slate-100 shadow-sm'
-              : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
-          "
-          @click="controlTab = 'control'"
-        >
-          Contrôle
-        </button>
-        <button
-          type="button"
-          class="rounded-md px-3 py-1.5 text-xs font-semibold"
-          :class="
-            controlTab === 'connected'
-              ? 'bg-slate-700 text-slate-100 shadow-sm'
-              : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
-          "
-          @click="controlTab = 'connected'"
-        >
-          Connecté(s) ({{ otherConnectedUsers.length }})
-        </button>
-      </div>
-
-      <ControlPanel
-        v-if="isDiscordConnected && controlTab === 'control'"
-        v-model:server-config="serverConfig"
-        :drops-enabled="dropsEnabled"
-        :hide-own-drops="hideOwnDrops"
-        :can-stop-global-drop="canStopGlobalDrop"
-        :drop-volume="dropVolume"
-        :drop-size="dropSize"
-        :is-test-drop-active="isTestDropActive"
-        :overlay-position="overlayPosition"
-        :overlay-display-id="overlayDisplayId"
-        :overlay-displays="overlayDisplays"
-        :custom-x="customX"
-        :custom-y="customY"
-        :custom-anchor="customAnchor"
-        :is-saving-config="isSavingConfig"
-        :config-saved-message="configSavedMessage"
-        :auth-message="discordAuthMessage"
-        :connection-status="connectionStatus"
-        :shortcut-statuses="shortcutStatuses"
-        @toggle-drops="toggleDrops"
-        @skip-current-drop="skipCurrentDrop"
-        @toggle-hide-own-drops="toggleHideOwnDrops"
-        @stop-current-drop-for-everyone="stopCurrentDropForEveryone"
-        @update-drop-volume="dropVolume = $event"
-        @update-drop-size="dropSize = $event"
-        @update-overlay-position="overlayPosition = $event as OverlayPosition"
-        @update-overlay-display-id="overlayDisplayId = $event"
-        @update-custom-x="customX = $event"
-        @update-custom-y="customY = $event"
-        @update-custom-anchor="customAnchor = $event as OverlayAnchor"
-        @save-server-config="saveServerConfig"
-        @disconnect-discord="disconnectDiscord"
-        @trigger-test-drop="triggerTestDrop"
-      />
-
-      <ConnectedUsersView
-        v-if="isDiscordConnected && controlTab === 'connected'"
-        :users="otherConnectedUsers"
-        empty-message="Aucun autre utilisateur connecté."
-      />
-    </div>
+      v-model:server-config="serverConfig"
+      :app-preferences="appPreferences"
+      :app-version-info="appVersionInfo"
+      :auth-message="discordAuthMessage"
+      :can-stop-global-drop="canStopGlobalDrop"
+      :config-saved-message="configSavedMessage"
+      :connection-status="connectionStatus"
+      :control-tab="controlTab"
+      :custom-anchor="customAnchor"
+      :custom-x="customX"
+      :custom-y="customY"
+      :drop-size="dropSize"
+      :drop-volume="dropVolume"
+      :drops-enabled="dropsEnabled"
+      :hide-own-drops="hideOwnDrops"
+      :is-authenticating-discord="isAuthenticatingDiscord"
+      :is-discord-connected="isDiscordConnected"
+      :is-preferences-open="isPreferencesOpen"
+      :is-saving-config="isSavingConfig"
+      :is-test-drop-active="isTestDropActive"
+      :other-connected-users="otherConnectedUsers"
+      :overlay-display-id="overlayDisplayId"
+      :overlay-displays="overlayDisplays"
+      :overlay-position="overlayPosition"
+      :shortcut-configs="shortcutConfigs"
+      :shortcut-statuses="shortcutStatuses"
+      @authenticate="authenticateDiscord"
+      @close-preferences="isPreferencesOpen = false"
+      @disconnect-discord="disconnectDiscord"
+      @open-preferences="isPreferencesOpen = true"
+      @open-release-page="openReleasePage"
+      @quit-app="quitApp"
+      @reset-shortcuts="resetShortcutConfigs"
+      @save-server-config="saveServerConfig"
+      @skip-current-drop="skipCurrentDrop"
+      @start-shortcut-capture="startShortcutCapture"
+      @stop-current-drop-for-everyone="stopCurrentDropForEveryone"
+      @toggle-drops="toggleDrops"
+      @toggle-hide-own-drops="toggleHideOwnDrops"
+      @trigger-test-drop="triggerTestDrop"
+      @uninstall-app="uninstallApp"
+      @update-app-preferences="updateAppPreferences"
+      @update-control-tab="controlTab = $event"
+      @update-custom-anchor="customAnchor = $event"
+      @update-custom-x="customX = $event"
+      @update-custom-y="customY = $event"
+      @update-drop-size="dropSize = $event"
+      @update-drop-volume="dropVolume = $event"
+      @update-overlay-display-id="overlayDisplayId = $event"
+      @update-overlay-position="overlayPosition = $event"
+      @update-shortcuts="updateShortcutConfigs"
+    />
   </div>
 </template>
