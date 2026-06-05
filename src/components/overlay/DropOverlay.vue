@@ -1,77 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import type { Drop } from '../../../shared/types'
-import type { MediaKind } from '../../../shared/media'
+import { computed } from 'vue'
 import type { CSSProperties } from 'vue'
+import type { MediaKind } from '../../../shared/media'
+import type { Drop } from '../../../shared/types'
 import DropAuthor from './DropAuthor.vue'
-
-type YouTubePlayerEvent = {
-  data: number
-  target: YouTubePlayer
-}
-type YouTubePlayer = {
-  destroy: () => void
-  getPlayerState: () => number
-  playVideo: () => void
-  setVolume: (volume: number) => void
-  stopVideo?: () => void
-}
-type YouTubeApi = {
-  Player: new (
-    element: HTMLIFrameElement,
-    options: {
-      events: {
-        onReady?: (event: YouTubePlayerEvent) => void
-        onStateChange?: (event: YouTubePlayerEvent) => void
-      }
-    },
-  ) => YouTubePlayer
-  PlayerState: {
-    ENDED: number
-    PLAYING: number
-  }
-}
-
-type TikTokPlayerMessage =
-  | {
-      'x-tiktok-player': true
-      type: 'onPlayerReady'
-      value?: undefined
-    }
-  | {
-      'x-tiktok-player': true
-      type: 'onStateChange'
-      value: number
-    }
-  | {
-      'x-tiktok-player': true
-      type: 'onPlayerError'
-      value?: unknown
-    }
-  | {
-      'x-tiktok-player': true
-      type: string
-      value?: unknown
-    }
-
-const TIKTOK_PLAYER_STATE_ENDED = 0
-
-type TikTokWebviewElement = HTMLElement & {
-  executeJavaScript: (code: string) => Promise<unknown>
-  send: (channel: string, ...args: unknown[]) => void
-}
-
-type TikTokIpcMessageEvent = Event & {
-  channel: string
-  args: unknown[]
-}
-
-declare global {
-  interface Window {
-    YT?: YouTubeApi
-    onYouTubeIframeAPIReady?: () => void
-  }
-}
+import NativeMediaDrop from './NativeMediaDrop.vue'
+import TikTokDrop from './TikTokDrop.vue'
+import YouTubeDrop from './YouTubeDrop.vue'
 
 const props = defineProps<{
   activeDrop: Drop | null
@@ -88,18 +23,6 @@ const emit = defineEmits<{
   advance: [dropId?: string]
 }>()
 
-const videoElement = ref<HTMLVideoElement | null>(null)
-const audioElement = ref<HTMLAudioElement | null>(null)
-const youtubeIframe = ref<HTMLIFrameElement | null>(null)
-const tiktokWebview = ref<TikTokWebviewElement | null>(null)
-const tiktokPreloadUrl = ref('')
-
-let youtubeStateTimer: number | undefined
-let youtubeApiPromise: Promise<YouTubeApi> | null = null
-let youtubePlayer: YouTubePlayer | null = null
-let youtubePlayerDropId: string | null = null
-
-const normalizedDropVolume = computed(() => Math.min(Math.max(props.volume, 0), 100) / 100)
 const normalizedDropSize = computed(() => Math.min(Math.max(props.size, 40), 130) / 100)
 
 const overlayWrapperClasses = computed(() =>
@@ -118,288 +41,10 @@ const mediaFrameStyle = computed<CSSProperties>(() => ({
   maxWidth: `min(calc(60vh * 16 / 9), ${Math.round(880 * normalizedDropSize.value)}px, 90vw)`,
 }))
 
-const youtubeEmbedUrl = computed(() => {
-  if (!props.activeDrop?.youtubeVideoId) {
-    return ''
-  }
-
-  const params = new URLSearchParams({
-    autoplay: '1',
-    controls: '0',
-    disablekb: '1',
-    enablejsapi: '1',
-    fs: '0',
-    iv_load_policy: '3',
-    modestbranding: '1',
-    origin: window.location.origin,
-    playsinline: '1',
-    rel: '0',
-  })
-
-  return `https://www.youtube.com/embed/${props.activeDrop.youtubeVideoId}?${params.toString()}`
-})
-
-const tiktokEmbedUrl = computed(() => {
-  if (!props.activeDrop?.tiktokVideoId) {
-    return ''
-  }
-
-  const params = new URLSearchParams({
-    autoplay: '1',
-    closed_caption: '0',
-    controls: '0',
-    description: '0',
-    loop: '0',
-    music_info: '0',
-    native_context_menu: '0',
-    rel: '0',
-  })
-
-  return `https://www.tiktok.com/player/v1/${props.activeDrop.tiktokVideoId}?${params.toString()}`
-})
-
-const sendYouTubeCommand = (func: string, args: unknown[] = []) => {
-  youtubeIframe.value?.contentWindow?.postMessage(
-    JSON.stringify({
-      event: 'command',
-      func,
-      args,
-    }),
-    'https://www.youtube.com',
-  )
-}
-
-const sendTikTokCommand = (type: 'play' | 'pause' | 'mute' | 'unMute') => {
-  tiktokWebview.value?.send('tiktok-command', type)
-}
-
-const clearYouTubeStateTimer = () => {
-  if (youtubeStateTimer) {
-    window.clearInterval(youtubeStateTimer)
-    youtubeStateTimer = undefined
-  }
-}
-
-const loadYouTubeApi = () => {
-  if (window.YT?.Player) {
-    return Promise.resolve(window.YT)
-  }
-
-  if (youtubeApiPromise) {
-    return youtubeApiPromise
-  }
-
-  youtubeApiPromise = new Promise<YouTubeApi>((resolve) => {
-    const previousCallback = window.onYouTubeIframeAPIReady
-
-    window.onYouTubeIframeAPIReady = () => {
-      previousCallback?.()
-      if (window.YT) {
-        resolve(window.YT)
-      }
-    }
-
-    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
-      const script = document.createElement('script')
-      script.src = 'https://www.youtube.com/iframe_api'
-      document.head.append(script)
-    }
-  })
-
-  return youtubeApiPromise
-}
-
-const resetYouTubePlayer = () => {
-  youtubePlayer?.stopVideo?.()
-  youtubePlayer = null
-  youtubePlayerDropId = null
-}
-
-const destroyYouTubePlayer = () => {
-  const player = youtubePlayer
-  youtubePlayer = null
-  youtubePlayerDropId = null
-  player?.destroy()
-}
-
-const startYouTubeStatePolling = () => {
-  clearYouTubeStateTimer()
-  youtubeStateTimer = window.setInterval(() => {
-    if (props.activeKind !== 'youtube') {
-      clearYouTubeStateTimer()
-      return
-    }
-
-    const dropId = props.activeDrop?.id
-    if (dropId && youtubePlayer?.getPlayerState() === 0) {
-      emit('advance', dropId)
-    }
-  }, 1000)
-}
-
-const applyDropVolume = () => {
-  if (videoElement.value) {
-    videoElement.value.volume = normalizedDropVolume.value
-  }
-
-  if (audioElement.value) {
-    audioElement.value.volume = normalizedDropVolume.value
-  }
-
-  youtubePlayer?.setVolume(Math.round(normalizedDropVolume.value * 100))
-  sendYouTubeCommand('setVolume', [Math.round(normalizedDropVolume.value * 100)])
-
-  if (props.activeKind === 'tiktok') {
-    sendTikTokCommand(normalizedDropVolume.value <= 0 ? 'mute' : 'unMute')
-  }
-}
-
-const initializeYouTubePlayer = async () => {
-  if (!youtubeIframe.value || !props.activeDrop || props.activeKind !== 'youtube') {
-    return
-  }
-
-  if (youtubePlayer && youtubePlayerDropId === props.activeDrop.id) {
-    return
-  }
-
-  resetYouTubePlayer()
-
-  const dropId = props.activeDrop.id
-  const api = await loadYouTubeApi()
-
-  if (!youtubeIframe.value || props.activeDrop?.id !== dropId) {
-    return
-  }
-
-  youtubePlayerDropId = dropId
-  youtubePlayer = new api.Player(youtubeIframe.value, {
-    events: {
-      onReady: (event) => {
-        event.target.setVolume(Math.round(normalizedDropVolume.value * 100))
-        event.target.playVideo()
-        startYouTubeStatePolling()
-      },
-      onStateChange: (event) => {
-        if (event.data === api.PlayerState.ENDED && props.activeKind === 'youtube') {
-          emit('advance', dropId)
-        }
-      },
-    },
-  })
-}
-
-const handleYouTubeLoad = () => {
-  applyDropVolume()
-  sendYouTubeCommand('addEventListener', ['onStateChange'])
-  sendYouTubeCommand('playVideo')
-  void initializeYouTubePlayer()
-  startYouTubeStatePolling()
-}
-
-const handleYouTubeMessage = (event: MessageEvent) => {
-  if (
-    event.origin !== 'https://www.youtube.com' ||
-    event.source !== youtubeIframe.value?.contentWindow
-  ) {
-    return
-  }
-
-  try {
-    const message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-    const playerState =
-      typeof message?.info === 'number'
-        ? message.info
-        : message?.info?.playerState ?? message?.data
-
-    if (playerState === 0 && props.activeKind === 'youtube' && props.activeDrop?.id) {
-      emit('advance', props.activeDrop.id)
-      return
-    }
-
-    if (message?.event === 'onReady' || message?.event === 'initialDelivery') {
-      handleYouTubeLoad()
-    }
-  } catch {
-    // YouTube can send non-JSON messages; they are not useful here.
-  }
-}
-
-const handleTikTokLoad = () => {
-  applyDropVolume()
-  sendTikTokCommand('play')
-}
-
-const isTikTokPlayerMessage = (value: unknown): value is TikTokPlayerMessage => {
-  return Boolean(
-    value &&
-      typeof value === 'object' &&
-      (value as Partial<TikTokPlayerMessage>)['x-tiktok-player'] === true &&
-      typeof (value as Partial<TikTokPlayerMessage>).type === 'string',
-  )
-}
-
-const handleTikTokIpcMessage = (event: TikTokIpcMessageEvent) => {
-  if (event.channel === 'tiktok-ended' && props.activeKind === 'tiktok' && props.activeDrop?.id) {
-    emit('advance', props.activeDrop.id)
-    return
-  }
-
-  if (event.channel === 'tiktok-error' && props.activeKind === 'tiktok' && props.activeDrop?.id) {
-    emit('advance', props.activeDrop.id)
-    return
-  }
-
-  if (event.channel !== 'tiktok-player-message' || !isTikTokPlayerMessage(event.args[0])) {
-    return
-  }
-
-  const message = event.args[0]
-
-  if (message.type === 'onPlayerReady') {
-    handleTikTokLoad()
-    return
-  }
-
-  if (
-    message.type === 'onStateChange' &&
-    message.value === TIKTOK_PLAYER_STATE_ENDED &&
-    props.activeKind === 'tiktok' &&
-    props.activeDrop?.id
-  ) {
-    emit('advance', props.activeDrop.id)
-    return
-  }
-
-  if (message.type === 'onPlayerError' && props.activeKind === 'tiktok' && props.activeDrop?.id) {
-    emit('advance', props.activeDrop.id)
-  }
-}
-
-watch(
-  () => props.volume,
-  () => applyDropVolume(),
-)
-
-watch(
-  () => props.activeDrop?.id,
-  () => {
-    clearYouTubeStateTimer()
-    resetYouTubePlayer()
-  },
-)
-
-window.addEventListener('message', handleYouTubeMessage)
-
-onBeforeUnmount(() => {
-  window.removeEventListener('message', handleYouTubeMessage)
-  clearYouTubeStateTimer()
-  destroyYouTubePlayer()
-})
-
-void window.memedrop?.getTikTokPreloadUrl().then((preloadUrl) => {
-  tiktokPreloadUrl.value = preloadUrl
-})
+const isNativeMediaKind = (
+  kind: MediaKind,
+): kind is Extract<MediaKind, 'image' | 'video' | 'audio'> =>
+  kind === 'image' || kind === 'video' || kind === 'audio'
 </script>
 
 <template>
@@ -409,77 +54,41 @@ void window.memedrop?.getTikTokPreloadUrl().then((preloadUrl) => {
     :style="overlayWrapperStyle"
   >
     <div
-      v-if="hasDrop"
+      v-if="hasDrop && activeDrop"
       class="pointer-events-none rounded-3xl border border-overlay-border bg-overlay-bg p-6 backdrop-blur"
       :style="dropCardStyle"
     >
       <div class="flex flex-col gap-4">
-        <div
-          v-if="['image', 'video', 'youtube', 'tiktok'].includes(activeKind)"
-          class="mx-auto w-full overflow-hidden rounded-2xl bg-black"
-          :class="activeKind === 'tiktok' ? 'aspect-video flex items-center justify-center' : 'aspect-video max-w-[calc(60vh*16/9)]'"
-          :style="mediaFrameStyle"
-        >
-          <img
-            v-if="activeKind === 'image'"
-            :src="activeDrop?.url"
-            :alt="activeDrop?.caption ?? 'MemeDrop image'"
-            class="h-full w-full object-contain"
-          />
-          <iframe
-            v-else-if="activeKind === 'youtube'"
-            ref="youtubeIframe"
-            :key="`youtube-${activeDrop?.id}`"
-            :src="youtubeEmbedUrl"
-            allow="autoplay; encrypted-media; picture-in-picture"
-            allowfullscreen
-            class="h-full w-full border-0"
-            @load="handleYouTubeLoad"
-          />
-          <webview
-            v-else-if="activeKind === 'tiktok' && tiktokPreloadUrl"
-            ref="tiktokWebview"
-            :key="`tiktok-${activeDrop?.id}`"
-            :src="tiktokEmbedUrl"
-            :preload="tiktokPreloadUrl"
-            partition="persist:memedrop-tiktok"
-            webpreferences="contextIsolation=yes"
-            class="h-full max-h-full aspect-[9/16] border-0"
-            @dom-ready="handleTikTokLoad"
-            @ipc-message="handleTikTokIpcMessage"
-          />
-          <video
-            v-else-if="activeKind === 'video'"
-            ref="videoElement"
-            :key="`video-${activeDrop?.id}`"
-            :src="activeDrop?.url"
-            autoplay
-            playsinline
-            class="h-full w-full object-contain"
-            @loadedmetadata="applyDropVolume"
-            @ended="() => emit('advance')"
-            @error="() => emit('advance')"
-          />
-        </div>
-        <audio
-          v-else-if="activeKind === 'audio'"
-          ref="audioElement"
-          :key="`audio-${activeDrop?.id}`"
-          :src="activeDrop?.url"
-          autoplay
-          controls
-          @loadedmetadata="applyDropVolume"
-          @ended="() => emit('advance')"
-          @error="() => emit('advance')"
+        <NativeMediaDrop
+          v-if="isNativeMediaKind(activeKind)"
+          :drop="activeDrop"
+          :kind="activeKind"
+          :volume="volume"
+          :frame-style="mediaFrameStyle"
+          @advance="emit('advance')"
+        />
+        <YouTubeDrop
+          v-else-if="activeKind === 'youtube'"
+          :drop="activeDrop"
+          :volume="volume"
+          :frame-style="mediaFrameStyle"
+          @advance="emit('advance', $event)"
+        />
+        <TikTokDrop
+          v-else-if="activeKind === 'tiktok'"
+          :drop="activeDrop"
+          :volume="volume"
+          :frame-style="mediaFrameStyle"
+          @advance="emit('advance', $event)"
         />
       </div>
 
-      <div v-if="activeDrop?.caption || activeDrop?.author" class="mt-4 space-y-3">
-        <p v-if="activeDrop?.caption" class="text-2xl font-semibold text-slate-100">
-          {{ activeDrop?.caption }}
+      <div v-if="activeDrop.caption || activeDrop.author" class="mt-4 space-y-3">
+        <p v-if="activeDrop.caption" class="text-2xl font-semibold text-slate-100">
+          {{ activeDrop.caption }}
         </p>
         <DropAuthor
-          v-if="activeDrop?.author"
+          v-if="activeDrop.author"
           :author="activeDrop.author"
           :avatar-url="activeDrop.authorAvatarUrl"
           :is-anonymous="activeDrop.isAnonymous"
