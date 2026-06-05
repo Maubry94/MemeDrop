@@ -1,5 +1,5 @@
 import WebSocket from 'ws'
-import type { ConnectedUser, ConnectionStatus, Drop } from '../shared/types'
+import type { ConnectedUser, ConnectionStatus, Drop } from '../../shared/types'
 
 const SERVER_HEARTBEAT_TIMEOUT_MS = 75000
 
