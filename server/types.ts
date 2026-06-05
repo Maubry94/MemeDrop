@@ -1,5 +1,4 @@
 import type http from 'node:http'
-import type WebSocket from 'ws'
 import type { ConnectedUser, Drop } from '../shared/types.js'
 
 export type DiscordStatus = 'starting' | 'connected' | 'error'
@@ -10,17 +9,6 @@ export type MemeDropClient = {
   userAvatarUrl: string
   appVersion: string
   dropsEnabled: boolean
-}
-
-export type DropScope = 'global' | 'targeted'
-
-export type DropJob = {
-  drop: Drop
-  targets: Set<WebSocket>
-  done: Set<WebSocket>
-  scope: DropScope
-  targetUserId: string | null
-  timer: ReturnType<typeof setTimeout> | null
 }
 
 export type BroadcastDrop = (drop: Drop) => number
