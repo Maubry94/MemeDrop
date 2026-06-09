@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ServerConfig } from '../../../shared/types'
+import Button from '../ui/Button.vue'
 import ServerSettings from './ServerSettings.vue'
 
 defineProps<{
@@ -27,14 +28,15 @@ const serverConfig = defineModel<ServerConfig>({ required: true })
       </div>
     </div>
 
-    <button
-      type="button"
-      class="w-full cursor-pointer rounded-lg border border-white/10 bg-indigo-400 px-3 py-3 text-sm font-semibold text-slate-950 hover:bg-indigo-300 disabled:opacity-60"
+    <Button
+      variant="discord"
+      size="md"
+      full-width
       :disabled="isAuthenticating"
       @click="$emit('authenticate')"
     >
       {{ isAuthenticating ? 'Connexion…' : 'Se connecter avec Discord' }}
-    </button>
+    </Button>
 
     <div v-if="authMessage" class="text-center text-[11px] text-slate-300">
       {{ authMessage }}

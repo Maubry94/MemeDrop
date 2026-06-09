@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ServerConfig } from '../../../shared/types'
+import Button from '../ui/Button.vue'
 
 defineProps<{
   serverConfig: ServerConfig
@@ -28,13 +29,13 @@ defineEmits<{
       </div>
       <span>Connecté: {{ serverConfig.discordUserName }}</span>
     </div>
-    <button
-      type="button"
-      class="w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-950"
+    <Button
+      variant="subtle"
+      full-width
       @click="$emit('disconnect')"
     >
       Déconnexion
-    </button>
+    </Button>
     <div v-if="authMessage" class="text-[11px] text-slate-300">
       {{ authMessage }}
     </div>

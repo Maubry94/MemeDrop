@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { AppPreferences, ShortcutActionId, ShortcutConfig, ShortcutStatus } from '../../../shared/types'
+import Button from '../ui/Button.vue'
+import Checkbox from '../ui/Checkbox.vue'
 
 const props = defineProps<{
   preferences: AppPreferences
@@ -73,9 +75,9 @@ onBeforeUnmount(() => {
     >
       <div class="flex items-center justify-between gap-3">
         <h2 class="text-sm font-semibold">Préférences</h2>
-        <button
-          type="button"
-          class="flex size-8 items-center justify-center rounded-md border border-white/10 bg-slate-900/70 text-slate-300 hover:bg-slate-900"
+        <Button
+          variant="icon"
+          size="icon"
           title="Fermer"
           aria-label="Fermer"
           @click="$emit('close')"
@@ -85,7 +87,7 @@ onBeforeUnmount(() => {
             style="mask: url('/icons/cross.svg') center / contain no-repeat; -webkit-mask: url('/icons/cross.svg') center / contain no-repeat;"
             aria-hidden="true"
           />
-        </button>
+        </Button>
       </div>
 
       <div class="mt-4 space-y-3">
@@ -100,14 +102,12 @@ onBeforeUnmount(() => {
               La croix cache MemeDrop dans la zone de notification au lieu de quitter.
             </span>
           </span>
-          <input
-            :checked="preferences.minimizeToTray"
-            type="checkbox"
-            class="mt-1 h-4 w-4 accent-sky-400"
-            @change="
+          <Checkbox
+            :model-value="preferences.minimizeToTray"
+            @update:model-value="
               $emit('updatePreferences', {
                 ...preferences,
-                minimizeToTray: ($event.target as HTMLInputElement).checked,
+                minimizeToTray: $event,
               })
             "
           />
@@ -124,14 +124,12 @@ onBeforeUnmount(() => {
               Lance MemeDrop automatiquement à l'ouverture de session Windows.
             </span>
           </span>
-          <input
-            :checked="preferences.openAtLogin"
-            type="checkbox"
-            class="mt-1 h-4 w-4 accent-sky-400"
-            @change="
+          <Checkbox
+            :model-value="preferences.openAtLogin"
+            @update:model-value="
               $emit('updatePreferences', {
                 ...preferences,
-                openAtLogin: ($event.target as HTMLInputElement).checked,
+                openAtLogin: $event,
               })
             "
           />
@@ -141,13 +139,12 @@ onBeforeUnmount(() => {
       <div class="mt-5 border-t border-white/10 pt-4">
         <div class="flex items-center justify-between gap-3">
           <p class="text-xs font-semibold text-slate-300">Raccourcis clavier</p>
-          <button
-            type="button"
-            class="rounded-md border border-white/10 bg-slate-900/70 px-2 py-1 text-[11px] font-semibold text-slate-300 hover:bg-slate-900"
+          <Button
+            size="xs"
             @click="$emit('resetShortcuts')"
           >
             Réinitialiser
-          </button>
+          </Button>
         </div>
 
         <div class="mt-2 space-y-2">
@@ -169,9 +166,10 @@ onBeforeUnmount(() => {
                 </p>
               </div>
 
-              <button
-                type="button"
-                class="shrink-0 rounded-md border border-white/10 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-900"
+              <Button
+                class="shrink-0"
+                variant="subtle"
+                size="xs"
                 @click="startEditingShortcut(shortcut.action)"
               >
                 {{
@@ -179,7 +177,7 @@ onBeforeUnmount(() => {
                     ? 'Appuie...'
                     : formatAccelerator(shortcut.accelerator)
                 }}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -187,20 +185,21 @@ onBeforeUnmount(() => {
 
       <div class="mt-5 border-t border-rose-400/20 pt-4">
         <p class="text-xs font-semibold text-rose-300">Zone dangereuse</p>
-        <button
-          type="button"
-          class="mt-2 w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+        <Button
+          class="mt-2"
+          full-width
           @click="$emit('quitApp')"
         >
           Quitter MemeDrop
-        </button>
-        <button
-          type="button"
-          class="mt-2 w-full rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/20"
+        </Button>
+        <Button
+          class="mt-2"
+          variant="danger"
+          full-width
           @click="$emit('uninstallApp')"
         >
           Désinstaller MemeDrop
-        </button>
+        </Button>
       </div>
     </section>
   </div>

@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type {
   ConnectionStatus,
   OverlayDisplayInfo,
   ServerConfig,
   ShortcutStatus,
 } from '../../../shared/types'
+import Button from '../ui/Button.vue'
+import Range from '../ui/Range.vue'
+import Select from '../ui/Select.vue'
+import type { SelectOption } from '../ui/Select.vue'
 import DiscordAccount from './DiscordAccount.vue'
 import ServerSettings from './ServerSettings.vue'
 
@@ -56,43 +61,52 @@ const getShortcutTitle = (action: ShortcutStatus['action'], fallback: string) =>
   const shortcut = getShortcutLabel(action)
   return shortcut ? `${fallback}\nRaccourci : ${shortcut}` : fallback
 }
+
+const overlayDisplayOptions = computed<SelectOption[]>(() => [
+  { value: 'primary', label: "Toujours l'écran principal" },
+  ...props.overlayDisplays.map((display) => ({
+    value: display.id,
+    label: `${display.label} · ${display.bounds.width}×${display.bounds.height}`,
+  })),
+])
+
+const overlayPositionOptions: SelectOption[] = [
+  { value: 'full', label: 'Plein écran (centré)' },
+  { value: 'top-left', label: 'Haut gauche' },
+  { value: 'top-right', label: 'Haut droite' },
+  { value: 'bottom-left', label: 'Bas gauche' },
+  { value: 'bottom-right', label: 'Bas droite' },
+  { value: 'custom', label: 'Personnalisé' },
+]
 </script>
 
 <template>
   <div class="grid grid-cols-2 gap-2">
-    <button
-      type="button"
-      class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
+    <Button
       :title="getShortcutTitle('toggleDrops', dropsEnabled ? 'Désactiver les drops' : 'Activer les drops')"
       @click="$emit('toggleDrops')"
     >
       {{ dropsEnabled ? 'Désactiver' : 'Activer' }}
-    </button>
-    <button
-      type="button"
-      class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
+    </Button>
+    <Button
       :title="getShortcutTitle('skipDrop', 'Masquer le drop actuel')"
       @click="$emit('skipCurrentDrop')"
     >
       Masquer
-    </button>
-    <button
-      type="button"
-      class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
+    </Button>
+    <Button
       :title="getShortcutTitle('toggleOwnDrops', hideOwnDrops ? 'Voir mes drops' : 'Masquer mes drops')"
       @click="$emit('toggleHideOwnDrops')"
     >
       {{ hideOwnDrops ? 'Voir mes drops' : 'Masquer mes drops' }}
-    </button>
-    <button
-      type="button"
-      class="cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90 disabled:cursor-not-allowed disabled:opacity-50"
+    </Button>
+    <Button
       :title="getShortcutTitle('stopGlobalDrop', 'Stopper le drop envoyé')"
       :disabled="!canStopGlobalDrop"
       @click="$emit('stopCurrentDropForEveryone')"
     >
       Stopper
-    </button>
+    </Button>
   </div>
 
   <p class="-mt-1 text-[11px] text-slate-500">
@@ -101,36 +115,20 @@ const getShortcutTitle = (action: ShortcutStatus['action'], fallback: string) =>
 
   <label class="flex flex-col gap-1 text-xs text-slate-300">
     Écran de l'overlay
-    <select
-      :value="overlayDisplayId"
-      class="w-full rounded-lg border border-white/10 bg-slate-900/70 px-2 py-1 text-sm text-slate-100"
-      @change="$emit('updateOverlayDisplayId', ($event.target as HTMLSelectElement).value)"
-    >
-      <option value="primary">Toujours l'écran principal</option>
-      <option
-        v-for="display in overlayDisplays"
-        :key="display.id"
-        :value="display.id"
-      >
-        {{ display.label }} · {{ display.bounds.width }}×{{ display.bounds.height }}
-      </option>
-    </select>
+    <Select
+      :model-value="overlayDisplayId"
+      :options="overlayDisplayOptions"
+      @update:model-value="$emit('updateOverlayDisplayId', $event)"
+    />
   </label>
 
   <label class="flex flex-col gap-1 text-xs text-slate-300">
     Position de l'overlay
-    <select
-      :value="overlayPosition"
-      class="w-full rounded-lg border border-white/10 bg-slate-900/70 px-2 py-1 text-sm text-slate-100"
-      @change="$emit('updateOverlayPosition', ($event.target as HTMLSelectElement).value)"
-    >
-      <option value="full">Plein écran (centré)</option>
-      <option value="top-left">Haut gauche</option>
-      <option value="top-right">Haut droite</option>
-      <option value="bottom-left">Bas gauche</option>
-      <option value="bottom-right">Bas droite</option>
-      <option value="custom">Personnalisé</option>
-    </select>
+    <Select
+      :model-value="overlayPosition"
+      :options="overlayPositionOptions"
+      @update:model-value="$emit('updateOverlayPosition', $event)"
+    />
   </label>
 
   <label class="flex flex-col gap-2 text-xs text-slate-300">
@@ -138,14 +136,12 @@ const getShortcutTitle = (action: ShortcutStatus['action'], fallback: string) =>
       Taille des drops
       <span class="text-[11px] text-slate-400">{{ dropSize }}%</span>
     </span>
-    <input
-      :value="dropSize"
-      type="range"
+    <Range
+      :model-value="dropSize"
       min="40"
       max="130"
       step="5"
-      class="w-full accent-sky-400"
-      @input="$emit('updateDropSize', Number(($event.target as HTMLInputElement).value))"
+      @update:model-value="$emit('updateDropSize', $event)"
     />
   </label>
 
@@ -155,14 +151,12 @@ const getShortcutTitle = (action: ShortcutStatus['action'], fallback: string) =>
         Horizontal
         <span class="text-[11px] text-slate-400">{{ customX }}%</span>
       </span>
-      <input
-        :value="customX"
-        type="range"
+      <Range
+        :model-value="customX"
         min="0"
         max="100"
         step="1"
-        class="w-full accent-sky-400"
-        @input="$emit('updateCustomX', Number(($event.target as HTMLInputElement).value))"
+        @update:model-value="$emit('updateCustomX', $event)"
       />
     </label>
 
@@ -171,14 +165,12 @@ const getShortcutTitle = (action: ShortcutStatus['action'], fallback: string) =>
         Vertical
         <span class="text-[11px] text-slate-400">{{ customY }}%</span>
       </span>
-      <input
-        :value="customY"
-        type="range"
+      <Range
+        :model-value="customY"
         min="0"
         max="100"
         step="1"
-        class="w-full accent-sky-400"
-        @input="$emit('updateCustomY', Number(($event.target as HTMLInputElement).value))"
+        @update:model-value="$emit('updateCustomY', $event)"
       />
     </label>
   </div>
@@ -188,14 +180,12 @@ const getShortcutTitle = (action: ShortcutStatus['action'], fallback: string) =>
       Volume des drops
       <span class="text-[11px] text-slate-400">{{ dropVolume }}%</span>
     </span>
-    <input
-      :value="dropVolume"
-      type="range"
+    <Range
+      :model-value="dropVolume"
       min="0"
       max="100"
       step="5"
-      class="w-full accent-sky-400"
-      @input="$emit('updateDropVolume', Number(($event.target as HTMLInputElement).value))"
+      @update:model-value="$emit('updateDropVolume', $event)"
     />
   </label>
 
@@ -219,11 +209,11 @@ const getShortcutTitle = (action: ShortcutStatus['action'], fallback: string) =>
     {{ connectionStatus?.message ?? 'Serveur MemeDrop : en attente de connexion…' }}
   </div>
 
-  <button
-    type="button"
-    class="mt-auto w-full cursor-pointer rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/90"
+  <Button
+    class="mt-auto"
+    full-width
     @click="$emit('triggerTestDrop')"
   >
     {{ isTestDropActive ? "Masquer l'aperçu" : 'Tester un drop' }}
-  </button>
+  </Button>
 </template>

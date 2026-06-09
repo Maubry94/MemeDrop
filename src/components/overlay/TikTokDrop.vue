@@ -148,7 +148,7 @@ void window.memedrop?.getTikTokPreloadUrl().then((preloadUrl) => {
       :preload="tiktokPreloadUrl"
       partition="persist:memedrop-tiktok"
       webpreferences="contextIsolation=yes"
-      class="h-full max-h-full aspect-[9/16] border-0"
+      class="h-full max-h-full aspect-9/16 border-0"
       @dom-ready="handleTikTokLoad"
       @ipc-message="handleTikTokIpcMessage"
     />

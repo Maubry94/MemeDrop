@@ -3,6 +3,7 @@ import ConnectedUsersView from './control/ConnectedUsersView.vue'
 import ControlPanel from './control/ControlPanel.vue'
 import LoginView from './control/LoginView.vue'
 import PreferencesModal from './control/PreferencesModal.vue'
+import Button from './ui/Button.vue'
 import type {
   AppPreferences,
   AppVersionInfo,
@@ -80,9 +81,9 @@ defineEmits<{
   <div class="flex h-full w-full flex-col gap-4 overflow-y-auto bg-slate-950 p-4 text-sm text-slate-100">
     <div class="flex items-center justify-between">
       <span class="text-sm font-semibold">MemeDrop</span>
-      <button
-        type="button"
-        class="flex size-8 items-center justify-center rounded-md border border-white/10 bg-slate-900/70 text-slate-300 hover:bg-slate-900"
+      <Button
+        variant="icon"
+        size="icon"
         title="Préférences"
         aria-label="Préférences"
         @click="$emit('openPreferences')"
@@ -92,7 +93,7 @@ defineEmits<{
           style="mask: url('/icons/gear.svg') center / contain no-repeat; -webkit-mask: url('/icons/gear.svg') center / contain no-repeat;"
           aria-hidden="true"
         />
-      </button>
+      </Button>
     </div>
 
     <PreferencesModal
@@ -129,40 +130,31 @@ defineEmits<{
         Vous utilisez la version {{ appVersionInfo.currentVersion }}. Téléchargez la version
         {{ appVersionInfo.latestVersion }} depuis GitHub.
       </p>
-      <button
-        type="button"
-        class="mt-3 rounded-md border border-amber-200/30 bg-amber-300/15 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-amber-300/25"
+      <Button
+        class="mt-3"
+        variant="warning"
+        size="xs"
         @click="$emit('openReleasePage')"
       >
         Télécharger la dernière version
-      </button>
+      </Button>
     </div>
 
     <div v-if="isDiscordConnected" class="grid grid-cols-2 gap-1 rounded-lg bg-slate-900/70 p-1">
-      <button
-        type="button"
-        class="rounded-md px-3 py-1.5 text-xs font-semibold"
-        :class="
-          controlTab === 'control'
-            ? 'bg-slate-700 text-slate-100 shadow-sm'
-            : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
-        "
+      <Button
+        :variant="controlTab === 'control' ? 'tabActive' : 'tab'"
+        size="xs"
         @click="$emit('updateControlTab', 'control')"
       >
         Contrôle
-      </button>
-      <button
-        type="button"
-        class="rounded-md px-3 py-1.5 text-xs font-semibold"
-        :class="
-          controlTab === 'connected'
-            ? 'bg-slate-700 text-slate-100 shadow-sm'
-            : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
-        "
+      </Button>
+      <Button
+        :variant="controlTab === 'connected' ? 'tabActive' : 'tab'"
+        size="xs"
         @click="$emit('updateControlTab', 'connected')"
       >
         Connecté(s) ({{ otherConnectedUsers.length }})
-      </button>
+      </Button>
     </div>
 
     <ControlPanel
