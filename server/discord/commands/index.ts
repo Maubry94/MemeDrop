@@ -1,5 +1,6 @@
 import { downloadCommand } from './download.js'
 import { dropCommand } from './drop.js'
+import { dropMeCommand } from './dropme.js'
 import { dropStatusCommand } from './dropstatus.js'
 import { dropTikTokCommand } from './droptt.js'
 import { dropYouTubeCommand } from './dropyt.js'
@@ -9,6 +10,7 @@ import type { MemeDropCommand } from './types.js'
 
 export const discordCommands: MemeDropCommand[] = [
   dropCommand,
+  dropMeCommand,
   dropYouTubeCommand,
   dropTikTokCommand,
   redropCommand,

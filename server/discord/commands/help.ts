@@ -17,7 +17,7 @@ export const helpCommand: MemeDropCommand = {
         {
           name: 'Envoyer',
           value:
-            '`/drop` fichier\n`/dropyt` vidéo YouTube\n`/droptt` vidéo TikTok\n`/redrop` drop récent',
+            '`/drop` fichier\n`/dropme` fichier pour toi\n`/dropyt` vidéo YouTube\n`/droptt` vidéo TikTok\n`/redrop` drop récent',
         },
         {
           name: 'Infos',

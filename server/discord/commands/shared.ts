@@ -200,6 +200,24 @@ export const getTargetUser = async (
   }
 }
 
+export const getSelfDropTarget = async (
+  interaction: ChatInputCommandInteraction,
+  getConnectedUsers: GetConnectedUsers,
+): Promise<DropTarget | null> => {
+  const self = getConnectedUsers().find(
+    (user) => user.id === interaction.user.id && user.dropsEnabled,
+  )
+
+  if (!self) {
+    return null
+  }
+
+  return {
+    id: self.id,
+    name: await resolveConnectedUserName(interaction, self),
+  }
+}
+
 export const withTarget = (drop: Drop, targetUser: DropTarget | null): Drop => ({
   ...drop,
   targetUserId: targetUser?.id ?? null,
