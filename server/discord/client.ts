@@ -7,6 +7,7 @@ import type { DiscordBotOptions } from '../types.js'
 export const createDiscordBot = ({
   token,
   guildId,
+  publicBaseUrl,
   latestAppVersion,
   allowedRoleIds,
   allowedChannelIds,
@@ -43,6 +44,7 @@ export const createDiscordBot = ({
     'interactionCreate',
     createInteractionHandler({
       latestAppVersion,
+      publicBaseUrl,
       allowedRoleIds,
       allowedChannelIds,
       dropCooldownSeconds,

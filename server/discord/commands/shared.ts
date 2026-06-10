@@ -93,6 +93,9 @@ export const editErrorReply = (
 export const getReleaseUrl = (version: string) =>
   `https://github.com/Maubry94/MemeDrop/releases/tag/${version}`
 
+export const getPublicGuideUrl = (publicBaseUrl?: string) =>
+  publicBaseUrl?.replace(/\/$/, '') || null
+
 export const createDownloadButtonComponents = (latestAppVersion: string) => [
   new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
@@ -101,6 +104,30 @@ export const createDownloadButtonComponents = (latestAppVersion: string) => [
       .setURL(getReleaseUrl(latestAppVersion)),
   ),
 ]
+
+export const createHelpButtonComponents = (
+  latestAppVersion: string,
+  publicBaseUrl?: string,
+) => {
+  const buttons = [
+    new ButtonBuilder()
+      .setLabel('Télécharger MemeDrop')
+      .setStyle(ButtonStyle.Link)
+      .setURL(getReleaseUrl(latestAppVersion)),
+  ]
+  const guideUrl = getPublicGuideUrl(publicBaseUrl)
+
+  if (guideUrl) {
+    buttons.unshift(
+      new ButtonBuilder()
+        .setLabel('Guide MemeDrop')
+        .setStyle(ButtonStyle.Link)
+        .setURL(guideUrl),
+    )
+  }
+
+  return [new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)]
+}
 
 export const getDropKindLabel = (drop: Drop) => {
   if (drop.contentType === 'video/youtube') return 'YouTube'

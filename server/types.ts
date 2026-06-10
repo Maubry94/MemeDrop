@@ -46,6 +46,7 @@ export type MemeDropWebSocketMessage =
 export type DiscordBotOptions = {
   token?: string
   guildId?: string
+  publicBaseUrl?: string
   latestAppVersion: string
   allowedRoleIds: string[]
   allowedChannelIds: string[]

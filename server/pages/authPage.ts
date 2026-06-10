@@ -42,8 +42,8 @@ export const sendAuthPage = (
         display: grid;
         place-items: center;
         background:
-          radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 30rem),
-          radial-gradient(circle at bottom right, rgba(129, 140, 248, 0.16), transparent 28rem),
+          radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 26rem),
+          radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.12), transparent 24rem),
           #020617;
       }
 

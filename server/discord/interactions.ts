@@ -87,6 +87,7 @@ const handleTargetAutocomplete = async (
 export const createInteractionHandler =
   ({
     latestAppVersion,
+    publicBaseUrl,
     allowedRoleIds,
     allowedChannelIds,
     dropCooldownSeconds,
@@ -95,6 +96,7 @@ export const createInteractionHandler =
     stopDropByOwner,
   }: {
     latestAppVersion: string
+    publicBaseUrl?: string
     allowedRoleIds: string[]
     allowedChannelIds: string[]
     dropCooldownSeconds: number
@@ -107,6 +109,7 @@ export const createInteractionHandler =
 
   const context: DiscordCommandContext = {
     latestAppVersion,
+    publicBaseUrl,
     allowedRoleIds,
     dropCooldownSeconds,
     cooldowns,

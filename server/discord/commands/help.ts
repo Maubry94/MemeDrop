@@ -1,43 +1,69 @@
 import { EmbedBuilder, MessageFlags, SlashCommandBuilder } from 'discord.js'
-import { createDownloadButtonComponents } from './shared.js'
+import {
+  createHelpButtonComponents,
+  getPublicGuideUrl,
+} from './shared.js'
 import type { MemeDropCommand } from './types.js'
 
 export const helpCommand: MemeDropCommand = {
   data: new SlashCommandBuilder()
     .setName('help')
     .setDescription('Afficher l’aide des commandes MemeDrop'),
-  execute: async (interaction, { latestAppVersion }) => {
+  execute: async (interaction, { latestAppVersion, publicBaseUrl }) => {
+    const guideUrl = getPublicGuideUrl(publicBaseUrl)
+    const guideLine = guideUrl
+      ? `Guide complet : [ouvrir la page web](${guideUrl})`
+      : 'Guide complet : ouvre la page web du serveur MemeDrop.'
+
     const embed = new EmbedBuilder()
-      .setTitle('Aide MemeDrop')
+      .setTitle('MemeDrop')
       .setDescription(
-        'MemeDrop envoie les memes postés depuis Discord vers les overlays desktop des personnes connectées.',
+        [
+          'Envoie des memes depuis Discord vers les overlays desktop connectés.',
+          guideLine,
+        ].join('\n'),
       )
       .setColor(0x38bdf8)
       .addFields(
         {
-          name: 'Envoyer',
+          name: 'Envoyer un drop',
           value:
-            '`/drop` fichier\n`/dropme` fichier pour toi\n`/dropyt` vidéo YouTube\n`/droptt` vidéo TikTok\n`/redrop` drop récent',
+            [
+              '`/drop` - fichier vers tout le monde ou une cible',
+              '`/dropme` - fichier uniquement pour toi',
+              '`/dropyt` - vidéo YouTube',
+              '`/droptt` - vidéo TikTok',
+              '`/redrop` - renvoyer un drop récent',
+            ].join('\n'),
         },
         {
-          name: 'Infos',
-          value: '`/dropstatus` utilisateurs disponibles\n`/download` télécharger l’app',
-        },
-        {
-          name: 'Options communes',
+          name: 'Options utiles',
           value:
-            '`legende` ajoute un texte. `cible` propose les utilisateurs connectés avec les drops activés. `anonyme` masque ton pseudo et ton avatar.',
+            [
+              '`legende` - ajoute un texte sur le drop',
+              '`cible` - choisit une personne connectée',
+              '`anonyme` - masque ton pseudo et ton avatar',
+            ].join('\n'),
         },
         {
-          name: 'Contrôler',
-          value: 'Le bouton `Stopper le drop` arrête ton drop envoyé tant qu’il est en cours.',
+          name: 'Suivre et gérer',
+          value:
+            [
+              '`/dropstatus` - voir qui peut recevoir des drops',
+              '`/download` - télécharger la dernière app desktop',
+              '`Stopper le drop` - arrêter ton drop pendant sa diffusion',
+            ].join('\n'),
         },
       )
       .setFooter({ text: `Dernière version MemeDrop : ${latestAppVersion}` })
 
+    if (guideUrl) {
+      embed.setURL(guideUrl)
+    }
+
     await interaction.reply({
       embeds: [embed],
-      components: createDownloadButtonComponents(latestAppVersion),
+      components: createHelpButtonComponents(latestAppVersion, publicBaseUrl),
       flags: MessageFlags.Ephemeral,
     })
   },

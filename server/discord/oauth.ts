@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type http from 'node:http'
 import type { DiscordUser } from '../../shared/types.js'
-import { sendAuthPage } from './authPages.js'
 import { isAuthorizedRequest } from '../http/authKey.js'
 import { sendJsonResponse } from '../http/responses.js'
+import { sendAuthPage } from '../pages/authPage.js'
 
 const AUTH_SESSION_MS = 5 * 60 * 1000
 

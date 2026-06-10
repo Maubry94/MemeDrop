@@ -2,10 +2,12 @@ import http from 'node:http'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { createDiscordOAuthHandlers } from './auth/discordOAuth.js'
 import { config } from './config.js'
 import { createDiscordBot } from './discord/client.js'
+import { createDiscordOAuthHandlers } from './discord/oauth.js'
 import { sendJsonResponse, sendTextResponse } from './http/responses.js'
+import { sendHealthPage } from './pages/healthPage.js'
+import { sendHomePage } from './pages/homePage.js'
 import { createMemeDropWebSocketServer } from './websocket.js'
 
 let discordStatus = 'starting'
@@ -35,13 +37,30 @@ const oauthHandlers = createDiscordOAuthHandlers({
 
 const server = http.createServer((request, response) => {
   const requestUrl = new URL(request.url ?? '/', `http://${request.headers.host}`)
+  const healthStatus = {
+    ok: true,
+    discordStatus,
+    clients: clients.size,
+    latestAppVersion,
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname === '/') {
+    sendHomePage(response, { latestAppVersion })
+    return
+  }
+
+  if (requestUrl.pathname === '/health.json') {
+    sendJsonResponse(response, 200, healthStatus)
+    return
+  }
 
   if (requestUrl.pathname === '/health') {
-    sendJsonResponse(response, 200, {
-      ok: true,
-      discordStatus,
-      clients: clients.size,
-    })
+    if (request.headers.accept?.includes('application/json')) {
+      sendJsonResponse(response, 200, healthStatus)
+      return
+    }
+
+    sendHealthPage(response, healthStatus)
     return
   }
 
@@ -60,7 +79,7 @@ const server = http.createServer((request, response) => {
     return
   }
 
-  sendTextResponse(response, 200, 'MemeDrop server is running.\n')
+  sendTextResponse(response, 404, 'MemeDrop route not found.\n')
 })
 
 const { broadcastDrop, clients, getConnectedUsers, stopDropByOwner } = createMemeDropWebSocketServer({
@@ -72,6 +91,7 @@ const { broadcastDrop, clients, getConnectedUsers, stopDropByOwner } = createMem
 createDiscordBot({
   token: config.discordBotToken,
   guildId: config.discordGuildId,
+  publicBaseUrl: config.publicBaseUrl,
   latestAppVersion,
   allowedRoleIds: config.memedropAllowedRoleIds,
   allowedChannelIds: config.memedropAllowedChannelIds,

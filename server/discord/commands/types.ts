@@ -17,6 +17,7 @@ export type RecentDrop = {
 
 export type DiscordCommandContext = {
   latestAppVersion: string
+  publicBaseUrl?: string
   allowedRoleIds: string[]
   dropCooldownSeconds: number
   cooldowns: Map<string, number>
