@@ -6,6 +6,7 @@ import type {
   ConnectedUser,
   Drop,
   AppPreferences,
+  AppUpdateState,
   AppVersionInfo,
   OverlayDisplayInfo,
   OverlayDisplayPreferences,
@@ -46,6 +47,8 @@ const memedropApi = {
     onChannel('app-preferences', handler),
   onAppVersionInfo: (handler: (info: AppVersionInfo) => void) =>
     onChannel('app-version-info', handler),
+  onAppUpdateState: (handler: (state: AppUpdateState) => void) =>
+    onChannel('app-update-state', handler),
   setDropsEnabled: (enabled: boolean) => ipcRenderer.invoke('set-drops-enabled', enabled),
   setHideOwnDrops: (enabled: boolean) => ipcRenderer.invoke('set-hide-own-drops', enabled),
   toggleDrops: () => ipcRenderer.invoke('toggle-drops'),
@@ -60,6 +63,10 @@ const memedropApi = {
     ipcRenderer.invoke('set-overlay-display-preferences', preferences),
   getAppPreferences: () => ipcRenderer.invoke('get-app-preferences'),
   getAppVersionInfo: () => ipcRenderer.invoke('get-app-version-info'),
+  getAppUpdateState: () => ipcRenderer.invoke('get-app-update-state'),
+  checkForAppUpdate: () => ipcRenderer.invoke('check-for-app-update'),
+  downloadAppUpdate: () => ipcRenderer.invoke('download-app-update'),
+  installAppUpdate: () => ipcRenderer.invoke('install-app-update'),
   getTikTokPreloadUrl: () => ipcRenderer.invoke('get-tiktok-preload-url'),
   setAppPreferences: (preferences: AppPreferences) =>
     ipcRenderer.invoke('set-app-preferences', preferences),

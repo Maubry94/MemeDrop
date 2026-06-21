@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import ConnectedUsersView from './control/ConnectedUsersView.vue'
 import ControlPanel from './control/ControlPanel.vue'
 import LoginView from './control/LoginView.vue'
@@ -6,6 +7,7 @@ import PreferencesModal from './control/PreferencesModal.vue'
 import Button from './ui/Button.vue'
 import type {
   AppPreferences,
+  AppUpdateState,
   AppVersionInfo,
   ConnectedUser,
   ConnectionStatus,
@@ -18,8 +20,9 @@ import type {
 } from '../../shared/types'
 import type { ControlTab } from '../composables/useControlState'
 
-defineProps<{
+const props = defineProps<{
   appPreferences: AppPreferences
+  appUpdateState: AppUpdateState
   appVersionInfo: AppVersionInfo
   authMessage: string | null
   canStopGlobalDrop: boolean
@@ -48,10 +51,13 @@ defineProps<{
 
 const serverConfig = defineModel<ServerConfig>('serverConfig', { required: true })
 
-defineEmits<{
+const emit = defineEmits<{
   authenticate: []
+  checkForAppUpdate: []
   closePreferences: []
   disconnectDiscord: []
+  downloadAppUpdate: []
+  installAppUpdate: []
   openPreferences: []
   openReleasePage: []
   quitApp: []
@@ -75,6 +81,114 @@ defineEmits<{
   updateOverlayPosition: [position: OverlayPosition]
   updateShortcuts: [shortcuts: ShortcutConfig[]]
 }>()
+
+const activeUpdateVersion = computed(
+  () => props.appUpdateState.availableVersion ?? props.appVersionInfo.latestVersion,
+)
+
+const showUpdateBanner = computed(() =>
+  props.isDiscordConnected &&
+  (
+    props.appVersionInfo.updateAvailable ||
+    props.appUpdateState.status === 'checking' ||
+    props.appUpdateState.status === 'available' ||
+    props.appUpdateState.status === 'downloading' ||
+    props.appUpdateState.status === 'downloaded' ||
+    props.appUpdateState.status === 'error'
+  ),
+)
+
+const updateMessage = computed(() => {
+  if (!props.appUpdateState.canCheck) {
+    return "L'auto-update sera disponible dans l'application installée."
+  }
+
+  if (props.appUpdateState.status === 'checking') {
+    return 'Recherche de mise à jour en cours...'
+  }
+
+  if (props.appUpdateState.status === 'downloading') {
+    return `Téléchargement en cours (${props.appUpdateState.downloadProgress ?? 0}%).`
+  }
+
+  if (props.appUpdateState.status === 'downloaded') {
+    return `La version ${activeUpdateVersion.value} est prête. Redémarre MemeDrop pour l'installer.`
+  }
+
+  if (props.appUpdateState.status === 'error') {
+    return props.appUpdateState.errorMessage ?? 'Mise à jour impossible pour le moment.'
+  }
+
+  if (props.appVersionInfo.updateAvailable || props.appUpdateState.status === 'available') {
+    return `Tu utilises la version ${props.appVersionInfo.currentVersion}. La version ${activeUpdateVersion.value} est disponible.`
+  }
+
+  return `Tu utilises la dernière version de MemeDrop (${props.appVersionInfo.currentVersion}).`
+})
+
+const updateTitle = computed(() => {
+  if (props.appUpdateState.status === 'downloaded') {
+    return 'Mise à jour prête'
+  }
+
+  if (
+    props.appUpdateState.status === 'checking' ||
+    props.appUpdateState.status === 'downloading'
+  ) {
+    return 'Mise à jour MemeDrop'
+  }
+
+  if (props.appUpdateState.status === 'error') {
+    return 'Mise à jour indisponible'
+  }
+
+  return 'Une nouvelle version de MemeDrop est disponible.'
+})
+
+const updateActionLabel = computed(() => {
+  if (props.appUpdateState.status === 'checking') {
+    return 'Recherche...'
+  }
+
+  if (props.appUpdateState.status === 'downloading') {
+    return 'Téléchargement...'
+  }
+
+  if (props.appUpdateState.status === 'downloaded') {
+    return 'Redémarrer pour installer'
+  }
+
+  if (props.appUpdateState.status === 'error') {
+    return 'Réessayer'
+  }
+
+  if (props.appVersionInfo.updateAvailable || props.appUpdateState.status === 'available') {
+    return 'Télécharger la mise à jour'
+  }
+
+  return 'Rechercher une mise à jour'
+})
+
+const isUpdateActionDisabled = computed(
+  () =>
+    !props.appUpdateState.canCheck ||
+    props.appUpdateState.status === 'checking' ||
+    props.appUpdateState.status === 'downloading',
+)
+
+const runUpdateAction = () => {
+  if (props.appUpdateState.status === 'downloaded') {
+    emit('installAppUpdate')
+    return
+  }
+
+  if (props.appVersionInfo.updateAvailable || props.appUpdateState.status === 'available') {
+    emit('downloadAppUpdate')
+    return
+  }
+
+  emit('checkForAppUpdate')
+}
 </script>
 
 <template>
@@ -122,21 +236,21 @@ defineEmits<{
     />
 
     <div
-      v-if="isDiscordConnected && appVersionInfo.updateAvailable"
+      v-if="showUpdateBanner"
       class="rounded-lg border border-amber-300/25 bg-amber-400/10 p-3 text-xs text-amber-100"
     >
-      <p class="font-semibold">Une nouvelle version de MemeDrop est disponible.</p>
+      <p class="font-semibold">{{ updateTitle }}</p>
       <p class="mt-1 text-amber-100/80">
-        Vous utilisez la version {{ appVersionInfo.currentVersion }}. Téléchargez la version
-        {{ appVersionInfo.latestVersion }} depuis GitHub.
+        {{ updateMessage }}
       </p>
       <Button
         class="mt-3"
         variant="warning"
         size="xs"
-        @click="$emit('openReleasePage')"
+        :disabled="isUpdateActionDisabled"
+        @click="runUpdateAction"
       >
-        Télécharger la dernière version
+        {{ updateActionLabel }}
       </Button>
     </div>
 

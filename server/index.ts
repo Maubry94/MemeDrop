@@ -6,6 +6,7 @@ import { config } from './config.js'
 import { createDiscordBot } from './discord/client.js'
 import { createDiscordOAuthHandlers } from './discord/oauth.js'
 import { sendJsonResponse, sendTextResponse } from './http/responses.js'
+import { sendStaticFile } from './http/staticFiles.js'
 import { sendHealthPage } from './pages/healthPage.js'
 import { sendHomePage } from './pages/homePage.js'
 import { createMemeDropWebSocketServer } from './websocket.js'
@@ -46,6 +47,20 @@ const server = http.createServer((request, response) => {
 
   if (request.method === 'GET' && requestUrl.pathname === '/') {
     sendHomePage(response, { latestAppVersion })
+    return
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname.startsWith('/updates/win/')) {
+    if (!config.memedropUpdatesDir) {
+      sendTextResponse(response, 404, 'MemeDrop updates directory is not configured.\n')
+      return
+    }
+
+    void sendStaticFile(
+      response,
+      config.memedropUpdatesDir,
+      requestUrl.pathname.slice('/updates/win/'.length),
+    )
     return
   }
 

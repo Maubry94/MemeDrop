@@ -10,6 +10,7 @@ import path from 'node:path'
 import { existsSync } from 'node:fs'
 import { config as loadEnv } from 'dotenv'
 import { createAppActions } from './core/appActions'
+import { createAppUpdater } from './core/appUpdater'
 import type { ControlWindowBounds } from './core/appConfig'
 import { createConfigStore } from './core/configStore'
 import { createDesktopClient } from './client/desktopClient'
@@ -220,6 +221,14 @@ const desktopClient = createDesktopClient({
   onStatus: setConnectionStatus,
 })
 
+const appUpdater = createAppUpdater({
+  getServerConfig,
+  getCurrentVersion: () => app.getVersion(),
+  onStateChanged: (state) => {
+    sendToWindows('app-update-state', state)
+  },
+})
+
 const discordAuth = createDiscordAuth({
   getServerConfig,
   saveServerConfig,
@@ -247,6 +256,10 @@ const syncAppPreferences = () => {
 
 const syncAppVersionInfo = () => {
   sendToWindows('app-version-info', desktopClient.getAppVersionInfo())
+}
+
+const syncAppUpdateState = () => {
+  sendToWindows('app-update-state', appUpdater.getState())
 }
 
 const setAppPreferences = (preferences: AppPreferences) => {
@@ -344,6 +357,7 @@ const windows = createMemeDropWindows({
     syncOverlayDisplays()
     syncAppPreferences()
     syncAppVersionInfo()
+    syncAppUpdateState()
     syncConnectionStatus()
     syncShortcutStatus()
     syncConnectedUsers()
@@ -432,6 +446,10 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     },
     getAppPreferences,
     getAppVersionInfo: desktopClient.getAppVersionInfo,
+    getAppUpdateState: appUpdater.getState,
+    checkForAppUpdate: appUpdater.checkForUpdates,
+    downloadAppUpdate: appUpdater.downloadUpdate,
+    installAppUpdate: appUpdater.installUpdate,
     getTikTokPreloadUrl,
     openReleasePage: () => {
       void shell.openExternal(desktopClient.getAppVersionInfo().releaseUrl)
@@ -454,6 +472,7 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     saveServerConfig: (config) => {
       const savedConfig = saveServerConfig(config)
       desktopClient.startOrRestart()
+      void appUpdater.checkForUpdates()
       return savedConfig
     },
     authenticateDiscord: discordAuth.authenticateDiscord,
@@ -482,6 +501,7 @@ if (hasInstanceLock) app.whenReady().then(async () => {
 
   shortcutManager.registerGlobalShortcuts()
   desktopClient.startOrRestart()
+  void appUpdater.checkForUpdates()
 })
 
 app.on('before-quit', () => {

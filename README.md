@@ -1,6 +1,6 @@
 # MemeDrop
 
-Overlay desktop qui affiche les memes envoyés depuis Discord avec `/drop` ou `/dropyt`.
+Overlay desktop qui affiche les memes envoyés depuis Discord avec `/drop`, `/dropme`, `/dropyt` ou `/droptt`.
 
 ## Fonctionnement
 
@@ -15,6 +15,7 @@ Chaque utilisateur se connecte avec Discord dans l'app.
 ## Fonctionnalités
 
 - `/drop` : envoyer une image, vidéo ou piste audio.
+- `/dropme` : envoyer une image, vidéo ou piste audio uniquement à soi-même.
 - `/dropyt` : envoyer une vidéo YouTube.
 - `/droptt` : envoyer une vidéo TikTok.
 - `/redrop` : renvoyer un drop récent.
@@ -42,6 +43,7 @@ Chaque utilisateur se connecte avec Discord dans l'app.
 - Icône tray Windows avec menu rapide.
 - Page `Connecté(s)` dans l'app pour voir les autres utilisateurs connectés.
 - Raccourcis globaux pour couper ou désactiver les drops.
+- Mise à jour automatique de l'app desktop depuis le serveur MemeDrop.
 
 ## Commandes Discord
 
@@ -54,6 +56,16 @@ Options :
 - `fichier` : image, vidéo ou son.
 - `legende` : texte optionnel.
 - `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le drop est global.
+- `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
+
+### `/dropme`
+
+Envoie un fichier pris en charge uniquement à l'utilisateur qui lance la commande.
+
+Options :
+
+- `fichier` : image, vidéo ou son.
+- `legende` : texte optionnel.
 - `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
 
 ### `/dropyt`
@@ -97,6 +109,8 @@ Cette commande est utile avant un drop ciblé pour savoir qui peut recevoir un d
 ### `/download`
 
 Affiche en réponse éphémère un bouton pour télécharger la dernière version de l'app desktop MemeDrop.
+
+Depuis la version `3.0.1`, les mises à jour suivantes peuvent être téléchargées et installées directement depuis l'app.
 
 ### `/help`
 
@@ -145,6 +159,7 @@ MEMEDROP_ALLOWED_CHANNEL_IDS=
 MEMEDROP_ALLOWED_ROLE_IDS=
 MEMEDROP_DROP_COOLDOWN_SECONDS=0
 MEMEDROP_SERVER_KEY=choose-a-shared-secret
+MEMEDROP_UPDATES_DIR=/updates/win
 MEMEDROP_SERVER_URL=https://memedrop.example.com
 PUBLIC_BASE_URL=https://memedrop.example.com
 ```
@@ -155,6 +170,8 @@ PUBLIC_BASE_URL=https://memedrop.example.com
 
 `MEMEDROP_DROP_COOLDOWN_SECONDS` limite la fréquence d'envoi des drops par utilisateur. `0` désactive le cooldown.
 
+`MEMEDROP_UPDATES_DIR` indique le dossier, dans le conteneur Docker, qui contient les fichiers d'auto-update Windows.
+
 Lance le serveur :
 
 ```sh
@@ -163,11 +180,24 @@ docker compose up -d --build
 
 Le serveur expose :
 
+- `GET /`
 - `GET /health`
+- `GET /health.json`
 - `GET /ws`
+- `GET /updates/win/:file`
 - `POST /auth/discord/session`
 - `GET /auth/discord/session/:id`
 - `GET /auth/discord/callback`
+
+Pour servir les mises à jour desktop avec Docker, monte un dossier de releases dans le conteneur :
+
+```yml
+environment:
+  PORT: 3010
+  MEMEDROP_UPDATES_DIR: /updates/win
+volumes:
+  - /mnt/HDD/Medias/Dev/memeDrop/releases/win:/updates/win:ro
+```
 
 ## App Desktop
 
@@ -183,6 +213,8 @@ Puis cliquer sur `Se connecter avec Discord`.
 La configuration locale de l'app est stockée dans le dossier utilisateur de l'application. Elle est conservée entre les réinstallations.
 
 L'onglet `Connecté(s)` affiche les autres utilisateurs actuellement connectés à MemeDrop.
+
+Quand une nouvelle version est disponible, l'app peut la télécharger depuis le serveur MemeDrop et redémarrer pour l'installer.
 
 ## Préférences
 
@@ -247,6 +279,14 @@ Créer l'installateur Windows :
 
 ```sh
 npm run build
+```
+
+Le build génère les fichiers de release dans `release/`. Pour l'auto-update Windows, déposer ces trois fichiers sur le serveur, dans le dossier exposé par `MEMEDROP_UPDATES_DIR` :
+
+```txt
+latest.yml
+MemeDrop Setup x.x.x.exe
+MemeDrop Setup x.x.x.exe.blockmap
 ```
 
 Créer seulement le dossier Windows non packagé :

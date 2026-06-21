@@ -86,6 +86,18 @@ export const useControlActions = ({
     await window.memedrop?.openReleasePage()
   }
 
+  const checkForAppUpdate = async () => {
+    await window.memedrop?.checkForAppUpdate()
+  }
+
+  const downloadAppUpdate = async () => {
+    await window.memedrop?.downloadAppUpdate()
+  }
+
+  const installAppUpdate = async () => {
+    await window.memedrop?.installAppUpdate()
+  }
+
   const saveServerConfig = async () => {
     if (!window.memedrop) {
       return
@@ -163,6 +175,9 @@ export const useControlActions = ({
     uninstallApp,
     quitApp,
     openReleasePage,
+    checkForAppUpdate,
+    downloadAppUpdate,
+    installAppUpdate,
     saveServerConfig,
     authenticateDiscord,
     disconnectDiscord,

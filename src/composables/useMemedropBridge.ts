@@ -1,6 +1,7 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import type {
   AppPreferences,
+  AppUpdateState,
   AppVersionInfo,
   ConnectedUser,
   ConnectionStatus,
@@ -19,6 +20,7 @@ type MemedropBridgeOptions = {
   setOverlayDisplays: (displays: OverlayDisplayInfo[]) => void
   setAppPreferences: (preferences: AppPreferences) => void
   setAppVersionInfo: (info: AppVersionInfo) => void
+  setAppUpdateState: (state: AppUpdateState) => void
   setConnectionStatus: (status: ConnectionStatus | null) => void
   setConnectedUsers: (users: ConnectedUser[]) => void
   setShortcutConfigs: (shortcuts: ShortcutConfig[]) => void
@@ -36,6 +38,7 @@ export const useMemedropBridge = ({
   setOverlayDisplays,
   setAppPreferences,
   setAppVersionInfo,
+  setAppUpdateState,
   setConnectionStatus,
   setConnectedUsers,
   setShortcutConfigs,
@@ -65,6 +68,7 @@ export const useMemedropBridge = ({
     setOverlayDisplays(await memedrop.getOverlayDisplays())
     setAppPreferences(await memedrop.getAppPreferences())
     setAppVersionInfo(await memedrop.getAppVersionInfo())
+    setAppUpdateState(await memedrop.getAppUpdateState())
     setConnectionStatus(await memedrop.getConnectionStatus())
     setConnectedUsers(await memedrop.getConnectedUsers())
     setShortcutConfigs(await memedrop.getShortcutConfigs())
@@ -91,6 +95,7 @@ export const useMemedropBridge = ({
     remember(memedrop.onOverlayDisplays(setOverlayDisplays))
     remember(memedrop.onAppPreferences(setAppPreferences))
     remember(memedrop.onAppVersionInfo(setAppVersionInfo))
+    remember(memedrop.onAppUpdateState(setAppUpdateState))
   }
 
   onMounted(async () => {
