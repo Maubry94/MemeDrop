@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import type {
   OverlayAnchor,
@@ -17,6 +17,7 @@ export const useOverlayPreferences = () => {
   const customY = ref(50)
   const customAnchor = ref<OverlayAnchor>('full')
   let syncingDisplayPreferences = false
+  let savePreferencesTimer: ReturnType<typeof setTimeout> | null = null
 
   const overlayClasses = computed(() => {
     if (overlayPosition.value === 'custom') {
@@ -61,6 +62,11 @@ export const useOverlayPreferences = () => {
   })
 
   const applyOverlayDisplayPreferences = (preferences: OverlayDisplayPreferences) => {
+    if (savePreferencesTimer) {
+      clearTimeout(savePreferencesTimer)
+      savePreferencesTimer = null
+    }
+
     syncingDisplayPreferences = true
     overlayDisplayId.value = preferences.displayId
     overlayPosition.value = preferences.position
@@ -77,36 +83,59 @@ export const useOverlayPreferences = () => {
       return
     }
 
-    applyOverlayDisplayPreferences(
-      await window.memedrop.setOverlayDisplayPreferences(getCurrentOverlayDisplayPreferences()),
-    )
+    await window.memedrop.setOverlayDisplayPreferences(getCurrentOverlayDisplayPreferences())
+  }
+
+  const scheduleOverlayDisplayPreferencesSave = () => {
+    if (syncingDisplayPreferences) {
+      return
+    }
+
+    if (savePreferencesTimer) {
+      clearTimeout(savePreferencesTimer)
+    }
+
+    savePreferencesTimer = setTimeout(() => {
+      savePreferencesTimer = null
+      void saveOverlayDisplayPreferences()
+    }, 150)
   }
 
   watch(overlayPosition, () => {
-    void saveOverlayDisplayPreferences()
+    scheduleOverlayDisplayPreferencesSave()
   })
 
   watch(overlayDisplayId, () => {
-    void saveOverlayDisplayPreferences()
+    scheduleOverlayDisplayPreferencesSave()
   })
 
   watch(dropVolume, () => {
-    void saveOverlayDisplayPreferences()
+    scheduleOverlayDisplayPreferencesSave()
   })
 
   watch(dropSize, () => {
-    void saveOverlayDisplayPreferences()
+    scheduleOverlayDisplayPreferencesSave()
   })
 
   watch(customX, () => {
-    void saveOverlayDisplayPreferences()
+    scheduleOverlayDisplayPreferencesSave()
   })
 
   watch(customY, () => {
-    void saveOverlayDisplayPreferences()
+    scheduleOverlayDisplayPreferencesSave()
   })
 
   watch(customAnchor, () => {
+    scheduleOverlayDisplayPreferencesSave()
+  })
+
+  onBeforeUnmount(() => {
+    if (!savePreferencesTimer) {
+      return
+    }
+
+    clearTimeout(savePreferencesTimer)
+    savePreferencesTimer = null
     void saveOverlayDisplayPreferences()
   })
 
