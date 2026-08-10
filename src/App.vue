@@ -69,6 +69,7 @@ const {
 })
 
 useMemedropBridge({
+  isOverlayView,
   applyOverlayState,
   applyOverlayDisplayPreferences,
   setOverlayDisplays: (displays) => {

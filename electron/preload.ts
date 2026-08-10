@@ -67,7 +67,6 @@ const memedropApi = {
   checkForAppUpdate: () => ipcRenderer.invoke('check-for-app-update'),
   downloadAppUpdate: () => ipcRenderer.invoke('download-app-update'),
   installAppUpdate: () => ipcRenderer.invoke('install-app-update'),
-  getTikTokPreloadUrl: () => ipcRenderer.invoke('get-tiktok-preload-url'),
   setAppPreferences: (preferences: AppPreferences) =>
     ipcRenderer.invoke('set-app-preferences', preferences),
   quitApp: () => ipcRenderer.invoke('quit-app'),

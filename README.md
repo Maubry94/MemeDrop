@@ -43,7 +43,7 @@ Chaque utilisateur se connecte avec Discord dans l'app.
 - Icône tray Windows avec menu rapide.
 - Page `Connecté(s)` dans l'app pour voir les autres utilisateurs connectés.
 - Raccourcis globaux pour couper ou désactiver les drops.
-- Mise à jour automatique de l'app desktop uniquement pour les releases Windows signées.
+- Mise à jour automatique de l'app desktop avec manifest Ed25519 et SHA-512 vérifiés (Authenticode reste facultatif).
 
 ## Commandes Discord
 
@@ -110,7 +110,7 @@ Cette commande est utile avant un drop ciblé pour savoir qui peut recevoir un d
 
 Affiche en réponse éphémère un bouton pour télécharger la dernière version de l'app desktop MemeDrop.
 
-Les mises à jour peuvent être téléchargées et installées directement depuis l'app uniquement lorsqu'elles ont été construites et vérifiées avec le processus de release signée décrit plus bas.
+Les mises à jour peuvent être téléchargées et installées directement depuis l'app uniquement lorsqu'elles ont été construites et vérifiées avec le processus de release décrit plus bas.
 
 ### `/help`
 
@@ -144,7 +144,8 @@ En local :
 http://localhost:3010/auth/discord/callback
 ```
 
-L'URL doit correspondre exactement à `PUBLIC_BASE_URL`.
+La Redirect URI doit être exactement `PUBLIC_BASE_URL` suivie de
+`/auth/discord/callback` (sans double slash).
 
 ### Rotation des secrets
 
@@ -252,42 +253,46 @@ Le tray Windows permet aussi :
 
 ## Développement
 
+Utilise Node.js 22.12.0 ou une version plus récente. Les versions Electron actuelles et leurs outils d'installation ne prennent plus en charge les versions antérieures de Node 22.
+
 Installer les dépendances :
 
 ```sh
 npm install
 ```
 
-Lancer l'app Electron en dev :
+Le développement utilise le `.env` principal et le même parcours que l'application distribuée.
+Il n'existe pas de profil de configuration ou de parcours Discord propre au mode développement.
 
-```sh
-npm run dev
-```
-
-Lancer le serveur sans Docker :
-
-```sh
-npm run server:start
-```
-
-Ou avec Docker :
+1. Lance le serveur avec Docker :
 
 ```sh
 docker compose up --build
 ```
 
-Pour tester en local, utiliser :
+2. Lance l'application :
+
+```sh
+npm run dev
+```
+
+`npm run dev` lance uniquement Vite et Electron. `Ctrl+C` ferme l'application dans son terminal ;
+`Ctrl+C` arrête Docker dans le terminal du serveur.
+
+Pour le serveur Docker local, utilise dans le `.env` principal :
 
 ```env
 MEMEDROP_SERVER_URL=http://localhost:3010
 PUBLIC_BASE_URL=http://localhost:3010
 ```
 
-Et ajouter cette Redirect URI dans Discord :
+La Redirect URI à enregistrer dans le Discord Developer Portal est alors exactement :
 
 ```txt
 http://localhost:3010/auth/discord/callback
 ```
+
+Le mode développement ne remplace ni cette URL ni les identifiants Discord.
 
 ## Build Windows
 
@@ -374,10 +379,12 @@ La version 3.0.1 ne connaît pas encore la clé Ed25519. Pour permettre l'auto-u
 1. Publie les cinq fichiers de `release/update/` sur le canal normal `releases/win-signed-v1/`.
 2. Copie exactement le même EXE, sa blockmap et `latest.yml` dans `releases/win/`, en copiant `latest.yml` en dernier. Ne publie jamais un build de `release/local/`.
 3. Active temporairement `MEMEDROP_LEGACY_UPDATES_DIR=/updates/win` et redéploie le serveur.
-4. Demande aux proches utilisant 3.0.1 de lancer la mise à jour. Si possible, confirme-leur hors bande le SHA-512 de l'EXE.
-5. Dès que tout le monde utilise la première version durcie, vide `MEMEDROP_LEGACY_UPDATES_DIR`, supprime les fichiers du canal legacy et redéploie. Ne fais plus évoluer ce canal.
+4. Demande aux proches utilisant 3.0.1 de lancer la mise à jour directement vers la version 3.0.4 ou une version plus récente. Si possible, confirme-leur hors bande le SHA-512 de l'EXE.
+5. Dès que tout le monde utilise au minimum la version 3.0.4, vide `MEMEDROP_LEGACY_UPDATES_DIR`, supprime les fichiers du canal legacy et redéploie. Ne fais plus évoluer ce canal.
 
 Pendant cette courte migration, un attaquant capable de remplacer simultanément l'ancien `latest.yml` et l'EXE pourrait encore tromper un client 3.0.1. Les versions suivantes utilisent uniquement `/updates/win-signed-v1/` et refuseront tout manifest ou installateur qui ne correspond pas à la clé publique embarquée.
+
+Les versions 3.0.2 et 3.0.3 contiennent un faux positif dans le contrôle des redirections de `net.fetch` : elles refusent le manifeste signé même lorsque le serveur répond directement. Elles ne peuvent donc pas s'auto-mettre à jour et doivent recevoir manuellement l'installateur 3.0.4 depuis un canal de confiance. Une fois la version 3.0.4 installée, les mises à jour Ed25519 suivantes fonctionnent normalement.
 
 Lors d'une future rotation de clé Ed25519, publie d'abord avec l'ancienne clé une version qui embarque aussi la nouvelle. Pour une rotation de certificat Authenticode, autorise temporairement les deux éditeurs dans `windowsPublisherNames`.
 

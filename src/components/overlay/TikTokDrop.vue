@@ -1,41 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import type { Drop } from '../../../shared/types'
 
-type TikTokPlayerMessage =
-  | {
-      'x-tiktok-player': true
-      type: 'onPlayerReady'
-      value?: undefined
-    }
-  | {
-      'x-tiktok-player': true
-      type: 'onStateChange'
-      value: number
-    }
-  | {
-      'x-tiktok-player': true
-      type: 'onPlayerError'
-      value?: unknown
-    }
-  | {
-      'x-tiktok-player': true
-      type: string
-      value?: unknown
-    }
+type TikTokPlayerMessage = {
+  'x-tiktok-player': true
+  type: string
+  value?: unknown
+}
 
+const TIKTOK_PLAYER_ORIGIN = 'https://www.tiktok.com'
 const TIKTOK_PLAYER_STATE_ENDED = 0
-
-type TikTokWebviewElement = HTMLElement & {
-  executeJavaScript: (code: string) => Promise<unknown>
-  send: (channel: string, ...args: unknown[]) => void
-}
-
-type TikTokIpcMessageEvent = Event & {
-  channel: string
-  args: unknown[]
-}
+const TIKTOK_STARTUP_TIMEOUT_MS = 30_000
+const TIKTOK_STALL_TIMEOUT_MS = 20_000
 
 const props = defineProps<{
   drop: Drop
@@ -47,13 +24,17 @@ const emit = defineEmits<{
   advance: [dropId?: string]
 }>()
 
-const tiktokWebview = ref<TikTokWebviewElement | null>(null)
-const tiktokPreloadUrl = ref('')
+const tiktokIframe = ref<HTMLIFrameElement | null>(null)
+let tiktokWatchdogTimer: number | undefined
+let completedDropId: string | null = null
+let playerReadyDropId: string | null = null
+let lastCurrentTime: number | null = null
+let lastImageIndex: number | null = null
 
 const normalizedDropVolume = computed(() => Math.min(Math.max(props.volume, 0), 100) / 100)
 
 const tiktokEmbedUrl = computed(() => {
-  if (!props.drop.tiktokVideoId) {
+  if (!props.drop.tiktokVideoId || !/^\d{10,30}$/.test(props.drop.tiktokVideoId)) {
     return ''
   }
 
@@ -68,20 +49,56 @@ const tiktokEmbedUrl = computed(() => {
     rel: '0',
   })
 
-  return `https://www.tiktok.com/player/v1/${props.drop.tiktokVideoId}?${params.toString()}`
+  return `${TIKTOK_PLAYER_ORIGIN}/player/v1/${props.drop.tiktokVideoId}?${params.toString()}`
 })
 
+const clearTikTokWatchdog = () => {
+  if (tiktokWatchdogTimer) {
+    window.clearTimeout(tiktokWatchdogTimer)
+    tiktokWatchdogTimer = undefined
+  }
+}
+
+const advanceDrop = (expectedDropId: string) => {
+  if (props.drop.id !== expectedDropId || completedDropId === expectedDropId) {
+    return
+  }
+
+  completedDropId = expectedDropId
+  clearTikTokWatchdog()
+  emit('advance', expectedDropId)
+}
+
+const armTikTokWatchdog = (
+  expectedDropId: string,
+  delay = TIKTOK_STALL_TIMEOUT_MS,
+) => {
+  if (props.drop.id !== expectedDropId || completedDropId === expectedDropId) {
+    return
+  }
+
+  clearTikTokWatchdog()
+  tiktokWatchdogTimer = window.setTimeout(() => advanceDrop(expectedDropId), delay)
+}
+
 const sendTikTokCommand = (type: 'play' | 'pause' | 'mute' | 'unMute') => {
-  tiktokWebview.value?.send('tiktok-command', type)
+  tiktokIframe.value?.contentWindow?.postMessage(
+    {
+      'x-tiktok-player': true,
+      type,
+    },
+    TIKTOK_PLAYER_ORIGIN,
+  )
 }
 
 const applyDropVolume = () => {
   sendTikTokCommand(normalizedDropVolume.value <= 0 ? 'mute' : 'unMute')
 }
 
-const handleTikTokLoad = () => {
+const configureTikTokPlayer = (expectedDropId: string) => {
   applyDropVolume()
   sendTikTokCommand('play')
+  armTikTokWatchdog(expectedDropId)
 }
 
 const isTikTokPlayerMessage = (value: unknown): value is TikTokPlayerMessage => {
@@ -93,36 +110,140 @@ const isTikTokPlayerMessage = (value: unknown): value is TikTokPlayerMessage => 
   )
 }
 
-const handleTikTokIpcMessage = (event: TikTokIpcMessageEvent) => {
-  if (event.channel === 'tiktok-ended' && props.drop.id) {
-    emit('advance', props.drop.id)
+const getTikTokCurrentTime = (message: TikTokPlayerMessage) => {
+  if (
+    message.type !== 'onCurrentTime' ||
+    !message.value ||
+    typeof message.value !== 'object'
+  ) {
+    return null
+  }
+
+  const value = message.value as Record<string, unknown>
+  if (
+    typeof value.currentTime !== 'number' ||
+    !Number.isFinite(value.currentTime) ||
+    typeof value.duration !== 'number' ||
+    !Number.isFinite(value.duration)
+  ) {
+    return null
+  }
+
+  return value.currentTime
+}
+
+const getTikTokImageIndex = (message: TikTokPlayerMessage) => {
+  if (message.type !== 'onImageChange') {
+    return null
+  }
+
+  if (typeof message.value === 'number' && Number.isFinite(message.value)) {
+    return message.value
+  }
+
+  if (!message.value || typeof message.value !== 'object') {
+    return null
+  }
+
+  const value = message.value as Record<string, unknown>
+  for (const key of ['currentImage', 'currentImageIndex', 'imageIndex', 'index']) {
+    if (typeof value[key] === 'number' && Number.isFinite(value[key])) {
+      return value[key] as number
+    }
+  }
+
+  return null
+}
+
+const handleTikTokMessage = (event: MessageEvent) => {
+  if (
+    event.origin !== TIKTOK_PLAYER_ORIGIN ||
+    event.source !== tiktokIframe.value?.contentWindow ||
+    !isTikTokPlayerMessage(event.data)
+  ) {
     return
   }
 
-  if (event.channel === 'tiktok-error' && props.drop.id) {
-    emit('advance', props.drop.id)
+  const message = event.data
+  const expectedDropId = tiktokIframe.value.dataset.dropId
+  if (!expectedDropId) {
     return
   }
 
-  if (event.channel !== 'tiktok-player-message' || !isTikTokPlayerMessage(event.args[0])) {
+  if (message.type === 'onPlayerError') {
+    advanceDrop(expectedDropId)
     return
   }
 
-  const message = event.args[0]
+  if (message.type === 'onStateChange') {
+    if (message.value === TIKTOK_PLAYER_STATE_ENDED) {
+      advanceDrop(expectedDropId)
+    }
+    return
+  }
 
   if (message.type === 'onPlayerReady') {
-    handleTikTokLoad()
+    if (playerReadyDropId !== expectedDropId) {
+      playerReadyDropId = expectedDropId
+      configureTikTokPlayer(expectedDropId)
+    }
     return
   }
 
-  if (message.type === 'onStateChange' && message.value === TIKTOK_PLAYER_STATE_ENDED) {
-    emit('advance', props.drop.id)
+  const currentTime = getTikTokCurrentTime(message)
+  if (currentTime !== null) {
+    const previousTime = lastCurrentTime
+    if (previousTime === null) {
+      lastCurrentTime = currentTime
+      if (currentTime > 0) {
+        armTikTokWatchdog(expectedDropId)
+      }
+    } else if (currentTime > previousTime + 0.05 || currentTime < previousTime - 0.5) {
+      lastCurrentTime = currentTime
+      armTikTokWatchdog(expectedDropId)
+    }
     return
   }
 
-  if (message.type === 'onPlayerError' && props.drop.id) {
-    emit('advance', props.drop.id)
+  const imageIndex = getTikTokImageIndex(message)
+  if (imageIndex !== null && imageIndex !== lastImageIndex) {
+    lastImageIndex = imageIndex
+    armTikTokWatchdog(expectedDropId)
   }
+}
+
+const handleTikTokLoad = (event: Event) => {
+  const expectedDropId = (event.currentTarget as HTMLIFrameElement).dataset.dropId
+  if (!expectedDropId) {
+    return
+  }
+
+  applyDropVolume()
+  sendTikTokCommand('play')
+  armTikTokWatchdog(expectedDropId, TIKTOK_STARTUP_TIMEOUT_MS)
+}
+
+const handleTikTokError = (event: Event) => {
+  const iframe = event.currentTarget as HTMLIFrameElement
+  const expectedDropId = iframe.dataset.dropId
+  if (iframe === tiktokIframe.value && expectedDropId) {
+    advanceDrop(expectedDropId)
+  }
+}
+
+const resetTikTokDrop = (dropId: string) => {
+  clearTikTokWatchdog()
+  completedDropId = null
+  playerReadyDropId = null
+  lastCurrentTime = null
+  lastImageIndex = null
+
+  if (!tiktokEmbedUrl.value) {
+    window.queueMicrotask(() => advanceDrop(dropId))
+    return
+  }
+
+  armTikTokWatchdog(dropId, TIKTOK_STARTUP_TIMEOUT_MS)
 }
 
 watch(
@@ -130,8 +251,19 @@ watch(
   () => applyDropVolume(),
 )
 
-void window.memedrop?.getTikTokPreloadUrl().then((preloadUrl) => {
-  tiktokPreloadUrl.value = preloadUrl
+watch(
+  () => props.drop.id,
+  (dropId) => resetTikTokDrop(dropId),
+)
+
+onMounted(() => {
+  window.addEventListener('message', handleTikTokMessage)
+  resetTikTokDrop(props.drop.id)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('message', handleTikTokMessage)
+  clearTikTokWatchdog()
 })
 </script>
 
@@ -140,17 +272,19 @@ void window.memedrop?.getTikTokPreloadUrl().then((preloadUrl) => {
     class="mx-auto flex aspect-video w-full items-center justify-center overflow-hidden rounded-2xl bg-black"
     :style="frameStyle"
   >
-    <webview
-      v-if="tiktokPreloadUrl"
-      ref="tiktokWebview"
+    <iframe
+      v-if="tiktokEmbedUrl"
+      ref="tiktokIframe"
       :key="`tiktok-${drop.id}`"
+      :data-drop-id="drop.id"
       :src="tiktokEmbedUrl"
-      :preload="tiktokPreloadUrl"
-      partition="persist:memedrop-tiktok"
-      webpreferences="contextIsolation=yes"
+      allow="autoplay; encrypted-media"
       class="h-full max-h-full aspect-9/16 border-0"
-      @dom-ready="handleTikTokLoad"
-      @ipc-message="handleTikTokIpcMessage"
+      referrerpolicy="strict-origin-when-cross-origin"
+      sandbox="allow-same-origin allow-scripts"
+      title="Vidéo TikTok MemeDrop"
+      @error="handleTikTokError"
+      @load="handleTikTokLoad"
     />
   </div>
 </template>

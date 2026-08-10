@@ -23,5 +23,6 @@ declare namespace NodeJS {
 
 // Used in Renderer process, expose in `preload.ts`
 interface Window {
-  memedrop: import('../shared/preloadApi').MemeDropPreloadApi
+  memedrop?: import('../shared/preloadApi').MemeDropPreloadApi
+  memedropOverlay?: import('../shared/preloadApi').MemeDropOverlayPreloadApi
 }

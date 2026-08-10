@@ -1,8 +1,9 @@
 import { config as loadEnv } from 'dotenv'
 
-loadEnv()
+loadEnv({ quiet: true })
 
 export const config: {
+  host: string
   port: number
   discordBotToken: string | undefined
   discordGuildId: string | undefined
@@ -16,6 +17,7 @@ export const config: {
   memedropLegacyUpdatesDir: string | undefined
   publicBaseUrl: string | undefined
 } = {
+  host: process.env.MEMEDROP_SERVER_HOST?.trim() || '0.0.0.0',
   port: Number(process.env.PORT ?? 3010),
   discordBotToken: process.env.DISCORD_BOT_TOKEN,
   discordGuildId: process.env.DISCORD_GUILD_ID,

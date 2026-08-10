@@ -1,8 +1,41 @@
-import { BrowserWindow } from 'electron'
-import type { Display, Input, Rectangle } from 'electron'
+import { BrowserWindow, session } from 'electron'
+import type { Cookie, Display, Input, Rectangle, WebContents } from 'electron'
 import type { ControlWindowBounds } from '../core/appConfig'
 
 type RendererView = 'overlay' | 'control'
+
+const TIKTOK_URL = 'https://www.tiktok.com/'
+const TIKTOK_CONSENT_COOKIE_NAME = 'cookie-consent'
+const TIKTOK_CONSENT_COOKIE_LIFETIME_SECONDS = 365 * 24 * 60 * 60
+// Format actuellement produit par le bouton TikTok « Refuser les cookies optionnels ».
+const TIKTOK_OPTIONAL_COOKIE_PREFERENCES = {
+  optional: false,
+  ga: false,
+  af: false,
+  fbp: false,
+  lip: false,
+  bing: false,
+  ttads: false,
+  reddit: false,
+  hubspot: false,
+  version: 'v10',
+}
+const TIKTOK_DECLINED_OPTIONAL_COOKIES = encodeURIComponent(
+  JSON.stringify(TIKTOK_OPTIONAL_COOKIE_PREFERENCES),
+)
+  .replace(/^%7B/, '{')
+  .replace(/%7D$/, '}')
+  .replace(/%3A/g, ':')
+
+const isTikTokOptionalCookieRefusal = (cookie: Cookie) =>
+  cookie.name === TIKTOK_CONSENT_COOKIE_NAME &&
+  cookie.value === TIKTOK_DECLINED_OPTIONAL_COOKIES &&
+  cookie.domain === '.tiktok.com' &&
+  cookie.path === '/' &&
+  cookie.secure &&
+  !cookie.httpOnly &&
+  cookie.sameSite === 'no_restriction' &&
+  !cookie.session
 
 type RendererLoader = {
   loadView: (window: BrowserWindow, view: RendererView) => void
@@ -10,7 +43,8 @@ type RendererLoader = {
 
 type MemeDropWindowsOptions = {
   windowIcon: string
-  preloadPath: string
+  controlPreloadPath: string
+  overlayPreloadPath: string
   renderer: RendererLoader
   getAppTitle: () => string
   getOverlayTargetDisplay: () => Display
@@ -29,7 +63,8 @@ type MemeDropWindowsOptions = {
 
 export const createMemeDropWindows = ({
   windowIcon,
-  preloadPath,
+  controlPreloadPath,
+  overlayPreloadPath,
   renderer,
   getAppTitle,
   getOverlayTargetDisplay,
@@ -49,6 +84,87 @@ export const createMemeDropWindows = ({
   let controlWindow: BrowserWindow | null = null
   let overlayKeepAliveTimer: ReturnType<typeof setInterval> | null = null
   let controlWindowBoundsSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let isRendererSessionConfigured = false
+  let rendererSessionPreparation: Promise<void> | null = null
+
+  const configureRendererSession = () => {
+    if (isRendererSessionConfigured) {
+      return
+    }
+
+    const rendererSession = session.defaultSession
+    rendererSession.setPermissionCheckHandler(() => false)
+    rendererSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+      callback(false)
+    })
+    rendererSession.setDevicePermissionHandler(() => false)
+    rendererSession.setDisplayMediaRequestHandler((_request, callback) => {
+      callback({})
+    })
+    rendererSession.on('will-download', (event) => {
+      event.preventDefault()
+    })
+
+    isRendererSessionConfigured = true
+  }
+
+  const ensureTikTokCookieConsent = async () => {
+    const rendererCookies = session.defaultSession.cookies
+    const existingConsent = await rendererCookies.get({
+      url: TIKTOK_URL,
+      name: TIKTOK_CONSENT_COOKIE_NAME,
+    })
+
+    if (existingConsent.some(isTikTokOptionalCookieRefusal)) {
+      return
+    }
+
+    await rendererCookies.set({
+      url: TIKTOK_URL,
+      name: TIKTOK_CONSENT_COOKIE_NAME,
+      value: TIKTOK_DECLINED_OPTIONAL_COOKIES,
+      domain: '.tiktok.com',
+      path: '/',
+      secure: true,
+      httpOnly: false,
+      sameSite: 'no_restriction',
+      expirationDate:
+        Math.floor(Date.now() / 1000) + TIKTOK_CONSENT_COOKIE_LIFETIME_SECONDS,
+    })
+
+    const storedConsent = await rendererCookies.get({
+      url: TIKTOK_URL,
+      name: TIKTOK_CONSENT_COOKIE_NAME,
+    })
+    if (!storedConsent.some(isTikTokOptionalCookieRefusal)) {
+      throw new Error('Le refus des cookies TikTok optionnels n’a pas été enregistré.')
+    }
+
+    await rendererCookies.flushStore()
+  }
+
+  const prepareRendererSession = () => {
+    configureRendererSession()
+    rendererSessionPreparation ??= ensureTikTokCookieConsent().catch((error: unknown) => {
+      console.warn(
+        'Impossible de mémoriser le refus des cookies TikTok optionnels :',
+        error,
+      )
+    })
+    return rendererSessionPreparation
+  }
+
+  const hardenLocalRenderer = (window: BrowserWindow) => {
+    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    window.webContents.on('will-navigate', (event) => {
+      event.preventDefault()
+    })
+    window.webContents.on('will-redirect', (event) => {
+      if (event.isMainFrame) {
+        event.preventDefault()
+      }
+    })
+  }
 
   const keepOverlayAboveFullscreen = () => {
     if (!overlayWindow || overlayWindow.isDestroyed()) {
@@ -99,6 +215,8 @@ export const createMemeDropWindows = ({
   }
 
   const createOverlayWindow = () => {
+    configureRendererSession()
+
     const overlayDisplay = getOverlayTargetDisplay()
     const { width, height, x, y } = overlayDisplay.bounds
     overlayWindow = new BrowserWindow({
@@ -115,14 +233,23 @@ export const createMemeDropWindows = ({
       fullscreenable: false,
       focusable: false,
       webPreferences: {
-        preload: preloadPath,
-        webviewTag: true,
+        allowRunningInsecureContent: false,
+        contextIsolation: true,
+        navigateOnDragDrop: false,
+        nodeIntegration: false,
+        nodeIntegrationInSubFrames: false,
+        nodeIntegrationInWorker: false,
+        preload: overlayPreloadPath,
+        sandbox: true,
+        webSecurity: true,
+        webviewTag: false,
       },
     })
 
     overlayWindow.setAlwaysOnTop(true, 'screen-saver')
     overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
     overlayWindow.setIgnoreMouseEvents(true)
+    hardenLocalRenderer(overlayWindow)
     keepOverlayAboveFullscreen()
     startOverlayKeepAlive()
     overlayWindow.webContents.on('did-finish-load', () => {
@@ -138,6 +265,7 @@ export const createMemeDropWindows = ({
   }
 
   const createControlWindow = () => {
+    configureRendererSession()
     controlWindow = new BrowserWindow({
       ...getControlWindowBounds(),
       minWidth: 500,
@@ -150,10 +278,24 @@ export const createMemeDropWindows = ({
       icon: windowIcon,
       title: getAppTitle(),
       webPreferences: {
-        preload: preloadPath,
+        allowRunningInsecureContent: false,
+        contextIsolation: true,
+        navigateOnDragDrop: false,
+        nodeIntegration: false,
+        nodeIntegrationInSubFrames: false,
+        nodeIntegrationInWorker: false,
+        preload: controlPreloadPath,
+        sandbox: true,
+        webSecurity: true,
+        webviewTag: false,
       },
     })
 
+    hardenLocalRenderer(controlWindow)
+    controlWindow.on('page-title-updated', (event) => {
+      event.preventDefault()
+      controlWindow?.setTitle(getAppTitle())
+    })
     controlWindow.webContents.on('did-finish-load', () => {
       controlWindow?.setTitle(getAppTitle())
       onControlLoaded()
@@ -223,6 +365,10 @@ export const createMemeDropWindows = ({
     controlWindow?.webContents.send(channel, payload)
   }
 
+  const isOverlaySender = (sender: WebContents) => overlayWindow?.webContents === sender
+
+  const isControlSender = (sender: WebContents) => controlWindow?.webContents === sender
+
   const hasAnyWindow = () => BrowserWindow.getAllWindows().length > 0
 
   const clearWindowReferences = () => {
@@ -240,12 +386,15 @@ export const createMemeDropWindows = ({
   }
 
   return {
+    prepareRendererSession,
     createWindows,
     showControlWindow,
     keepOverlayAboveFullscreen,
     sendToWindows,
     sendToOverlay,
     sendToControl,
+    isOverlaySender,
+    isControlSender,
     hasAnyWindow,
     clearWindowReferences,
     dispose,

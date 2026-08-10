@@ -286,6 +286,7 @@ const fetchBytes = async (url: URL, maxBytes: number, accept: string) => {
       redirect: 'error',
       cache: 'no-store',
       credentials: 'omit',
+      bypassCustomProtocolHandlers: true,
       signal: controller.signal,
     })
 
@@ -293,7 +294,10 @@ const fetchBytes = async (url: URL, maxBytes: number, accept: string) => {
       throw new Error(`Le serveur de mise à jour a répondu avec le statut ${response.status}.`)
     }
 
-    if (response.url !== url.toString()) {
+    // Electron's net.fetch can leave Response.url empty even for a direct 200 response.
+    // redirect: 'error' rejects redirects before a response is returned; this remains a
+    // defense-in-depth check in case the runtime ever reports a followed redirect.
+    if (response.redirected) {
       throw new Error('Le serveur de mise à jour a tenté de rediriger une ressource signée.')
     }
 

@@ -5,6 +5,41 @@ import path from 'node:path'
 
 export type RendererView = 'overlay' | 'control'
 
+const rendererContentSecurityPolicy = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https: http:",
+  "media-src 'self' blob: https: http:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  'frame-src https://www.youtube.com https://www.youtube-nocookie.com https://www.tiktok.com',
+  'child-src https://www.youtube.com https://www.youtube-nocookie.com https://www.tiktok.com',
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+  "worker-src 'none'",
+].join('; ')
+
+const rendererSecurityHeaders = {
+  'content-security-policy': rendererContentSecurityPolicy,
+  'cross-origin-opener-policy': 'same-origin',
+  'permissions-policy': [
+    'camera=()',
+    'microphone=()',
+    'geolocation=()',
+    'display-capture=()',
+    'payment=()',
+    'usb=()',
+    'serial=()',
+    'hid=()',
+  ].join(', '),
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+} as const
+
 const getContentType = (filePath: string) => {
   const extension = path.extname(filePath).toLowerCase()
 
@@ -56,11 +91,21 @@ export const createRendererServer = ({
 
       rendererServer = http.createServer((request, response) => {
         const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1')
-        const requestedPath = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname
-        const filePath = path.normalize(path.join(rendererDist, decodeURIComponent(requestedPath)))
+        const encodedPath = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname
+        let requestedPath: string
+
+        try {
+          requestedPath = decodeURIComponent(encodedPath)
+        } catch {
+          response.writeHead(400, rendererSecurityHeaders)
+          response.end()
+          return
+        }
+
+        const filePath = path.normalize(path.join(rendererDist, requestedPath))
 
         if (!isPathInside(filePath, rendererDist)) {
-          response.writeHead(403)
+          response.writeHead(403, rendererSecurityHeaders)
           response.end()
           return
         }
@@ -69,17 +114,18 @@ export const createRendererServer = ({
           const stat = statSync(filePath)
 
           if (!stat.isFile()) {
-            response.writeHead(404)
+            response.writeHead(404, rendererSecurityHeaders)
             response.end()
             return
           }
 
           response.writeHead(200, {
+            ...rendererSecurityHeaders,
             'content-type': getContentType(filePath),
           })
           createReadStream(filePath).pipe(response)
         } catch {
-          response.writeHead(404)
+          response.writeHead(404, rendererSecurityHeaders)
           response.end()
         }
       })

@@ -1,8 +1,13 @@
 {
   "name": "memedrop",
   "private": true,
-  "version": "3.0.2",
+  "description": "Overlay desktop MemeDrop relié à Discord pour afficher des images, sons et vidéos.",
+  "author": "Maubry94",
+  "version": "3.0.4",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build:app": "vue-tsc && vite build && npm run build:server",
@@ -20,7 +25,7 @@
   "dependencies": {
     "discord.js": "^14.26.4",
     "dotenv": "^17.4.2",
-    "electron-updater": "^6.8.9",
+    "electron-updater": "6.8.9",
     "vue": "^3.4.21",
     "ws": "^8.17.0"
   },
@@ -28,13 +33,12 @@
     "@tailwindcss/vite": "^4.3.0",
     "@types/node": "^25.9.2",
     "@vitejs/plugin-vue": "^5.0.4",
-    "electron": "^30.0.1",
-    "electron-builder": "^24.13.3",
+    "electron": "43.3.0",
+    "electron-builder": "26.15.3",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.2.2",
-    "vite": "^5.1.6",
+    "vite": "6.4.3",
     "vite-plugin-electron": "^0.28.6",
-    "vite-plugin-electron-renderer": "^0.14.5",
     "vue-tsc": "^2.0.26"
   },
   "main": "dist-electron/main.js"

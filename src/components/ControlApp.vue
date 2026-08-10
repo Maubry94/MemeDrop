@@ -86,28 +86,21 @@ const activeUpdateVersion = computed(
   () => props.appUpdateState.availableVersion ?? props.appVersionInfo.latestVersion,
 )
 
-const showUpdateBanner = computed(() =>
-  (
-    props.appVersionInfo.updateAvailable ||
-    props.appUpdateState.status === 'disabled' ||
-    props.appUpdateState.status === 'checking' ||
-    props.appUpdateState.status === 'available' ||
-    props.appUpdateState.status === 'downloading' ||
-    props.appUpdateState.status === 'verifying' ||
-    props.appUpdateState.status === 'downloaded' ||
-    props.appUpdateState.status === 'error'
-  ),
+const showUpdateBanner = computed(
+  () =>
+    props.appUpdateState.status !== 'disabled' &&
+    (
+      props.appVersionInfo.updateAvailable ||
+      props.appUpdateState.status === 'checking' ||
+      props.appUpdateState.status === 'available' ||
+      props.appUpdateState.status === 'downloading' ||
+      props.appUpdateState.status === 'verifying' ||
+      props.appUpdateState.status === 'downloaded' ||
+      props.appUpdateState.status === 'error'
+    ),
 )
 
 const updateMessage = computed(() => {
-  if (props.appUpdateState.status === 'disabled') {
-    return props.appUpdateState.errorMessage ?? "L'auto-update est désactivé dans ce build."
-  }
-
-  if (!props.appUpdateState.canCheck) {
-    return "L'auto-update sera disponible dans l'application installée."
-  }
-
   if (props.appUpdateState.status === 'checking') {
     return 'Recherche de mise à jour en cours...'
   }
@@ -140,10 +133,6 @@ const updateMessage = computed(() => {
 })
 
 const updateTitle = computed(() => {
-  if (props.appUpdateState.status === 'disabled') {
-    return 'Auto-update désactivé'
-  }
-
   if (props.appUpdateState.status === 'downloaded') {
     return 'Mise à jour prête'
   }
@@ -164,10 +153,6 @@ const updateTitle = computed(() => {
 })
 
 const updateActionLabel = computed(() => {
-  if (props.appUpdateState.status === 'disabled') {
-    return 'Auto-update désactivé'
-  }
-
   if (props.appUpdateState.status === 'checking') {
     return 'Recherche...'
   }
@@ -290,7 +275,6 @@ const runUpdateAction = () => {
         {{ updateMessage }}
       </p>
       <Button
-        v-if="appUpdateState.status !== 'disabled'"
         class="mt-3"
         variant="warning"
         size="xs"

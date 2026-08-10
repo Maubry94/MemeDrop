@@ -121,6 +121,7 @@ const { broadcastDrop, clients, getConnectedUsers, stopDropByOwner } = createMem
 
 createDiscordBot({
   token: config.discordBotToken,
+  clientId: config.discordClientId,
   guildId: config.discordGuildId,
   publicBaseUrl: config.publicBaseUrl,
   latestAppVersion,
@@ -135,6 +136,6 @@ createDiscordBot({
   },
 })
 
-server.listen(config.port, () => {
-  console.log(`Serveur MemeDrop démarré sur le port ${config.port}.`)
+server.listen(config.port, config.host, () => {
+  console.log(`Serveur MemeDrop démarré sur http://${config.host}:${config.port}.`)
 })

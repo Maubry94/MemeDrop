@@ -6,6 +6,7 @@ import type { DiscordBotOptions } from '../types.js'
 
 export const createDiscordBot = ({
   token,
+  clientId,
   guildId,
   publicBaseUrl,
   latestAppVersion,
@@ -17,8 +18,8 @@ export const createDiscordBot = ({
   stopDropByOwner,
   onStatusChange,
 }: DiscordBotOptions) => {
-  if (!token || !guildId) {
-    console.error('DISCORD_BOT_TOKEN et DISCORD_GUILD_ID sont requis.')
+  if (!token || !clientId || !guildId) {
+    console.error('DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID et DISCORD_GUILD_ID sont requis.')
     process.exitCode = 1
     return null
   }
@@ -26,33 +27,48 @@ export const createDiscordBot = ({
   const discord = new Client({
     intents: [GatewayIntentBits.Guilds],
   })
+  const failInitialization = async (message: string, error?: unknown) => {
+    onStatusChange('error')
+    console.error(message, error ?? '')
+    await discord.destroy()
+  }
+  const interactionHandler = createInteractionHandler({
+    latestAppVersion,
+    publicBaseUrl,
+    allowedRoleIds,
+    allowedChannelIds,
+    dropCooldownSeconds,
+    broadcastDrop,
+    getConnectedUsers,
+    stopDropByOwner,
+  })
 
   discord.once('clientReady', async () => {
-    onStatusChange('connected')
-    console.log(`Discord connecté en tant que ${discord.user?.tag ?? 'bot'}.`)
-    discord.user?.setActivity('Regarde les memes 👀')
+    if (!discord.user || discord.user.id !== clientId) {
+      await failInitialization(
+        "Le token du bot Discord n'appartient pas à l'application configurée par DISCORD_CLIENT_ID.",
+      )
+      return
+    }
 
-    if (discord.user) {
-      await registerSlashCommands(token, guildId, discord.user.id)
+    try {
+      discord.user.setActivity('Regarde les memes 👀')
+      await registerSlashCommands(token, guildId, clientId)
+      discord.on('interactionCreate', async (interaction) => {
+        if (interaction.guildId !== guildId) {
+          return
+        }
+        await interactionHandler(interaction)
+      })
+      onStatusChange('connected')
+      console.log(`Discord connecté en tant que ${discord.user.tag}.`)
       console.log(
         `Commandes ${discordCommands.map((command) => `/${command.data.name}`).join(', ')} enregistrées.`,
       )
+    } catch (error) {
+      await failInitialization("Initialisation du bot Discord impossible :", error)
     }
   })
-
-  discord.on(
-    'interactionCreate',
-    createInteractionHandler({
-      latestAppVersion,
-      publicBaseUrl,
-      allowedRoleIds,
-      allowedChannelIds,
-      dropCooldownSeconds,
-      broadcastDrop,
-      getConnectedUsers,
-      stopDropByOwner,
-    }),
-  )
 
   discord.on('error', (error) => {
     onStatusChange('error')
@@ -60,8 +76,7 @@ export const createDiscordBot = ({
   })
 
   discord.login(token).catch((error) => {
-    onStatusChange('error')
-    console.error('Login Discord impossible:', error)
+    void failInitialization('Login Discord impossible :', error)
   })
 
   return discord

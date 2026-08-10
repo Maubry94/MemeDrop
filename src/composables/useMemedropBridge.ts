@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, type ComputedRef } from 'vue'
 import type {
   AppPreferences,
   AppUpdateState,
@@ -15,6 +15,7 @@ import type {
 } from '../../shared/types'
 
 type MemedropBridgeOptions = {
+  isOverlayView: ComputedRef<boolean>
   applyOverlayState: (state: OverlayState) => void
   applyOverlayDisplayPreferences: (preferences: OverlayDisplayPreferences) => void
   setOverlayDisplays: (displays: OverlayDisplayInfo[]) => void
@@ -33,6 +34,7 @@ type MemedropBridgeOptions = {
 }
 
 export const useMemedropBridge = ({
+  isOverlayView,
   applyOverlayState,
   applyOverlayDisplayPreferences,
   setOverlayDisplays,
@@ -58,6 +60,17 @@ export const useMemedropBridge = ({
   }
 
   const requestInitialState = async () => {
+    if (isOverlayView.value) {
+      const overlayBridge = window.memedropOverlay
+      if (!overlayBridge) {
+        return
+      }
+
+      applyOverlayState(await overlayBridge.getOverlayState())
+      applyOverlayDisplayPreferences(await overlayBridge.getOverlayDisplayPreferences())
+      return
+    }
+
     const memedrop = window.memedrop
     if (!memedrop) {
       return
@@ -77,6 +90,23 @@ export const useMemedropBridge = ({
   }
 
   const subscribe = () => {
+    if (isOverlayView.value) {
+      const overlayBridge = window.memedropOverlay
+      if (!overlayBridge) {
+        return
+      }
+
+      remember(overlayBridge.onDrop(receiveDrop))
+      remember(overlayBridge.onClearDrop(clearServerDrop))
+      remember(overlayBridge.onTestDropCleared(clearTestDrop))
+      remember(overlayBridge.onSkipCurrentDrop(completeLocalDrop))
+      remember(overlayBridge.onOverlayState(applyOverlayState))
+      remember(
+        overlayBridge.onOverlayDisplayPreferences(applyOverlayDisplayPreferences),
+      )
+      return
+    }
+
     const memedrop = window.memedrop
     if (!memedrop) {
       return

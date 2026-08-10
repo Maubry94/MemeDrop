@@ -5,7 +5,7 @@ import {
   screen,
   shell,
 } from 'electron'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { existsSync } from 'node:fs'
 import { config as loadEnv } from 'dotenv'
@@ -34,9 +34,43 @@ import type {
 } from '../shared/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const validateDevelopmentServerUrl = (value: string | undefined) => {
+  if (!value?.trim()) {
+    return undefined
+  }
+
+  let url: URL
+  try {
+    url = new URL(value.trim())
+  } catch {
+    throw new Error('VITE_DEV_SERVER_URL doit être une URL HTTP locale valide.')
+  }
+
+  if (
+    url.protocol !== 'http:' ||
+    !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+    url.port !== '5173' ||
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error(
+      'VITE_DEV_SERVER_URL doit cibler exclusivement http://127.0.0.1:5173/.',
+    )
+  }
+
+  return url.origin
+}
+
+export const VITE_DEV_SERVER_URL = app.isPackaged
+  ? undefined
+  : validateDevelopmentServerUrl(process.env['VITE_DEV_SERVER_URL'])
 const APP_ID = 'com.memedrop.app'
 const START_MINIMIZED_ARG = '--memedrop-start-minimized'
 
+app.enableSandbox()
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID)
@@ -53,16 +87,15 @@ if (process.platform === 'win32') {
 // │
 process.env.APP_ROOT = path.join(__dirname, '..')
 
-// 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
-export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
-const hasInstanceLock = VITE_DEV_SERVER_URL ? true : app.requestSingleInstanceLock()
+const hasInstanceLock = app.requestSingleInstanceLock()
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 const windowIcon = path.join(process.env.VITE_PUBLIC, 'memeDrop.png')
 const getAppTitle = () => `MemeDrop v${app.getVersion()}`
-const getTikTokPreloadUrl = () => pathToFileURL(path.join(__dirname, 'tiktokPreload.mjs')).toString()
+const controlPreloadPath = path.join(__dirname, 'preload.mjs')
+const overlayPreloadPath = path.join(__dirname, 'overlayPreload.mjs')
 const rendererServer = createRendererServer({
   rendererDist: RENDERER_DIST,
   devServerUrl: VITE_DEV_SERVER_URL,
@@ -91,9 +124,9 @@ const loadAppEnv = () => {
     path.join(app.getPath('userData'), '.env'),
   ]
 
-  for (const envPath of candidates) {
+  for (const envPath of new Set(candidates.map((candidate) => path.resolve(candidate)))) {
     if (existsSync(envPath)) {
-      loadEnv({ path: envPath, override: true })
+      loadEnv({ path: envPath, override: true, quiet: true })
     }
   }
 }
@@ -332,7 +365,8 @@ const tray = createMemeDropTray({
 
 const windows = createMemeDropWindows({
   windowIcon,
-  preloadPath: path.join(__dirname, 'preload.mjs'),
+  controlPreloadPath,
+  overlayPreloadPath,
   renderer: rendererServer,
   getAppTitle,
   getOverlayTargetDisplay,
@@ -405,6 +439,7 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   if (!VITE_DEV_SERVER_URL) {
     await rendererServer.start()
   }
+  await windows.prepareRendererSession()
   screen.on('display-added', () => {
     syncOverlayDisplays()
     windows.keepOverlayAboveFullscreen()
@@ -424,10 +459,9 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     })
     desktopClient.scheduleReconnect()
   })
-  windows.createWindows()
-  tray.create()
-
   registerMemeDropIpcHandlers({
+    isControlSender: windows.isControlSender,
+    isOverlaySender: windows.isOverlaySender,
     setDropsEnabled: (enabled) => {
       setDropsEnabled(enabled)
       return getOverlayState()
@@ -451,7 +485,6 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     checkForAppUpdate: appUpdater.checkForUpdates,
     downloadAppUpdate: appUpdater.downloadUpdate,
     installAppUpdate: appUpdater.installUpdate,
-    getTikTokPreloadUrl,
     openReleasePage: () => {
       void shell.openExternal(desktopClient.getAppVersionInfo().releaseUrl)
     },
@@ -499,6 +532,8 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     },
   })
 
+  windows.createWindows()
+  tray.create()
   shortcutManager.registerGlobalShortcuts()
   desktopClient.startOrRestart()
   void appUpdater.checkForUpdates()

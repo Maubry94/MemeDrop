@@ -50,8 +50,10 @@ module.exports = {
     icon: 'icon.ico',
     target: 'nsis',
     verifyUpdateCodeSignature: true,
-    signingHashAlgorithms: ['sha256'],
-    ...(authenticodeEnabled ? { publisherName: publisherNames } : {}),
+    signtoolOptions: {
+      signingHashAlgorithms: ['sha256'],
+      ...(authenticodeEnabled ? { publisherName: publisherNames } : {}),
+    },
   },
   publish: [
     {

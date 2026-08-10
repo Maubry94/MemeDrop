@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import path from 'node:path'
+import type { ChildProcess } from 'node:child_process'
 import electron from 'vite-plugin-electron/simple'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
@@ -29,8 +30,43 @@ if (
 
 const normalizedUpdateFeedUrl = updateFeedUrl.toString().replace(/\/$/, '')
 
+const startDevelopmentElectron = async (
+  startup: (argv?: string[]) => Promise<void>,
+) => {
+  // Passer explicitement les arguments évite le `--no-sandbox` ajouté par
+  // défaut par vite-plugin-electron tout en conservant son cycle de démarrage.
+  await startup(['.'])
+
+  // vite-plugin-electron conserve sinon le PID après une fermeture normale et
+  // tente de le tuer une seconde fois dans son hook de sortie Windows.
+  const processRegistry = process as unknown as { electronApp?: ChildProcess }
+  const electronApp = processRegistry.electronApp
+  if (!electronApp) {
+    return
+  }
+
+  electronApp.removeListener('exit', process.exit)
+  electronApp.once('exit', (code, signal) => {
+    if (processRegistry.electronApp === electronApp) {
+      delete processRegistry.electronApp
+    }
+
+    if (signal) {
+      console.error(`Electron s'est arrêté avec le signal ${signal}.`)
+      process.exit(1)
+    }
+
+    process.exit(code ?? 1)
+  })
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
+  },
   plugins: [
     vue(),
     tailwindcss(),
@@ -38,6 +74,7 @@ export default defineConfig({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
+        onstart: ({ startup }) => startDevelopmentElectron(startup),
         vite: {
           define: {
             __MEMEDROP_AUTO_UPDATE_ENABLED__: JSON.stringify(autoUpdateEnabled),
@@ -55,7 +92,7 @@ export default defineConfig({
         // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
         input: {
           preload: path.join(__dirname, 'electron/preload.ts'),
-          tiktokPreload: path.join(__dirname, 'electron/tiktokPreload.ts'),
+          overlayPreload: path.join(__dirname, 'electron/overlayPreload.ts'),
         },
         vite: {
           build: {
@@ -67,13 +104,6 @@ export default defineConfig({
           },
         },
       },
-      // Ployfill the Electron and Node.js API for Renderer process.
-      // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.
-      // See 👉 https://github.com/electron-vite/vite-plugin-electron-renderer
-      renderer: process.env.NODE_ENV === 'test'
-        // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
-        ? undefined
-        : {},
     }),
   ],
 })

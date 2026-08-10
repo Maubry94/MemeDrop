@@ -53,7 +53,6 @@ export type MemeDropPreloadApi = {
   checkForAppUpdate: () => Promise<AppUpdateState>
   downloadAppUpdate: () => Promise<AppUpdateState>
   installAppUpdate: () => Promise<AppUpdateState>
-  getTikTokPreloadUrl: () => Promise<string>
   setAppPreferences: (preferences: AppPreferences) => Promise<AppPreferences>
   quitApp: () => Promise<void>
   uninstallApp: () => Promise<void>
@@ -73,3 +72,16 @@ export type MemeDropPreloadApi = {
   emitTestDrop: (drop: Drop) => Promise<void>
   clearTestDrop: () => Promise<void>
 }
+
+export type MemeDropOverlayPreloadApi = Pick<
+  MemeDropPreloadApi,
+  | 'onDrop'
+  | 'onClearDrop'
+  | 'onTestDropCleared'
+  | 'onSkipCurrentDrop'
+  | 'onOverlayState'
+  | 'onOverlayDisplayPreferences'
+  | 'completeCurrentDrop'
+  | 'getOverlayState'
+  | 'getOverlayDisplayPreferences'
+>

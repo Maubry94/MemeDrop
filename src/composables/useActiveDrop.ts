@@ -48,7 +48,11 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
       isTestDropActive.value = false
       return
     }
-    await window.memedrop?.completeCurrentDrop(drop.id)
+    if (isOverlayView.value) {
+      await window.memedropOverlay?.completeCurrentDrop(drop.id)
+    } else {
+      await window.memedrop?.completeCurrentDrop(drop.id)
+    }
   }
 
   const scheduleActiveDrop = () => {

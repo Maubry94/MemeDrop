@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type {
   AppPreferences,
   AppUpdateState,
@@ -16,6 +17,8 @@ import type {
 } from '../../shared/types'
 
 export type MemeDropIpcHandlers = {
+  isControlSender: (sender: WebContents) => boolean
+  isOverlaySender: (sender: WebContents) => boolean
   setDropsEnabled: (enabled: boolean) => OverlayState
   setHideOwnDrops: (enabled: boolean) => OverlayState
   getOverlayState: () => OverlayState
@@ -30,7 +33,6 @@ export type MemeDropIpcHandlers = {
   checkForAppUpdate: () => Promise<AppUpdateState>
   downloadAppUpdate: () => Promise<AppUpdateState>
   installAppUpdate: () => Promise<AppUpdateState>
-  getTikTokPreloadUrl: () => string
   openReleasePage: () => void
   setAppPreferences: (preferences: AppPreferences) => AppPreferences
   quitApp: () => void
@@ -57,66 +59,94 @@ export type MemeDropIpcHandlers = {
 }
 
 export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
-  ipcMain.handle('set-drops-enabled', (_event, enabled: boolean) =>
+  type IpcListener = (event: IpcMainInvokeEvent, ...args: any[]) => unknown
+
+  const handle = (
+    channel: string,
+    listener: IpcListener,
+    allowOverlay = false,
+  ) => {
+    ipcMain.handle(channel, (event, ...args) => {
+      const isAllowed =
+        event.senderFrame === event.sender.mainFrame &&
+        (
+          handlers.isControlSender(event.sender) ||
+          (allowOverlay && handlers.isOverlaySender(event.sender))
+        )
+
+      if (!isAllowed) {
+        throw new Error(`IPC MemeDrop refusé pour ce renderer : ${channel}.`)
+      }
+
+      return listener(event, ...args)
+    })
+  }
+
+  handle('set-drops-enabled', (_event, enabled: boolean) =>
     handlers.setDropsEnabled(Boolean(enabled)),
   )
 
-  ipcMain.handle('set-hide-own-drops', (_event, enabled: boolean) =>
+  handle('set-hide-own-drops', (_event, enabled: boolean) =>
     handlers.setHideOwnDrops(Boolean(enabled)),
   )
 
-  ipcMain.handle('get-overlay-state', () => handlers.getOverlayState())
-  ipcMain.handle('get-overlay-display-preferences', () =>
-    handlers.getOverlayDisplayPreferences(),
+  handle('get-overlay-state', () => handlers.getOverlayState(), true)
+  handle(
+    'get-overlay-display-preferences',
+    () => handlers.getOverlayDisplayPreferences(),
+    true,
   )
-  ipcMain.handle('get-overlay-displays', () => handlers.getOverlayDisplays())
-  ipcMain.handle(
+  handle('get-overlay-displays', () => handlers.getOverlayDisplays())
+  handle(
     'set-overlay-display-preferences',
     (_event, preferences: OverlayDisplayPreferences) =>
       handlers.setOverlayDisplayPreferences(preferences),
   )
-  ipcMain.handle('get-app-preferences', () => handlers.getAppPreferences())
-  ipcMain.handle('get-app-version-info', () => handlers.getAppVersionInfo())
-  ipcMain.handle('get-app-update-state', () => handlers.getAppUpdateState())
-  ipcMain.handle('check-for-app-update', () => handlers.checkForAppUpdate())
-  ipcMain.handle('download-app-update', () => handlers.downloadAppUpdate())
-  ipcMain.handle('install-app-update', () => handlers.installAppUpdate())
-  ipcMain.handle('get-tiktok-preload-url', () => handlers.getTikTokPreloadUrl())
-  ipcMain.handle('open-release-page', () => handlers.openReleasePage())
-  ipcMain.handle('set-app-preferences', (_event, preferences: AppPreferences) =>
+  handle('get-app-preferences', () => handlers.getAppPreferences())
+  handle('get-app-version-info', () => handlers.getAppVersionInfo())
+  handle('get-app-update-state', () => handlers.getAppUpdateState())
+  handle('check-for-app-update', () => handlers.checkForAppUpdate())
+  handle('download-app-update', () => handlers.downloadAppUpdate())
+  handle('install-app-update', () => handlers.installAppUpdate())
+  handle('open-release-page', () => handlers.openReleasePage())
+  handle('set-app-preferences', (_event, preferences: AppPreferences) =>
     handlers.setAppPreferences(preferences),
   )
-  ipcMain.handle('quit-app', () => handlers.quitApp())
-  ipcMain.handle('uninstall-app', () => handlers.uninstallApp())
-  ipcMain.handle('get-connection-status', () => handlers.getConnectionStatus())
-  ipcMain.handle('get-shortcut-status', () => handlers.getShortcutStatus())
-  ipcMain.handle('get-shortcut-configs', () => handlers.getShortcutConfigs())
-  ipcMain.handle('start-shortcut-capture', (_event, action: ShortcutActionId) =>
+  handle('quit-app', () => handlers.quitApp())
+  handle('uninstall-app', () => handlers.uninstallApp())
+  handle('get-connection-status', () => handlers.getConnectionStatus())
+  handle('get-shortcut-status', () => handlers.getShortcutStatus())
+  handle('get-shortcut-configs', () => handlers.getShortcutConfigs())
+  handle('start-shortcut-capture', (_event, action: ShortcutActionId) =>
     handlers.startShortcutCapture(action),
   )
-  ipcMain.handle('set-shortcut-capture-mode', (_event, enabled: boolean) => {
+  handle('set-shortcut-capture-mode', (_event, enabled: boolean) => {
     handlers.setShortcutCaptureMode(Boolean(enabled))
   })
-  ipcMain.handle('set-shortcut-configs', (_event, shortcuts: ShortcutConfig[]) =>
+  handle('set-shortcut-configs', (_event, shortcuts: ShortcutConfig[]) =>
     handlers.setShortcutConfigs(shortcuts),
   )
-  ipcMain.handle('reset-shortcut-configs', () => handlers.resetShortcutConfigs())
-  ipcMain.handle('get-connected-users', () => handlers.getConnectedUsers())
-  ipcMain.handle('get-server-config', () => handlers.getServerConfig())
-  ipcMain.handle('save-server-config', (_event, config: ServerConfig) =>
+  handle('reset-shortcut-configs', () => handlers.resetShortcutConfigs())
+  handle('get-connected-users', () => handlers.getConnectedUsers())
+  handle('get-server-config', () => handlers.getServerConfig())
+  handle('save-server-config', (_event, config: ServerConfig) =>
     handlers.saveServerConfig(config),
   )
-  ipcMain.handle('authenticate-discord', () => handlers.authenticateDiscord())
-  ipcMain.handle('disconnect-discord', () => handlers.disconnectDiscord())
-  ipcMain.handle('toggle-drops', () => handlers.toggleDrops())
-  ipcMain.handle('toggle-hide-own-drops', () => handlers.toggleHideOwnDrops())
-  ipcMain.handle('skip-current-drop', () => handlers.skipCurrentDrop())
-  ipcMain.handle('complete-current-drop', (_event, dropId: string) => {
-    handlers.completeCurrentDrop(dropId)
-  })
-  ipcMain.handle('stop-current-drop-for-everyone', () =>
+  handle('authenticate-discord', () => handlers.authenticateDiscord())
+  handle('disconnect-discord', () => handlers.disconnectDiscord())
+  handle('toggle-drops', () => handlers.toggleDrops())
+  handle('toggle-hide-own-drops', () => handlers.toggleHideOwnDrops())
+  handle('skip-current-drop', () => handlers.skipCurrentDrop())
+  handle(
+    'complete-current-drop',
+    (_event, dropId: string) => {
+      handlers.completeCurrentDrop(dropId)
+    },
+    true,
+  )
+  handle('stop-current-drop-for-everyone', () =>
     handlers.stopCurrentDropForEveryone(),
   )
-  ipcMain.handle('emit-test-drop', (_event, drop: Drop) => handlers.emitTestDrop(drop))
-  ipcMain.handle('clear-test-drop', () => handlers.clearTestDrop())
+  handle('emit-test-drop', (_event, drop: Drop) => handlers.emitTestDrop(drop))
+  handle('clear-test-drop', () => handlers.clearTestDrop())
 }
