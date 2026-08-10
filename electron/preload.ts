@@ -49,6 +49,8 @@ const memedropApi = {
     onChannel('app-version-info', handler),
   onAppUpdateState: (handler: (state: AppUpdateState) => void) =>
     onChannel('app-update-state', handler),
+  onServerConfig: (handler: (config: ServerConfig) => void) =>
+    onChannel('server-config', handler),
   setDropsEnabled: (enabled: boolean) => ipcRenderer.invoke('set-drops-enabled', enabled),
   setHideOwnDrops: (enabled: boolean) => ipcRenderer.invoke('set-hide-own-drops', enabled),
   toggleDrops: () => ipcRenderer.invoke('toggle-drops'),

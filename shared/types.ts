@@ -76,6 +76,12 @@ export type ServerConfig = {
   discordUserAvatarUrl: string | null
 }
 
+// Main-process only. Never expose this shape through the preload bridge.
+export type ServerConnectionConfig = ServerConfig & {
+  authToken: string
+  authTokenExpiresAt: string | null
+}
+
 export type OverlayState = {
   dropsEnabled: boolean
   hideOwnDrops: boolean

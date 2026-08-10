@@ -3,7 +3,7 @@
   "private": true,
   "description": "Overlay desktop MemeDrop relié à Discord pour afficher des images, sons et vidéos.",
   "author": "Maubry94",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"

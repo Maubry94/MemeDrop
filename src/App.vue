@@ -133,6 +133,19 @@ const {
   applyOverlayState,
 })
 
+watch(
+  () => serverConfig.value.discordUserId,
+  (discordUserId) => {
+    if (!discordUserId && !isAuthenticatingDiscord.value) {
+      discordAuthMessage.value = connectionStatus.value?.message.includes(
+        'session Discord expirée',
+      )
+        ? 'Session Discord expirée. Reconnecte-toi pour continuer.'
+        : null
+    }
+  },
+)
+
 watch(dropsEnabled, async (value) => {
   if (!value) {
     void completeActiveDrop()

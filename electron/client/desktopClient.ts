@@ -3,13 +3,13 @@ import type {
   ConnectedUser,
   ConnectionStatus,
   Drop,
-  ServerConfig,
+  ServerConnectionConfig,
 } from '../../shared/types'
 import { startMemeDropClient, type MemeDropClientController } from './memedropClient'
 import { compareAppVersions, getReleaseUrl } from '../core/versionInfo'
 
 type DesktopClientOptions = {
-  getServerConfig: () => ServerConfig
+  getServerConfig: () => ServerConnectionConfig
   getAppVersion: () => string
   getDropsEnabled: () => boolean
   getHideOwnDrops: () => boolean
@@ -19,6 +19,7 @@ type DesktopClientOptions = {
   onControlOnlyDrop: (drop: Drop) => void
   onClearDrop: () => void
   onStatus: (status: ConnectionStatus) => void
+  onAuthenticationRejected: () => void
 }
 
 export const createDesktopClient = ({
@@ -32,6 +33,7 @@ export const createDesktopClient = ({
   onControlOnlyDrop,
   onClearDrop,
   onStatus,
+  onAuthenticationRejected,
 }: DesktopClientOptions) => {
   let client: MemeDropClientController | null = null
   let connectedUsers: ConnectedUser[] = []
@@ -61,9 +63,21 @@ export const createDesktopClient = ({
     client?.completeDrop(dropId)
   }
 
+  const clearConnectionState = () => {
+    connectedUsers = []
+    currentServerDrop = null
+    onConnectedUsers(connectedUsers)
+    onClearDrop()
+  }
+
   const startOrRestart = () => {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
     client?.stop()
     client = null
+    clearConnectionState()
 
     const serverConfig = getServerConfig()
     const { serverUrl, accessKey, discordUserId } = serverConfig
@@ -71,9 +85,7 @@ export const createDesktopClient = ({
     client = startMemeDropClient({
       serverUrl,
       accessKey,
-      userId: discordUserId,
-      userName: serverConfig.discordUserName,
-      userAvatarUrl: serverConfig.discordUserAvatarUrl,
+      authToken: serverConfig.authToken,
       appVersion: getAppVersion(),
       dropsEnabled: getDropsEnabled(),
       onConnectedUsers: (users: ConnectedUser[], latestAppVersion: string) => {
@@ -103,6 +115,10 @@ export const createDesktopClient = ({
         onClearDrop()
       },
       onStatus,
+      onAuthenticationRejected: () => {
+        clearConnectionState()
+        onAuthenticationRejected()
+      },
     })
   }
 

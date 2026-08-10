@@ -1,6 +1,41 @@
 import { config as loadEnv } from 'dotenv'
+import {
+  DEFAULT_IDENTITY_TOKEN_TTL_SECONDS,
+  MAX_IDENTITY_TOKEN_TTL_SECONDS,
+  MIN_IDENTITY_TOKEN_TTL_SECONDS,
+} from './security/identityToken.js'
 
 loadEnv({ quiet: true })
+
+const getServerKey = () => {
+  const serverKey = process.env.MEMEDROP_SERVER_KEY?.trim() ?? ''
+
+  if (Buffer.byteLength(serverKey, 'utf8') < 16) {
+    throw new Error('MEMEDROP_SERVER_KEY must contain at least 16 bytes.')
+  }
+
+  return serverKey
+}
+
+const getIdentityTokenTtlSeconds = () => {
+  const configuredValue = process.env.MEMEDROP_IDENTITY_TOKEN_TTL_SECONDS?.trim()
+  if (!configuredValue) {
+    return DEFAULT_IDENTITY_TOKEN_TTL_SECONDS
+  }
+
+  const ttlSeconds = Number(configuredValue)
+  if (
+    !Number.isSafeInteger(ttlSeconds) ||
+    ttlSeconds < MIN_IDENTITY_TOKEN_TTL_SECONDS ||
+    ttlSeconds > MAX_IDENTITY_TOKEN_TTL_SECONDS
+  ) {
+    throw new Error(
+      `MEMEDROP_IDENTITY_TOKEN_TTL_SECONDS must be an integer between ${MIN_IDENTITY_TOKEN_TTL_SECONDS} and ${MAX_IDENTITY_TOKEN_TTL_SECONDS}.`,
+    )
+  }
+
+  return ttlSeconds
+}
 
 export const config: {
   host: string
@@ -13,6 +48,8 @@ export const config: {
   memedropAllowedChannelIds: string[]
   memedropDropCooldownSeconds: number
   memedropServerKey: string
+  memedropIdentitySigningSecret: string
+  memedropIdentityTokenTtlSeconds: number
   memedropUpdatesDir: string | undefined
   memedropLegacyUpdatesDir: string | undefined
   publicBaseUrl: string | undefined
@@ -32,7 +69,9 @@ export const config: {
     .map((channelId) => channelId.trim())
     .filter(Boolean),
   memedropDropCooldownSeconds: Number(process.env.MEMEDROP_DROP_COOLDOWN_SECONDS ?? 0),
-  memedropServerKey: process.env.MEMEDROP_SERVER_KEY ?? '',
+  memedropServerKey: getServerKey(),
+  memedropIdentitySigningSecret: process.env.MEMEDROP_IDENTITY_SIGNING_SECRET?.trim() ?? '',
+  memedropIdentityTokenTtlSeconds: getIdentityTokenTtlSeconds(),
   memedropUpdatesDir: process.env.MEMEDROP_UPDATES_DIR?.trim() || undefined,
   memedropLegacyUpdatesDir:
     process.env.MEMEDROP_LEGACY_UPDATES_DIR?.trim() || undefined,

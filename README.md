@@ -1,142 +1,67 @@
 # MemeDrop
 
-Overlay desktop qui affiche les memes envoyés depuis Discord avec `/drop`, `/dropme`, `/dropyt` ou `/droptt`.
-
-## Fonctionnement
-
-Le bot Discord tourne côté serveur. Les apps Electron installées chez les utilisateurs se connectent au serveur MemeDrop en WebSocket et affichent les drops localement.
-
-```txt
-Discord -> memedrop-server -> apps Electron
-```
-
-Chaque utilisateur se connecte avec Discord dans l'app.
+MemeDrop est une application Windows reliée à Discord pour envoyer et recevoir des memes (des drops) dans un overlay au-dessus des autres applications.
 
 ## Fonctionnalités
 
-- `/drop` : envoyer une image, vidéo ou piste audio.
-- `/dropme` : envoyer une image, vidéo ou piste audio uniquement à soi-même.
-- `/dropyt` : envoyer une vidéo YouTube.
-- `/droptt` : envoyer une vidéo TikTok.
-- `/redrop` : renvoyer un drop récent.
-- `/dropstatus` : voir les autres utilisateurs connectés à MemeDrop.
-- `/download` : obtenir la dernière version de MemeDrop.
-- `/help` : afficher l'aide des commandes MemeDrop.
-- Options Discord :
-  - `legende` : ajouter un texte au drop.
-  - `anonyme` : masquer son pseudo et son avatar.
-  - `cible` : envoyer le drop à une personne connectée à MemeDrop avec les drops activés.
-- Queue commune pour les drops globaux.
-- Queues séparées par utilisateur pour les drops ciblés.
-- Bouton Discord `Stopper le drop` pour l'auteur.
-- Connexion Discord OAuth dans l'app.
-- Option pour masquer ses propres drops.
-- Volume des drops réglable.
-- Position et taille des drops personnalisables.
-- Bouton de test local pour prévisualiser un drop sans l'envoyer au serveur.
-- Préférences d'application :
-  - minimiser en arrière-plan.
-  - démarrer avec Windows.
-  - démarrer minimisé avec Windows.
-  - quitter vraiment l'application.
-  - désinstaller l'application.
-- Icône tray Windows avec menu rapide.
-- Page `Connecté(s)` dans l'app pour voir les autres utilisateurs connectés.
-- Raccourcis globaux pour couper ou désactiver les drops.
-- Mise à jour automatique de l'app desktop avec manifest Ed25519 et SHA-512 vérifiés (Authenticode reste facultatif).
+- Drops d'images, de vidéos, de sons, de vidéos YouTube et de TikTok.
+- Envoi global, ciblé vers une personne ou uniquement à soi-même.
+- Légendes, envoi anonyme et renvoi d'un drop récent.
+- Files d'attente et possibilité d'arrêter un drop en cours.
+- Overlay personnalisable : position, taille, volume et affichage de ses propres drops.
+- Connexion Discord, liste des utilisateurs connectés, raccourcis globaux et icône dans la zone de notification Windows.
+- Mises à jour directement depuis l'application.
 
-## Commandes Discord
+Les commandes Discord disponibles sont `/drop`, `/dropme`, `/dropyt`, `/droptt`, `/redrop`, `/dropstatus`, `/download` et `/help`.
 
-### `/drop`
+## Prérequis
 
-Envoie un fichier pris en charge par MemeDrop.
+- Windows pour utiliser et construire l'application desktop.
+- [Node.js](https://nodejs.org/) 22.12.0 ou une version plus récente.
+- [Docker](https://www.docker.com/) avec Docker Compose pour le serveur.
+- Une application Discord avec un bot, installée sur un serveur Discord.
 
-Options :
+## Configuration
 
-- `fichier` : image, vidéo ou son.
-- `legende` : texte optionnel.
-- `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le drop est global.
-- `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
+Copie `.env.example` vers `.env`, puis renseigne les valeurs correspondant à ton installation.
 
-### `/dropme`
-
-Envoie un fichier pris en charge uniquement à l'utilisateur qui lance la commande.
-
-Options :
-
-- `fichier` : image, vidéo ou son.
-- `legende` : texte optionnel.
-- `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
-
-### `/dropyt`
-
-Envoie une vidéo YouTube.
-
-Options :
-
-- `lien` : URL YouTube.
-- `legende` : texte optionnel.
-- `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le drop est global.
-- `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
-
-### `/droptt`
-
-Envoie une vidéo TikTok.
-
-Options :
-
-- `lien` : URL TikTok.
-- `legende` : texte optionnel.
-- `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le drop est global.
-- `anonyme` : affiche `Envoyé anonymement` avec un avatar `?`.
-
-### `/redrop`
-
-Renvoie un drop récent envoyé par la même personne.
-
-Options :
-
-- `drop` : drop récent à renvoyer.
-- `cible` : utilisateur MemeDrop disponible qui recevra le drop. Si vide, le redrop est global.
-- `legende` : remplace la légende du drop renvoyé. Si vide, la légende d'origine est conservée.
-
-### `/dropstatus`
-
-Affiche en réponse éphémère les autres utilisateurs actuellement connectés à MemeDrop.
-
-Cette commande est utile avant un drop ciblé pour savoir qui peut recevoir un drop.
-
-### `/download`
-
-Affiche en réponse éphémère un bouton pour télécharger la dernière version de l'app desktop MemeDrop.
-
-Les mises à jour peuvent être téléchargées et installées directement depuis l'app uniquement lorsqu'elles ont été construites et vérifiées avec le processus de release décrit plus bas.
-
-### `/help`
-
-Affiche en réponse éphémère une aide détaillée sur les commandes, les drops ciblés et les options disponibles.
-
-## Queues
-
-Les drops globaux utilisent une queue commune et restent synchronisés entre les utilisateurs.
-
-Les drops ciblés utilisent une queue séparée par utilisateur. Ils n'impactent pas la queue globale et ne sont envoyés qu'à la cible.
-
-Un utilisateur ne reçoit qu'un seul drop à la fois. Si un drop global et un drop ciblé doivent arriver en même temps chez la même personne, le serveur attend que l'utilisateur soit libre.
-
-## Configuration Discord
-
-Dans le Developer Portal Discord, utilise l'application de ton bot.
-
-1. Récupère :
-   - `DISCORD_BOT_TOKEN` dans l'onglet `Bot`
-   - `DISCORD_CLIENT_ID` dans `Informations générales`
-   - `DISCORD_CLIENT_SECRET` dans `OAuth2`
-2. Dans `OAuth2`, ajoute la Redirect URI du serveur :
-
-```txt
-https://memedrop.example.com/auth/discord/callback
+```powershell
+cp .env.example .env
 ```
+
+| Variable | Description | Obligatoire |
+| --- | --- | --- |
+| `DISCORD_BOT_TOKEN` | Token du bot Discord. | Oui |
+| `DISCORD_CLIENT_ID` | Identifiant de l'application Discord. | Oui |
+| `DISCORD_CLIENT_SECRET` | Secret OAuth2 de l'application Discord. | Oui |
+| `DISCORD_GUILD_ID` | Identifiant du serveur Discord utilisé par MemeDrop. | Oui |
+| `MEMEDROP_SERVER_KEY` | Clé d'accès partagée entre le serveur et les applications, avec au moins 16 caractères aléatoires. | Oui |
+| `MEMEDROP_IDENTITY_SIGNING_SECRET` | Clé aléatoire réservée au serveur, créée avec la commande ci-dessous. | Oui |
+| `MEMEDROP_SERVER_URL` | Adresse par défaut utilisée par l'application desktop. Elle n'est pas utilisée par le conteneur. | Pour l'app |
+| `PUBLIC_BASE_URL` | Adresse publique du serveur, utilisée notamment pour OAuth Discord. | Pour le serveur |
+| `MEMEDROP_ALLOWED_CHANNEL_IDS` | Salons autorisés, séparés par des virgules. Vide pour tous les salons. | Non |
+| `MEMEDROP_ALLOWED_ROLE_IDS` | Rôles autorisés, séparés par des virgules. Vide pour tous les membres. | Non |
+| `MEMEDROP_DROP_COOLDOWN_SECONDS` | Délai entre deux drops d'un même utilisateur. `0` le désactive. | Non |
+| `MEMEDROP_IDENTITY_TOKEN_TTL_SECONDS` | Durée d'une connexion Discord. Par défaut : 30 jours. | Non |
+| `MEMEDROP_UPDATES_DIR` | Dossier des mises à jour dans le conteneur, si elles sont hébergées par ce serveur. | Non |
+| `MEMEDROP_LEGACY_UPDATES_DIR` | Ancien canal de mise à jour, normalement laissé vide. | Non |
+
+Génère deux valeurs différentes avec cette commande : une pour `MEMEDROP_SERVER_KEY` et une pour `MEMEDROP_IDENTITY_SIGNING_SECRET`.
+
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+## Configurer le bot Discord
+
+1. Crée une application dans le [Discord Developer Portal](https://discord.com/developers/applications).
+2. Dans `Bot`, crée le bot et copie son token dans `DISCORD_BOT_TOKEN`.
+3. Récupère l'Application ID pour `DISCORD_CLIENT_ID`, puis le Client Secret dans `OAuth2` pour `DISCORD_CLIENT_SECRET`.
+4. Active le mode développeur dans Discord et copie l'identifiant du serveur dans `DISCORD_GUILD_ID`.
+5. Dans le générateur d'URL OAuth2, sélectionne les scopes `bot` et `applications.commands`, puis installe le bot sur le serveur Discord.
+6. Dans `OAuth2`, ajoute l'URL de redirection correspondant exactement à `PUBLIC_BASE_URL` suivie de `/auth/discord/callback`.
+
+Aucune permission de bot supplémentaire, aucun intent Discord privilégié et aucune `Interactions Endpoint URL` ne sont nécessaires. Les membres doivent simplement pouvoir utiliser les commandes d'application dans le salon.
 
 En local :
 
@@ -144,265 +69,77 @@ En local :
 http://localhost:3010/auth/discord/callback
 ```
 
-La Redirect URI doit être exactement `PUBLIC_BASE_URL` suivie de
-`/auth/discord/callback` (sans double slash).
+En production :
 
-### Rotation des secrets
-
-Si un secret a été affiché dans un terminal, un log ou une conversation, considère-le comme compromis :
-
-1. Dans le Developer Portal Discord, utilise `Reset Token` dans l'onglet `Bot`, puis remplace `DISCORD_BOT_TOKEN` sur le serveur.
-2. Dans `OAuth2`, régénère le client secret, puis remplace `DISCORD_CLIENT_SECRET`.
-3. Génère une nouvelle valeur aléatoire d'au moins 32 octets pour `MEMEDROP_SERVER_KEY`.
-4. Redémarre le serveur et remplace la clé d'accès enregistrée dans chaque app desktop.
-
-Ne stocke jamais les secrets Discord, la clé privée de mise à jour ou un éventuel certificat Authenticode dans Git. Utilise les secrets du système de déploiement ou de la CI.
-
-## Serveur Docker
-
-Copie `.env.example` vers `.env`, puis renseigne :
-
-```env
-DISCORD_BOT_TOKEN=your-discord-bot-token
-DISCORD_GUILD_ID=your-guild-id
-DISCORD_CLIENT_ID=your-discord-application-client-id
-DISCORD_CLIENT_SECRET=your-discord-application-client-secret
-MEMEDROP_ALLOWED_CHANNEL_IDS=
-MEMEDROP_ALLOWED_ROLE_IDS=
-MEMEDROP_DROP_COOLDOWN_SECONDS=0
-MEMEDROP_SERVER_KEY=choose-a-cryptographically-random-shared-secret
-MEMEDROP_UPDATES_DIR=/updates/win-signed-v1
-MEMEDROP_LEGACY_UPDATES_DIR=
-MEMEDROP_SERVER_URL=https://memedrop.example.com
-PUBLIC_BASE_URL=https://memedrop.example.com
+```txt
+https://memedrop.example.com/auth/discord/callback
 ```
 
-`MEMEDROP_ALLOWED_CHANNEL_IDS` peut contenir une liste d'IDs de salons Discord séparés par des virgules. Si la valeur est vide, les commandes MemeDrop sont autorisées dans tous les salons du serveur.
+## Lancer en local
 
-`MEMEDROP_ALLOWED_ROLE_IDS` peut contenir une liste d'IDs de rôles Discord séparés par des virgules. Si la valeur est vide, tout le monde peut envoyer des drops.
-
-`MEMEDROP_DROP_COOLDOWN_SECONDS` limite la fréquence d'envoi des drops par utilisateur. `0` désactive le cooldown.
-
-`MEMEDROP_UPDATES_DIR` indique le dossier du canal normal. Les manifests de ce canal sont signés avec la clé Ed25519 de MemeDrop, même si l'EXE n'a pas de certificat Windows.
-
-`MEMEDROP_LEGACY_UPDATES_DIR` reste vide en fonctionnement normal. Il n'est activé que temporairement pour faire migrer les anciens clients 3.0.1 depuis `/updates/win/`.
-
-Lance le serveur :
-
-```sh
-docker compose up -d --build
-```
-
-Le serveur expose :
-
-- `GET /`
-- `GET /health`
-- `GET /health.json`
-- `GET /ws`
-- `GET /updates/win-signed-v1/:file`
-- `GET /updates/win/:file` uniquement si le canal de migration est activé
-- `POST /auth/discord/session`
-- `GET /auth/discord/session/:id`
-- `GET /auth/discord/callback`
-
-Pour servir les mises à jour desktop avec Docker, monte un dossier de releases dans le conteneur :
-
-```yml
-environment:
-  PORT: 3010
-  MEMEDROP_UPDATES_DIR: /updates/win-signed-v1
-volumes:
-  - ./releases/win-signed-v1:/updates/win-signed-v1:ro
-  - ./releases/win:/updates/win:ro
-```
-
-## App Desktop
-
-Au premier lancement, l'utilisateur voit l'écran de connexion Discord.
-
-Si besoin, ouvrir `Paramètres serveur` et renseigner :
-
-- URL du serveur, par exemple `https://memedrop.example.com`
-- clé d'accès, identique à `MEMEDROP_SERVER_KEY`
-
-Puis cliquer sur `Se connecter avec Discord`.
-
-La configuration locale de l'app est stockée dans le dossier utilisateur de l'application. Elle est conservée entre les réinstallations.
-
-L'onglet `Connecté(s)` affiche les autres utilisateurs actuellement connectés à MemeDrop.
-
-Quand une nouvelle version est disponible, l'app vérifie son manifest Ed25519 et le SHA-512 de l'installateur avant de proposer son installation. Le feed HTTPS et la clé publique sont intégrés à l'app : ils sont indépendants de l'URL du serveur MemeDrop configurée par l'utilisateur.
-
-## Préférences
-
-Options disponibles :
-
-- `Minimiser en arrière-plan` : la croix cache la fenêtre dans le tray au lieu de quitter.
-- `Démarrer avec Windows` : lance MemeDrop à l'ouverture de session.
-- `Quitter MemeDrop` : ferme vraiment l'application.
-- `Désinstaller MemeDrop` : lance le désinstalleur Windows.
-
-Quand `Minimiser en arrière-plan` et `Démarrer avec Windows` sont activés ensemble, MemeDrop démarre directement minimisé dans le tray.
-
-Le tray Windows permet aussi :
-
-- afficher MemeDrop.
-- activer/désactiver les drops.
-- afficher/masquer ses propres drops.
-- quitter MemeDrop.
-
-## Développement
-
-Utilise Node.js 22.12.0 ou une version plus récente. Les versions Electron actuelles et leurs outils d'installation ne prennent plus en charge les versions antérieures de Node 22.
-
-Installer les dépendances :
-
-```sh
-npm install
-```
-
-Le développement utilise le `.env` principal et le même parcours que l'application distribuée.
-Il n'existe pas de profil de configuration ou de parcours Discord propre au mode développement.
-
-1. Lance le serveur avec Docker :
-
-```sh
-docker compose up --build
-```
-
-2. Lance l'application :
-
-```sh
-npm run dev
-```
-
-`npm run dev` lance uniquement Vite et Electron. `Ctrl+C` ferme l'application dans son terminal ;
-`Ctrl+C` arrête Docker dans le terminal du serveur.
-
-Pour le serveur Docker local, utilise dans le `.env` principal :
+Utilise ces adresses dans `.env` :
 
 ```env
 MEMEDROP_SERVER_URL=http://localhost:3010
 PUBLIC_BASE_URL=http://localhost:3010
 ```
 
-La Redirect URI à enregistrer dans le Discord Developer Portal est alors exactement :
-
-```txt
-http://localhost:3010/auth/discord/callback
-```
-
-Le mode développement ne remplace ni cette URL ni les identifiants Discord.
-
-## Build Windows
-
-Créer un installateur local pour les essais :
+Installe les dépendances :
 
 ```sh
-npm run build
+npm install
 ```
 
-Ce build écrit ses artefacts dans `release/local/`, garde volontairement l'auto-update désactivé et ne doit pas être publié comme mise à jour. La politique commune du feed se trouve dans `build/update-policy.json`.
+Lance le serveur :
 
-### Auto-update sans certificat Windows
+```sh
+docker compose up --build
+```
 
-La signature de mise à jour Ed25519 est indépendante d'Authenticode : l'EXE peut rester non signé par Windows tout en étant vérifié cryptographiquement par MemeDrop.
+Puis lance l'application dans un autre terminal :
 
-Une seule fois pour cette identité de publication, génère la paire de clés :
+```sh
+npm run dev
+```
+
+## Déployer en production
+
+1. Renseigne l'adresse publique du serveur dans son `.env` :
+
+```env
+PUBLIC_BASE_URL=https://memedrop.example.com
+```
+
+2. Ajoute `https://memedrop.example.com/auth/discord/callback` aux Redirect URI Discord.
+3. Lance le serveur en arrière-plan :
+
+```sh
+docker compose up -d --build
+```
+
+4. Vérifie son fonctionnement avec `https://memedrop.example.com/health.json`.
+
+Les utilisateurs renseignent ensuite `https://memedrop.example.com` et la même `MEMEDROP_SERVER_KEY` dans les paramètres de l'application. Un `.env` placé à côté de l'exécutable peut aussi fournir ces valeurs par défaut.
+
+## Construire l'application Windows
+
+Pense à mettre à jour la version dans `package.json` avant de créer une release.
+
+```sh
+# Installateur local pour les essais, dans release/local/
+npm run build
+
+# Release avec mise à jour, dans release/update/
+npm run build:update:win
+
+# Release avec certificat Windows, si configuré, dans release/signed/
+npm run build:signed:win
+```
+
+Avant la première release avec mise à jour, génère une seule fois les clés de publication :
 
 ```sh
 npm run update:keygen
 ```
 
-Si `build/update-signing-public.pem` existe déjà, ne relance pas cette commande : restaure plutôt la sauvegarde de la clé privée correspondante dans `.secrets/`.
-
-- `build/update-signing-public.pem` est public, suivi dans Git et embarqué dans l'app ;
-- `.secrets/update-signing-private.pem` est ignoré par Git, ne doit jamais être envoyé au serveur et doit être sauvegardé dans un emplacement hors ligne sûr.
-
-Ne régénère pas cette paire à chaque version. Sans l'ancienne clé privée, les applications déjà installées refuseront les nouvelles mises à jour.
-
-Produis ensuite la release publiable :
-
-```sh
-npm run build:update:win
-```
-
-La commande active l'auto-update, construit l'installateur x64, vérifie les métadonnées, calcule son SHA-512 et signe le manifest. Elle génère dans `release/update/` :
-
-```txt
-latest.yml
-MemeDrop Setup x.x.x.exe
-MemeDrop Setup x.x.x.exe.blockmap
-update-x.x.x.json
-update-x.x.x.json.sig
-```
-
-Dépose ces cinq fichiers dans le dossier exposé par `MEMEDROP_UPDATES_DIR`. Transfère l'EXE, la blockmap, le manifest et sa signature d'abord, puis `latest.yml` en dernier afin qu'aucun client ne voie une release incomplète.
-
-L'installateur peut encore afficher « Éditeur inconnu » ou une alerte SmartScreen au premier lancement : seule une signature Authenticode reconnue par Windows supprime ce comportement. Cela n'empêche pas l'app de vérifier elle-même les mises à jour suivantes.
-
-### Authenticode facultatif
-
-Si un certificat Authenticode est acquis plus tard, inscris son nom d'éditeur exact et public dans `build/update-policy.json` :
-
-```json
-{
-  "feedUrl": "https://memedrop.maubry94.ovh/updates/win-signed-v1",
-  "windowsPublisherNames": ["Nom exact du certificat Authenticode"]
-}
-```
-
-Cette valeur est volontairement suivie dans Git : une modification de l'identité de confiance doit être relue. Seuls le certificat et son mot de passe sont secrets.
-
-Définis ensuite ces variables dans PowerShell ou dans les secrets de la CI :
-
-```powershell
-$env:CSC_LINK = 'chemin, URL sécurisée ou contenu base64 du certificat PFX'
-$env:CSC_KEY_PASSWORD = 'mot de passe du certificat'
-npm run build:signed:win
-```
-
-Ne place pas ces valeurs dans `.env`. `build:signed:win` refuse de continuer si l'éditeur, le certificat ou la clé Ed25519 manque. Après le build, il contrôle également :
-
-- la signature Authenticode de l'installateur ;
-- l'éditeur attendu dans le certificat et `app-update.yml` ;
-- l'URL HTTPS figée du feed ;
-- la version et le SHA-512 de `latest.yml` ;
-- le manifest Ed25519 utilisé par l'app.
-
-Le build Authenticode génère les mêmes cinq fichiers dans `release/signed/`. Si une vérification échoue, ne publie aucun fichier.
-
-### Première migration depuis la version 3.0.1
-
-La version 3.0.1 ne connaît pas encore la clé Ed25519. Pour permettre l'auto-update demandé sans installation manuelle, l'ancien feed constitue donc un pont temporaire moins sûr :
-
-1. Publie les cinq fichiers de `release/update/` sur le canal normal `releases/win-signed-v1/`.
-2. Copie exactement le même EXE, sa blockmap et `latest.yml` dans `releases/win/`, en copiant `latest.yml` en dernier. Ne publie jamais un build de `release/local/`.
-3. Active temporairement `MEMEDROP_LEGACY_UPDATES_DIR=/updates/win` et redéploie le serveur.
-4. Demande aux proches utilisant 3.0.1 de lancer la mise à jour directement vers la version 3.0.4 ou une version plus récente. Si possible, confirme-leur hors bande le SHA-512 de l'EXE.
-5. Dès que tout le monde utilise au minimum la version 3.0.4, vide `MEMEDROP_LEGACY_UPDATES_DIR`, supprime les fichiers du canal legacy et redéploie. Ne fais plus évoluer ce canal.
-
-Pendant cette courte migration, un attaquant capable de remplacer simultanément l'ancien `latest.yml` et l'EXE pourrait encore tromper un client 3.0.1. Les versions suivantes utilisent uniquement `/updates/win-signed-v1/` et refuseront tout manifest ou installateur qui ne correspond pas à la clé publique embarquée.
-
-Les versions 3.0.2 et 3.0.3 contiennent un faux positif dans le contrôle des redirections de `net.fetch` : elles refusent le manifeste signé même lorsque le serveur répond directement. Elles ne peuvent donc pas s'auto-mettre à jour et doivent recevoir manuellement l'installateur 3.0.4 depuis un canal de confiance. Une fois la version 3.0.4 installée, les mises à jour Ed25519 suivantes fonctionnent normalement.
-
-Lors d'une future rotation de clé Ed25519, publie d'abord avec l'ancienne clé une version qui embarque aussi la nouvelle. Pour une rotation de certificat Authenticode, autorise temporairement les deux éditeurs dans `windowsPublisherNames`.
-
-Créer seulement le dossier Windows non packagé :
-
-```sh
-npm run pack:win
-```
-
-Si Electron Builder bloque sur les liens symboliques, active le Mode développeur Windows ou lance le terminal en administrateur.
-
-## Raccourcis
-
-- `Ctrl+Shift+D` : activer/désactiver tous les drops.
-- `Ctrl+Shift+S` : masquer le drop actuel uniquement chez toi.
-- `Ctrl+Shift+M` : afficher/masquer ses propres drops.
-- `Ctrl+Shift+X` : stopper le drop envoyé pour toutes les personnes qui l'ont reçu.
-
-## Notes
-
-- Les vidéos en vrai plein écran exclusif peuvent passer devant l'overlay Electron selon le jeu et Windows.
+Sauvegarde la clé privée générée dans `.secrets/` et ne la publie jamais. Les commandes de build créent les fichiers localement ; leur mise en ligne reste manuelle. Un build provenant de `release/local/` ne doit pas être utilisé comme mise à jour.

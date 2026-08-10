@@ -4,7 +4,7 @@ import type {
   AppPreferences,
   OverlayDisplayPreferences,
   OverlayState,
-  ServerConfig,
+  ServerConnectionConfig,
   ShortcutActionId,
 } from '../../shared/types'
 
@@ -17,7 +17,7 @@ export type ControlWindowBounds = {
 
 export type AppConfigFile = {
   discord?: Record<string, unknown>
-  server?: Partial<ServerConfig>
+  server?: Partial<ServerConnectionConfig>
   overlay?: Partial<Pick<OverlayState, 'hideOwnDrops'> & OverlayDisplayPreferences>
   app?: Partial<AppPreferences>
   shortcuts?: Partial<Record<ShortcutActionId, string>>

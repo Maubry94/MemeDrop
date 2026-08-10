@@ -34,6 +34,7 @@ export type MemeDropPreloadApi = {
   onAppPreferences: (handler: (preferences: AppPreferences) => void) => Unsubscribe
   onAppVersionInfo: (handler: (info: AppVersionInfo) => void) => Unsubscribe
   onAppUpdateState: (handler: (state: AppUpdateState) => void) => Unsubscribe
+  onServerConfig: (handler: (config: ServerConfig) => void) => Unsubscribe
   setDropsEnabled: (enabled: boolean) => Promise<OverlayState>
   setHideOwnDrops: (enabled: boolean) => Promise<OverlayState>
   toggleDrops: () => Promise<OverlayState>

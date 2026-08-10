@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type http from 'node:http'
 import type { DiscordUser } from '../../shared/types.js'
 import { isAuthorizedRequest } from '../http/authKey.js'
 import { sendJsonResponse } from '../http/responses.js'
 import { sendAuthPage } from '../pages/authPage.js'
+import type { IdentityTokenService } from '../security/identityToken.js'
 
 const AUTH_SESSION_MS = 5 * 60 * 1000
 
@@ -12,16 +13,19 @@ type DiscordOAuthOptions = {
   clientSecret?: string
   publicBaseUrl?: string
   serverKey: string
+  identityTokens: Pick<IdentityTokenService, 'issue'>
 }
 
 type DiscordOAuthSession =
   | {
-      status: 'pending'
+      status: 'pending' | 'processing'
       expiresAt: number
+      pollTokenHash: Buffer
     }
   | {
       status: 'done'
       expiresAt: number
+      pollTokenHash: Buffer
       user: DiscordUser
     }
 
@@ -38,6 +42,20 @@ type DiscordTokenResponse = {
 
 const getHeaderValue = (value: string | string[] | undefined): string | undefined =>
   Array.isArray(value) ? value[0] : value
+
+const hashPollToken = (pollToken: string) =>
+  createHash('sha256').update(pollToken, 'utf8').digest()
+
+const isValidPollToken = (request: http.IncomingMessage, expectedHash: Buffer) => {
+  const pollTokenHeader = request.headers['x-memedrop-oauth-poll-token']
+  const pollToken = typeof pollTokenHeader === 'string' ? pollTokenHeader : ''
+
+  if (!pollToken || pollToken.length > 128) {
+    return false
+  }
+
+  return timingSafeEqual(hashPollToken(pollToken), expectedHash)
+}
 
 const getPublicBaseUrl = (request: http.IncomingMessage, publicBaseUrl?: string) => {
   if (publicBaseUrl) {
@@ -68,6 +86,7 @@ export const createDiscordOAuthHandlers = ({
   clientSecret,
   publicBaseUrl,
   serverKey,
+  identityTokens,
 }: DiscordOAuthOptions) => {
   const authSessions = new Map<string, DiscordOAuthSession>()
 
@@ -131,9 +150,8 @@ export const createDiscordOAuthHandlers = ({
   const handleDiscordAuthStart = (
     request: http.IncomingMessage,
     response: http.ServerResponse,
-    requestUrl: URL,
   ) => {
-    if (!isAuthorizedRequest(request, requestUrl, serverKey)) {
+    if (!isAuthorizedRequest(request, serverKey)) {
       console.warn('Connexion Discord refusée: clé MemeDrop invalide.')
       sendJsonResponse(response, 401, { error: 'Invalid MemeDrop key' })
       return
@@ -148,10 +166,12 @@ export const createDiscordOAuthHandlers = ({
     cleanupAuthSessions()
 
     const sessionId = randomUUID()
+    const pollToken = randomBytes(32).toString('base64url')
     const expiresAt = Date.now() + AUTH_SESSION_MS
     authSessions.set(sessionId, {
       status: 'pending',
       expiresAt,
+      pollTokenHash: hashPollToken(pollToken),
     })
 
     const redirectUri = getOAuthRedirectUri(request, publicBaseUrl)
@@ -162,10 +182,12 @@ export const createDiscordOAuthHandlers = ({
     authUrl.searchParams.set('scope', 'identify')
     authUrl.searchParams.set('state', sessionId)
 
-    console.log(`Session OAuth Discord créée: ${sessionId}. Redirect URI: ${redirectUri}`)
+    console.log(`Session OAuth Discord créée. Redirect URI: ${redirectUri}`)
 
+    response.setHeader('cache-control', 'no-store')
     sendJsonResponse(response, 200, {
       sessionId,
+      pollToken,
       authUrl: authUrl.toString(),
       expiresAt: new Date(expiresAt).toISOString(),
     })
@@ -176,35 +198,49 @@ export const createDiscordOAuthHandlers = ({
     response: http.ServerResponse,
     requestUrl: URL,
   ) => {
-    if (!isAuthorizedRequest(request, requestUrl, serverKey)) {
+    if (!isAuthorizedRequest(request, serverKey)) {
       console.warn('Statut OAuth Discord refusé: clé MemeDrop invalide.')
       sendJsonResponse(response, 401, { error: 'Invalid MemeDrop key' })
       return
     }
 
+    response.setHeader('cache-control', 'no-store')
     cleanupAuthSessions()
 
     const sessionId = requestUrl.pathname.split('/').pop()
     if (!sessionId) {
-      sendJsonResponse(response, 404, { status: 'expired' })
+      sendJsonResponse(response, 200, { status: 'expired' })
       return
     }
 
     const session = sessionId ? authSessions.get(sessionId) : undefined
 
     if (!session) {
-      console.warn(`Session OAuth Discord introuvable ou expirée: ${sessionId}.`)
-      sendJsonResponse(response, 404, { status: 'expired' })
+      console.warn('Session OAuth Discord introuvable ou expirée.')
+      sendJsonResponse(response, 200, { status: 'expired' })
+      return
+    }
+
+    if (!isValidPollToken(request, session.pollTokenHash)) {
+      console.warn('Statut OAuth Discord refusé: jeton de polling invalide.')
+      sendJsonResponse(response, 401, { error: 'Invalid OAuth poll token' })
       return
     }
 
     if (session.status === 'done') {
-      authSessions.delete(sessionId)
-      console.log(`Session OAuth Discord terminée: ${sessionId}.`)
-      sendJsonResponse(response, 200, {
-        status: 'done',
-        user: session.user,
-      })
+      try {
+        const issuedToken = identityTokens.issue(session.user)
+        authSessions.delete(sessionId)
+        console.log('Session OAuth Discord terminée.')
+        sendJsonResponse(response, 200, {
+          status: 'done',
+          user: session.user,
+          ...issuedToken,
+        })
+      } catch (error) {
+        console.error('Émission du jeton MemeDrop impossible:', error)
+        sendJsonResponse(response, 500, { error: 'Identity token issuance failed.' })
+      }
       return
     }
 
@@ -218,12 +254,14 @@ export const createDiscordOAuthHandlers = ({
     response: http.ServerResponse,
     requestUrl: URL,
   ) => {
+    cleanupAuthSessions()
+
     const code = requestUrl.searchParams.get('code')
     const sessionId = requestUrl.searchParams.get('state')
     const session = sessionId ? authSessions.get(sessionId) : null
 
-    if (!code || !sessionId || !session) {
-      console.warn(`Callback OAuth Discord invalide ou expiré: ${sessionId ?? 'sans session'}.`)
+    if (!code || !sessionId || !session || session.status !== 'pending') {
+      console.warn('Callback OAuth Discord invalide ou expiré.')
       sendAuthPage(response, {
         title: 'Connexion invalide',
         message: 'La session Discord est invalide ou expirée. Relance la connexion depuis MemeDrop.',
@@ -232,12 +270,36 @@ export const createDiscordOAuthHandlers = ({
       return
     }
 
+    const processingSession: DiscordOAuthSession = {
+      ...session,
+      status: 'processing',
+    }
+    authSessions.set(sessionId, processingSession)
+
     try {
       const user = await exchangeDiscordCode(request, code)
+
+      if (
+        authSessions.get(sessionId) !== processingSession ||
+        processingSession.expiresAt <= Date.now()
+      ) {
+        if (authSessions.get(sessionId) === processingSession) {
+          authSessions.delete(sessionId)
+        }
+        console.warn('Callback OAuth Discord expiré pendant la connexion.')
+        sendAuthPage(response, {
+          title: 'Connexion expirée',
+          message: 'La session Discord a expiré. Relance la connexion depuis MemeDrop.',
+          tone: 'warning',
+        })
+        return
+      }
+
       console.log(`Callback OAuth Discord reçu pour ${user.username} (${user.id}).`)
       authSessions.set(sessionId, {
         status: 'done',
         expiresAt: Date.now() + AUTH_SESSION_MS,
+        pollTokenHash: processingSession.pollTokenHash,
         user,
       })
 
@@ -246,6 +308,9 @@ export const createDiscordOAuthHandlers = ({
         message: 'Ton compte Discord est maintenant lié à MemeDrop. Tu peux fermer cet onglet.',
       })
     } catch (error) {
+      if (authSessions.get(sessionId) === processingSession) {
+        authSessions.delete(sessionId)
+      }
       console.error('Connexion Discord OAuth impossible:', error)
       sendAuthPage(response, {
         title: 'Connexion impossible',

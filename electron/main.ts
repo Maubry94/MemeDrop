@@ -30,6 +30,7 @@ import type {
   AppPreferences,
   OverlayDisplayPreferences,
   OverlayState,
+  ServerConnectionConfig,
   ServerConfig,
 } from '../shared/types'
 
@@ -133,6 +134,9 @@ const loadAppEnv = () => {
 
 const getServerConfig = (): ServerConfig => getConfigStore().getServerConfig()
 
+const getServerConnectionConfig = (): ServerConnectionConfig =>
+  getConfigStore().getServerConnectionConfig()
+
 const saveServerConfig = (config: ServerConfig): ServerConfig => {
   return getConfigStore().saveServerConfig(config)
 }
@@ -198,6 +202,10 @@ const sendToWindows = (channel: string, payload: unknown) => {
   windows.sendToWindows(channel, payload)
 }
 
+const syncServerConfig = (config = getServerConfig()) => {
+  windows.sendToControl('server-config', config)
+}
+
 const syncOverlayState = () => {
   sendToWindows('overlay-state', getOverlayState())
 }
@@ -231,7 +239,7 @@ const setConnectionStatus = (status: ConnectionStatus) => {
 }
 
 const desktopClient = createDesktopClient({
-  getServerConfig,
+  getServerConfig: getServerConnectionConfig,
   getAppVersion: () => app.getVersion(),
   getDropsEnabled: () => dropsEnabled,
   getHideOwnDrops: () => hideOwnDrops,
@@ -252,6 +260,13 @@ const desktopClient = createDesktopClient({
     sendToWindows('clear-drop', null)
   },
   onStatus: setConnectionStatus,
+  onAuthenticationRejected: () => {
+    try {
+      syncServerConfig(getConfigStore().clearDiscordAuthentication())
+    } catch (error) {
+      console.error("Révocation locale de l'authentification Discord impossible:", error)
+    }
+  },
 })
 
 const appUpdater = createAppUpdater({
@@ -265,7 +280,9 @@ const appUpdater = createAppUpdater({
 
 const discordAuth = createDiscordAuth({
   getServerConfig,
-  saveServerConfig,
+  saveDiscordAuthentication: (...args) =>
+    getConfigStore().saveDiscordAuthentication(...args),
+  clearDiscordAuthentication: () => getConfigStore().clearDiscordAuthentication(),
   openExternal: (url) => shell.openExternal(url),
   onConfigChanged: desktopClient.startOrRestart,
 })

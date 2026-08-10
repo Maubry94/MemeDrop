@@ -1,6 +1,7 @@
 import WebSocket, { WebSocketServer } from 'ws'
 import type { ConnectedUser, Drop } from '../shared/types.js'
 import { createDropScheduler } from './dropScheduler.js'
+import { isAuthorizedRequest } from './http/authKey.js'
 import type {
   MemeDropClient,
   MemeDropWebSocketMessage,
@@ -8,6 +9,18 @@ import type {
 } from './types.js'
 
 const HEARTBEAT_INTERVAL_MS = 30000
+const MAX_CLIENT_MESSAGE_BYTES = 16 * 1024
+const DISCORD_AUTH_REQUIRED_CLOSE_CODE = 4001
+const DISCORD_AUTH_REQUIRED_CLOSE_REASON = 'Discord authentication required'
+const AUTH_EXPIRATION_TIMER_SLICE_MS = 24 * 60 * 60 * 1000
+
+const getSingleHeaderValue = (value: string | string[] | undefined): string =>
+  typeof value === 'string' ? value : ''
+
+const getBearerToken = (authorizationHeader: string): string | null => {
+  const match = /^Bearer ([A-Za-z0-9._-]+)$/i.exec(authorizationHeader)
+  return match?.[1] ?? null
+}
 
 const sendJson = (socket: WebSocket, payload: unknown) => {
   if (socket.readyState === WebSocket.OPEN) {
@@ -39,10 +52,15 @@ export const createMemeDropWebSocketServer = ({
   server,
   serverKey,
   latestAppVersion,
+  identityTokens,
 }: MemeDropWebSocketServerOptions) => {
   const clients = new Map<WebSocket, MemeDropClient>()
   const socketAlive = new WeakMap<WebSocket, boolean>()
-  const wss = new WebSocketServer({ server, path: '/ws' })
+  const wss = new WebSocketServer({
+    server,
+    path: '/ws',
+    maxPayload: MAX_CLIENT_MESSAGE_BYTES,
+  })
 
   const getEligibleClients = () =>
     [...clients.entries()]
@@ -146,27 +164,63 @@ export const createMemeDropWebSocketServer = ({
   }
 
   wss.on('connection', (socket, request) => {
-    const requestUrl = new URL(request.url ?? '/ws', `http://${request.headers.host}`)
-    const requestKey = requestUrl.searchParams.get('key') ?? ''
-    const userId = requestUrl.searchParams.get('userId') ?? ''
-    const userName = requestUrl.searchParams.get('userName') ?? ''
-    const userAvatarUrl = requestUrl.searchParams.get('userAvatarUrl') ?? ''
-    const appVersion = requestUrl.searchParams.get('appVersion') ?? ''
+    socket.on('error', (error) => {
+      console.warn(`Erreur WebSocket MemeDrop: ${error.message}`)
+    })
 
-    if (serverKey && requestKey !== serverKey) {
+    const appVersionHeader = getSingleHeaderValue(request.headers['x-memedrop-app-version'])
+    const appVersion = appVersionHeader.length <= 100 ? appVersionHeader.trim() : ''
+
+    if (!isAuthorizedRequest(request, serverKey)) {
       console.warn('Client MemeDrop refusé: clé invalide.')
       socket.close(1008, 'Invalid MemeDrop key')
       return
     }
 
+    const authorizationHeader = getSingleHeaderValue(request.headers.authorization)
+    const authToken = getBearerToken(authorizationHeader)
+    const verification = authToken ? identityTokens.verify(authToken) : null
+
+    if (!verification?.ok) {
+      const reason = !authorizationHeader
+        ? 'missing'
+        : !authToken
+          ? 'invalid'
+          : (verification?.reason ?? 'invalid')
+      console.warn(`Client MemeDrop refusé: authentification Discord ${reason}.`)
+      socket.close(DISCORD_AUTH_REQUIRED_CLOSE_CODE, DISCORD_AUTH_REQUIRED_CLOSE_REASON)
+      return
+    }
+
+    let authExpirationTimer: NodeJS.Timeout | null = null
+    const scheduleAuthExpiration = () => {
+      authExpirationTimer = null
+      const remainingMs = verification.claims.exp * 1000 - Date.now()
+
+      if (remainingMs <= 0) {
+        if (socket.readyState === WebSocket.OPEN) {
+          console.warn('Client MemeDrop déconnecté: session Discord expirée.')
+          socket.close(DISCORD_AUTH_REQUIRED_CLOSE_CODE, DISCORD_AUTH_REQUIRED_CLOSE_REASON)
+        }
+        return
+      }
+
+      authExpirationTimer = setTimeout(
+        scheduleAuthExpiration,
+        Math.min(remainingMs, AUTH_EXPIRATION_TIMER_SLICE_MS),
+      )
+      authExpirationTimer.unref()
+    }
+
     clients.set(socket, {
-      userId,
-      userName,
-      userAvatarUrl,
+      userId: verification.claims.sub,
+      userName: verification.claims.name,
+      userAvatarUrl: verification.claims.avatarUrl ?? '',
       appVersion,
       dropsEnabled: true,
     })
     socketAlive.set(socket, true)
+    scheduleAuthExpiration()
     console.log(`Client MemeDrop connecté (${getClientLogSummary()}).`)
     sendJson(socket, { type: 'hello' })
     broadcastConnectedUsers()
@@ -202,6 +256,10 @@ export const createMemeDropWebSocketServer = ({
     })
 
     socket.on('close', () => {
+      if (authExpirationTimer) {
+        clearTimeout(authExpirationTimer)
+        authExpirationTimer = null
+      }
       clients.delete(socket)
       socketAlive.delete(socket)
       dropScheduler.removeTarget(socket)

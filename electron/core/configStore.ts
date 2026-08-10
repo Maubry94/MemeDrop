@@ -6,18 +6,77 @@ import {
 } from './appConfig'
 import type {
   AppPreferences,
+  DiscordUser,
   OverlayDisplayPreferences,
+  ServerConnectionConfig,
   ServerConfig,
   ShortcutActionId,
   ShortcutConfig,
 } from '../../shared/types'
 
+const MAX_AUTH_TOKEN_LENGTH = 4096
+const MAX_AUTH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const AUTH_CLOCK_SKEW_MS = 60 * 1000
+const AUTH_TOKEN_PATTERN = /^[A-Za-z0-9._-]+$/
+
+const normalizeString = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : ''
+
 const normalizeServerConfig = (config: ServerConfig): ServerConfig => ({
-  serverUrl: config.serverUrl.trim(),
-  accessKey: config.accessKey.trim(),
-  discordUserId: config.discordUserId.trim(),
-  discordUserName: config.discordUserName.trim(),
-  discordUserAvatarUrl: config.discordUserAvatarUrl?.trim() || null,
+  serverUrl: normalizeString(config.serverUrl),
+  accessKey: normalizeString(config.accessKey),
+  discordUserId: normalizeString(config.discordUserId),
+  discordUserName: normalizeString(config.discordUserName),
+  discordUserAvatarUrl: normalizeString(config.discordUserAvatarUrl) || null,
+})
+
+const normalizeAuthToken = (value: unknown): string => {
+  const token = normalizeString(value)
+  return token.length <= MAX_AUTH_TOKEN_LENGTH && AUTH_TOKEN_PATTERN.test(token)
+    ? token
+    : ''
+}
+
+const normalizeAuthTokenExpiration = (value: unknown): string | null => {
+  const expiration = normalizeString(value)
+  const timestamp = Date.parse(expiration)
+
+  return expiration && Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
+}
+
+const hasUsableAuthentication = (config: ServerConnectionConfig): boolean =>
+  (() => {
+    const now = Date.now()
+    const expiresAt = config.authTokenExpiresAt
+      ? Date.parse(config.authTokenExpiresAt)
+      : Number.NaN
+
+    return Boolean(
+      config.authToken &&
+        config.discordUserId &&
+        expiresAt > now &&
+        expiresAt <= now + MAX_AUTH_TOKEN_TTL_MS + AUTH_CLOCK_SKEW_MS,
+    )
+  })()
+
+const withoutAuthentication = (
+  config: Pick<ServerConnectionConfig, 'serverUrl' | 'accessKey'>,
+): ServerConnectionConfig => ({
+  serverUrl: config.serverUrl,
+  accessKey: config.accessKey,
+  discordUserId: '',
+  discordUserName: '',
+  discordUserAvatarUrl: null,
+  authToken: '',
+  authTokenExpiresAt: null,
+})
+
+const toPublicServerConfig = (config: ServerConnectionConfig): ServerConfig => ({
+  serverUrl: config.serverUrl,
+  accessKey: config.accessKey,
+  discordUserId: config.discordUserId,
+  discordUserName: config.discordUserName,
+  discordUserAvatarUrl: config.discordUserAvatarUrl,
 })
 
 export const createConfigStore = (userDataPath: string) => {
@@ -27,26 +86,99 @@ export const createConfigStore = (userDataPath: string) => {
     writeAppConfigFile(configPath, config)
   }
 
-  const getServerConfig = (): ServerConfig => {
+  const getServerConnectionConfig = (): ServerConnectionConfig => {
     const stored = readConfig().server ?? {}
-
-    return {
-      serverUrl: stored.serverUrl ?? process.env.MEMEDROP_SERVER_URL ?? '',
-      accessKey: stored.accessKey ?? process.env.MEMEDROP_SERVER_KEY ?? '',
-      discordUserId: stored.discordUserId ?? process.env.DISCORD_USER_ID ?? '',
-      discordUserName: stored.discordUserName ?? '',
-      discordUserAvatarUrl: stored.discordUserAvatarUrl ?? null,
+    const normalized: ServerConnectionConfig = {
+      serverUrl: normalizeString(stored.serverUrl ?? process.env.MEMEDROP_SERVER_URL),
+      accessKey: normalizeString(stored.accessKey ?? process.env.MEMEDROP_SERVER_KEY),
+      discordUserId: normalizeString(stored.discordUserId),
+      discordUserName: normalizeString(stored.discordUserName),
+      discordUserAvatarUrl: normalizeString(stored.discordUserAvatarUrl) || null,
+      authToken: normalizeAuthToken(stored.authToken),
+      authTokenExpiresAt: normalizeAuthTokenExpiration(stored.authTokenExpiresAt),
     }
+
+    return hasUsableAuthentication(normalized)
+      ? normalized
+      : withoutAuthentication(normalized)
+  }
+
+  const getServerConfig = (): ServerConfig =>
+    toPublicServerConfig(getServerConnectionConfig())
+
+  const writeServerConnectionConfig = (server: ServerConnectionConfig) => {
+    writeConfig({
+      ...readConfig(),
+      server,
+    })
   }
 
   const saveServerConfig = (config: ServerConfig): ServerConfig => {
-    const nextConfig = {
-      ...readConfig(),
-      server: normalizeServerConfig(config),
+    const normalized = normalizeServerConfig(config)
+    const current = getServerConnectionConfig()
+    const sameServer =
+      normalized.serverUrl === current.serverUrl && normalized.accessKey === current.accessKey
+    const nextConfig = sameServer
+      ? {
+          ...current,
+          serverUrl: normalized.serverUrl,
+          accessKey: normalized.accessKey,
+        }
+      : withoutAuthentication(normalized)
+
+    writeServerConnectionConfig(nextConfig)
+    return toPublicServerConfig(nextConfig)
+  }
+
+  const saveDiscordAuthentication = (
+    expectedServer: Pick<ServerConfig, 'serverUrl' | 'accessKey'>,
+    user: DiscordUser,
+    authToken: string,
+    authTokenExpiresAt: string,
+  ): ServerConfig => {
+    const current = getServerConnectionConfig()
+    const expectedServerUrl = normalizeString(expectedServer.serverUrl)
+    const expectedAccessKey = normalizeString(expectedServer.accessKey)
+
+    if (current.serverUrl !== expectedServerUrl || current.accessKey !== expectedAccessKey) {
+      throw new Error('La configuration du serveur a changé pendant la connexion Discord.')
     }
 
-    writeConfig(nextConfig)
-    return nextConfig.server
+    const normalizedToken = normalizeAuthToken(authToken)
+    const normalizedExpiration = normalizeAuthTokenExpiration(authTokenExpiresAt)
+    const discordUserId = normalizeString(user.id)
+    const now = Date.now()
+    const expirationTimestamp = normalizedExpiration
+      ? Date.parse(normalizedExpiration)
+      : Number.NaN
+
+    if (
+      !normalizedToken ||
+      !normalizedExpiration ||
+      !discordUserId ||
+      expirationTimestamp <= now ||
+      expirationTimestamp > now + MAX_AUTH_TOKEN_TTL_MS + AUTH_CLOCK_SKEW_MS
+    ) {
+      throw new Error("Le serveur a renvoyé une authentification Discord invalide.")
+    }
+
+    const nextConfig: ServerConnectionConfig = {
+      ...current,
+      discordUserId,
+      discordUserName: normalizeString(user.username) || discordUserId,
+      discordUserAvatarUrl: normalizeString(user.avatarUrl) || null,
+      authToken: normalizedToken,
+      authTokenExpiresAt: normalizedExpiration,
+    }
+
+    writeServerConnectionConfig(nextConfig)
+    return toPublicServerConfig(nextConfig)
+  }
+
+  const clearDiscordAuthentication = (): ServerConfig => {
+    const nextConfig = withoutAuthentication(getServerConnectionConfig())
+    writeServerConnectionConfig(nextConfig)
+    return toPublicServerConfig(nextConfig)
   }
 
   const getHideOwnDrops = () => Boolean(readConfig().overlay?.hideOwnDrops)
@@ -140,7 +272,10 @@ export const createConfigStore = (userDataPath: string) => {
 
   return {
     getServerConfig,
+    getServerConnectionConfig,
     saveServerConfig,
+    saveDiscordAuthentication,
+    clearDiscordAuthentication,
     getHideOwnDrops,
     saveHideOwnDrops,
     getOverlayDisplayPreferences,

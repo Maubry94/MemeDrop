@@ -1,5 +1,6 @@
 import type http from 'node:http'
 import type { ConnectedUser, Drop } from '../shared/types.js'
+import type { IdentityTokenService } from './security/identityToken.js'
 
 export type DiscordStatus = 'starting' | 'connected' | 'error'
 
@@ -27,6 +28,7 @@ export type MemeDropWebSocketServerOptions = {
   server: http.Server
   serverKey: string
   latestAppVersion: string
+  identityTokens: Pick<IdentityTokenService, 'verify'>
 }
 
 export type MemeDropWebSocketMessage =

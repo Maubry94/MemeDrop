@@ -1,20 +1,20 @@
 import WebSocket from 'ws'
 import type { ConnectedUser, ConnectionStatus, Drop } from '../../shared/types'
+import { toMemeDropServerUrl } from './serverUrl'
 
 const SERVER_HEARTBEAT_TIMEOUT_MS = 75000
 
 type MemeDropClientOptions = {
   serverUrl: string | undefined
   accessKey: string | undefined
-  userId: string | undefined
-  userName: string | undefined
-  userAvatarUrl: string | null | undefined
+  authToken: string | undefined
   appVersion: string
   dropsEnabled: boolean
   onDrop: (drop: Drop) => void
   onClearDrop: () => void
   onConnectedUsers: (users: ConnectedUser[], latestAppVersion: string) => void
   onStatus: (status: ConnectionStatus) => void
+  onAuthenticationRejected: () => void
 }
 
 type ServerMessage =
@@ -41,43 +41,26 @@ export type MemeDropClientController = {
   stop: () => void
 }
 
-const toWebSocketUrl = (
-  serverUrl: string,
-  accessKey: string | undefined,
-  userId: string | undefined,
-  userName: string | undefined,
-  userAvatarUrl: string | null | undefined,
-  appVersion: string,
-) => {
-  const normalizedUrl = serverUrl.match(/^https?:\/\//i) ? serverUrl : `https://${serverUrl}`
-  const url = new URL(normalizedUrl)
+const toWebSocketUrl = (serverUrl: string) => {
+  const url = toMemeDropServerUrl(serverUrl)
 
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   url.pathname = '/ws'
   url.search = ''
-
-  if (accessKey) {
-    url.searchParams.set('key', accessKey)
-  }
-
-  if (userId) {
-    url.searchParams.set('userId', userId)
-  }
-
-  if (userName) {
-    url.searchParams.set('userName', userName)
-  }
-
-  if (userAvatarUrl) {
-    url.searchParams.set('userAvatarUrl', userAvatarUrl)
-  }
-
-  if (appVersion) {
-    url.searchParams.set('appVersion', appVersion)
-  }
+  url.hash = ''
 
   return url.toString()
 }
+
+const getWebSocketHeaders = (
+  accessKey: string | undefined,
+  authToken: string,
+  appVersion: string,
+): Record<string, string> => ({
+  authorization: `Bearer ${authToken}`,
+  ...(accessKey?.trim() ? { 'x-memedrop-key': accessKey.trim() } : {}),
+  ...(appVersion.trim() ? { 'x-memedrop-app-version': appVersion.trim() } : {}),
+})
 
 const isDrop = (value: unknown): value is Drop => {
   if (!value || typeof value !== 'object') {
@@ -92,15 +75,14 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
   const {
     serverUrl,
     accessKey,
-    userId,
-    userName,
-    userAvatarUrl,
+    authToken,
     appVersion,
     dropsEnabled,
     onDrop,
     onClearDrop,
     onConnectedUsers,
     onStatus,
+    onAuthenticationRejected,
   } = options
 
   if (!serverUrl) {
@@ -116,10 +98,27 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     }
   }
 
+  const normalizedAuthToken = authToken?.trim() ?? ''
+
+  if (!normalizedAuthToken) {
+    onStatus({
+      level: 'error',
+      message: 'Serveur MemeDrop : connexion Discord requise.',
+    })
+    return {
+      completeDrop: () => undefined,
+      stopDrop: () => undefined,
+      updateDropsEnabled: () => undefined,
+      stop: () => undefined,
+    }
+  }
+
   let socket: WebSocket | null = null
   let reconnectTimer: NodeJS.Timeout | null = null
   let heartbeatTimer: NodeJS.Timeout | null = null
   let stopped = false
+  let serverReady = false
+  let currentDropsEnabled = dropsEnabled
 
   const clearReconnectTimer = () => {
     if (reconnectTimer) {
@@ -163,18 +162,17 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
     }, 3000)
   }
 
+  const sendMessage = (payload: unknown) => {
+    if (serverReady && socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(payload))
+    }
+  }
+
   const connect = () => {
     let wsUrl: string
 
     try {
-      wsUrl = toWebSocketUrl(
-        serverUrl.trim(),
-        accessKey?.trim(),
-        userId?.trim(),
-        userName?.trim(),
-        userAvatarUrl,
-        appVersion,
-      )
+      wsUrl = toWebSocketUrl(serverUrl.trim())
     } catch {
       onStatus({
         level: 'error',
@@ -188,25 +186,61 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
       message: 'Serveur MemeDrop : connexion en cours...',
     })
 
-    socket = new WebSocket(wsUrl)
+    let nextSocket: WebSocket
 
-    socket.on('open', () => {
+    try {
+      nextSocket = new WebSocket(wsUrl, {
+        headers: getWebSocketHeaders(accessKey, normalizedAuthToken, appVersion),
+        followRedirects: false,
+      })
+    } catch {
+      onStatus({
+        level: 'error',
+        message: 'Serveur MemeDrop : configuration de connexion invalide.',
+      })
+      return
+    }
+
+    socket = nextSocket
+
+    nextSocket.on('open', () => {
+      if (socket !== nextSocket || stopped) {
+        return
+      }
       resetHeartbeatTimer()
       onStatus({
         level: 'info',
-        message: 'Serveur MemeDrop : connecté.',
-      })
-      sendMessage({
-        type: 'client-state',
-        dropsEnabled,
+        message: 'Serveur MemeDrop : authentification en cours...',
       })
     })
 
-    socket.on('message', (data) => {
+    nextSocket.on('message', (data) => {
+      if (socket !== nextSocket || stopped) {
+        return
+      }
       resetHeartbeatTimer()
 
       try {
         const message = JSON.parse(data.toString()) as ServerMessage
+
+        if (message.type === 'hello') {
+          if (!serverReady) {
+            serverReady = true
+            onStatus({
+              level: 'info',
+              message: 'Serveur MemeDrop : connecté.',
+            })
+            sendMessage({
+              type: 'client-state',
+              dropsEnabled: currentDropsEnabled,
+            })
+          }
+          return
+        }
+
+        if (!serverReady) {
+          return
+        }
 
         if ((message.type === 'active-drop' || message.type === 'drop') && isDrop(message.drop)) {
           console.log(`Drop reçu du serveur MemeDrop : ${message.drop.id}`)
@@ -225,18 +259,38 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
       }
     })
 
-    socket.on('ping', () => {
+    nextSocket.on('ping', () => {
+      if (socket !== nextSocket || stopped) {
+        return
+      }
       resetHeartbeatTimer()
     })
 
-    socket.on('close', () => {
+    nextSocket.on('close', (code) => {
+      if (socket !== nextSocket) {
+        return
+      }
       clearHeartbeatTimer()
+      serverReady = false
+      socket = null
 
       if (stopped) {
         return
       }
 
       onClearDrop()
+
+      if (code === 4001) {
+        stopped = true
+        clearReconnectTimer()
+        onStatus({
+          level: 'error',
+          message: 'Serveur MemeDrop : session Discord expirée, reconnecte-toi.',
+        })
+        onAuthenticationRejected()
+        return
+      }
+
       onStatus({
         level: 'error',
         message: 'Serveur MemeDrop : déconnecté, reconnexion...',
@@ -244,7 +298,10 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
       scheduleReconnect()
     })
 
-    socket.on('error', (error) => {
+    nextSocket.on('error', (error) => {
+      if (socket !== nextSocket || stopped) {
+        return
+      }
       onStatus({
         level: 'error',
         message: `Serveur MemeDrop : erreur (${error.message}).`,
@@ -253,12 +310,6 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
   }
 
   connect()
-
-  const sendMessage = (payload: unknown) => {
-    if (socket?.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(payload))
-    }
-  }
 
   return {
     completeDrop: (dropId: string) => {
@@ -274,6 +325,7 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
       })
     },
     updateDropsEnabled: (enabled: boolean) => {
+      currentDropsEnabled = enabled
       sendMessage({
         type: 'client-state',
         dropsEnabled: enabled,

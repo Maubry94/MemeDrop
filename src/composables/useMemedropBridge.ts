@@ -126,11 +126,12 @@ export const useMemedropBridge = ({
     remember(memedrop.onAppPreferences(setAppPreferences))
     remember(memedrop.onAppVersionInfo(setAppVersionInfo))
     remember(memedrop.onAppUpdateState(setAppUpdateState))
+    remember(memedrop.onServerConfig(setServerConfig))
   }
 
   onMounted(async () => {
-    await requestInitialState()
     subscribe()
+    await requestInitialState()
   })
 
   onBeforeUnmount(() => {

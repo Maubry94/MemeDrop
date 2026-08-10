@@ -9,6 +9,7 @@ import { sendJsonResponse, sendTextResponse } from './http/responses.js'
 import { sendStaticFile } from './http/staticFiles.js'
 import { sendHealthPage } from './pages/healthPage.js'
 import { sendHomePage } from './pages/homePage.js'
+import { createIdentityTokenService } from './security/identityToken.js'
 import { createMemeDropWebSocketServer } from './websocket.js'
 
 let discordStatus = 'starting'
@@ -31,11 +32,24 @@ const getPackageVersion = () => {
 
 const latestAppVersion = getPackageVersion()
 
+const identityTokens = createIdentityTokenService({
+  signingSecret: config.memedropIdentitySigningSecret,
+  ttlSeconds: config.memedropIdentityTokenTtlSeconds,
+})
+
+if (
+  config.memedropServerKey &&
+  config.memedropIdentitySigningSecret === config.memedropServerKey
+) {
+  throw new Error('MEMEDROP_IDENTITY_SIGNING_SECRET must be distinct from MEMEDROP_SERVER_KEY.')
+}
+
 const oauthHandlers = createDiscordOAuthHandlers({
   clientId: config.discordClientId,
   clientSecret: config.discordClientSecret,
   publicBaseUrl: config.publicBaseUrl,
   serverKey: config.memedropServerKey,
+  identityTokens,
 })
 
 const server = http.createServer((request, response) => {
@@ -96,7 +110,7 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'POST' && requestUrl.pathname === '/auth/discord/session') {
-    oauthHandlers.handleDiscordAuthStart(request, response, requestUrl)
+    oauthHandlers.handleDiscordAuthStart(request, response)
     return
   }
 
@@ -117,6 +131,7 @@ const { broadcastDrop, clients, getConnectedUsers, stopDropByOwner } = createMem
   server,
   serverKey: config.memedropServerKey,
   latestAppVersion,
+  identityTokens,
 })
 
 createDiscordBot({
