@@ -1,5 +1,6 @@
 import type {
   AppPreferences,
+  AppUpdateState,
   AppVersionInfo,
   ConnectedUser,
   ConnectionStatus,
@@ -32,6 +33,7 @@ export type MemeDropPreloadApi = {
   onOverlayDisplays: (handler: (displays: OverlayDisplayInfo[]) => void) => Unsubscribe
   onAppPreferences: (handler: (preferences: AppPreferences) => void) => Unsubscribe
   onAppVersionInfo: (handler: (info: AppVersionInfo) => void) => Unsubscribe
+  onAppUpdateState: (handler: (state: AppUpdateState) => void) => Unsubscribe
   setDropsEnabled: (enabled: boolean) => Promise<OverlayState>
   setHideOwnDrops: (enabled: boolean) => Promise<OverlayState>
   toggleDrops: () => Promise<OverlayState>
@@ -47,6 +49,10 @@ export type MemeDropPreloadApi = {
   ) => Promise<OverlayDisplayPreferences>
   getAppPreferences: () => Promise<AppPreferences>
   getAppVersionInfo: () => Promise<AppVersionInfo>
+  getAppUpdateState: () => Promise<AppUpdateState>
+  checkForAppUpdate: () => Promise<AppUpdateState>
+  downloadAppUpdate: () => Promise<AppUpdateState>
+  installAppUpdate: () => Promise<AppUpdateState>
   getTikTokPreloadUrl: () => Promise<string>
   setAppPreferences: (preferences: AppPreferences) => Promise<AppPreferences>
   quitApp: () => Promise<void>

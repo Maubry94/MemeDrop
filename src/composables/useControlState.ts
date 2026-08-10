@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import type {
   AppPreferences,
+  AppUpdateState,
   AppVersionInfo,
   ConnectedUser,
   ConnectionStatus,
@@ -30,6 +31,16 @@ export const useControlState = () => {
     latestVersion: '',
     updateAvailable: false,
     releaseUrl: '',
+  })
+  const appUpdateState = ref<AppUpdateState>({
+    status: 'idle',
+    currentVersion: '',
+    availableVersion: null,
+    downloadProgress: null,
+    errorMessage: null,
+    canCheck: false,
+    canDownload: false,
+    canInstall: false,
   })
   const serverConfig = ref<ServerConfig>({
     serverUrl: '',
@@ -66,6 +77,7 @@ export const useControlState = () => {
     connectionStatus,
     appPreferences,
     appVersionInfo,
+    appUpdateState,
     serverConfig,
     isDiscordConnected,
     otherConnectedUsers,

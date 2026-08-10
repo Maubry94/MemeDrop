@@ -26,6 +26,7 @@ const {
   connectionStatus,
   appPreferences,
   appVersionInfo,
+  appUpdateState,
   serverConfig,
   isDiscordConnected,
   otherConnectedUsers,
@@ -79,6 +80,9 @@ useMemedropBridge({
   setAppVersionInfo: (info) => {
     appVersionInfo.value = info
   },
+  setAppUpdateState: (state) => {
+    appUpdateState.value = state
+  },
   setConnectionStatus: (status) => {
     connectionStatus.value = status
   },
@@ -112,6 +116,9 @@ const {
   uninstallApp,
   quitApp,
   openReleasePage,
+  checkForAppUpdate,
+  downloadAppUpdate,
+  installAppUpdate,
   saveServerConfig,
   authenticateDiscord,
   disconnectDiscord,
@@ -157,6 +164,7 @@ watch(dropsEnabled, async (value) => {
       v-model:server-config="serverConfig"
       :app-preferences="appPreferences"
       :app-version-info="appVersionInfo"
+      :app-update-state="appUpdateState"
       :auth-message="discordAuthMessage"
       :can-stop-global-drop="canStopGlobalDrop"
       :config-saved-message="configSavedMessage"
@@ -185,6 +193,9 @@ watch(dropsEnabled, async (value) => {
       @disconnect-discord="disconnectDiscord"
       @open-preferences="isPreferencesOpen = true"
       @open-release-page="openReleasePage"
+      @check-for-app-update="checkForAppUpdate"
+      @download-app-update="downloadAppUpdate"
+      @install-app-update="installAppUpdate"
       @quit-app="quitApp"
       @reset-shortcuts="resetShortcutConfigs"
       @save-server-config="saveServerConfig"

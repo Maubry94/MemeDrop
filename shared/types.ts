@@ -46,6 +46,26 @@ export type AppVersionInfo = {
   releaseUrl: string
 }
 
+export type AppUpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+
+export type AppUpdateState = {
+  status: AppUpdateStatus
+  currentVersion: string
+  availableVersion: string | null
+  downloadProgress: number | null
+  errorMessage: string | null
+  canCheck: boolean
+  canDownload: boolean
+  canInstall: boolean
+}
+
 export type ServerConfig = {
   serverUrl: string
   accessKey: string

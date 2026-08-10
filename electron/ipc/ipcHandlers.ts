@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import type {
   AppPreferences,
+  AppUpdateState,
   AppVersionInfo,
   ConnectedUser,
   ConnectionStatus,
@@ -25,6 +26,10 @@ export type MemeDropIpcHandlers = {
   ) => OverlayDisplayPreferences
   getAppPreferences: () => AppPreferences
   getAppVersionInfo: () => AppVersionInfo
+  getAppUpdateState: () => AppUpdateState
+  checkForAppUpdate: () => Promise<AppUpdateState>
+  downloadAppUpdate: () => Promise<AppUpdateState>
+  installAppUpdate: () => AppUpdateState
   getTikTokPreloadUrl: () => string
   openReleasePage: () => void
   setAppPreferences: (preferences: AppPreferences) => AppPreferences
@@ -72,6 +77,10 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
   )
   ipcMain.handle('get-app-preferences', () => handlers.getAppPreferences())
   ipcMain.handle('get-app-version-info', () => handlers.getAppVersionInfo())
+  ipcMain.handle('get-app-update-state', () => handlers.getAppUpdateState())
+  ipcMain.handle('check-for-app-update', () => handlers.checkForAppUpdate())
+  ipcMain.handle('download-app-update', () => handlers.downloadAppUpdate())
+  ipcMain.handle('install-app-update', () => handlers.installAppUpdate())
   ipcMain.handle('get-tiktok-preload-url', () => handlers.getTikTokPreloadUrl())
   ipcMain.handle('open-release-page', () => handlers.openReleasePage())
   ipcMain.handle('set-app-preferences', (_event, preferences: AppPreferences) =>
