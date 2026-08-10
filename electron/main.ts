@@ -222,7 +222,8 @@ const desktopClient = createDesktopClient({
 })
 
 const appUpdater = createAppUpdater({
-  getServerConfig,
+  enabled: __MEMEDROP_AUTO_UPDATE_ENABLED__,
+  feedUrl: __MEMEDROP_UPDATE_FEED_URL__,
   getCurrentVersion: () => app.getVersion(),
   onStateChanged: (state) => {
     sendToWindows('app-update-state', state)
@@ -472,7 +473,6 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     saveServerConfig: (config) => {
       const savedConfig = saveServerConfig(config)
       desktopClient.startOrRestart()
-      void appUpdater.checkForUpdates()
       return savedConfig
     },
     authenticateDiscord: discordAuth.authenticateDiscord,

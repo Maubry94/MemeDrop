@@ -87,18 +87,23 @@ const activeUpdateVersion = computed(
 )
 
 const showUpdateBanner = computed(() =>
-  props.isDiscordConnected &&
   (
     props.appVersionInfo.updateAvailable ||
+    props.appUpdateState.status === 'disabled' ||
     props.appUpdateState.status === 'checking' ||
     props.appUpdateState.status === 'available' ||
     props.appUpdateState.status === 'downloading' ||
+    props.appUpdateState.status === 'verifying' ||
     props.appUpdateState.status === 'downloaded' ||
     props.appUpdateState.status === 'error'
   ),
 )
 
 const updateMessage = computed(() => {
+  if (props.appUpdateState.status === 'disabled') {
+    return props.appUpdateState.errorMessage ?? "L'auto-update est désactivé dans ce build."
+  }
+
   if (!props.appUpdateState.canCheck) {
     return "L'auto-update sera disponible dans l'application installée."
   }
@@ -111,6 +116,10 @@ const updateMessage = computed(() => {
     return `Téléchargement en cours (${props.appUpdateState.downloadProgress ?? 0}%).`
   }
 
+  if (props.appUpdateState.status === 'verifying') {
+    return "Vérification cryptographique de la mise à jour en cours..."
+  }
+
   if (props.appUpdateState.status === 'downloaded') {
     return `La version ${activeUpdateVersion.value} est prête. Redémarre MemeDrop pour l'installer.`
   }
@@ -119,21 +128,30 @@ const updateMessage = computed(() => {
     return props.appUpdateState.errorMessage ?? 'Mise à jour impossible pour le moment.'
   }
 
-  if (props.appVersionInfo.updateAvailable || props.appUpdateState.status === 'available') {
+  if (props.appUpdateState.status === 'available') {
     return `Tu utilises la version ${props.appVersionInfo.currentVersion}. La version ${activeUpdateVersion.value} est disponible.`
+  }
+
+  if (props.appVersionInfo.updateAvailable) {
+    return `Le serveur annonce la version ${activeUpdateVersion.value}. Vérifie sa signature avant de la télécharger.`
   }
 
   return `Tu utilises la dernière version de MemeDrop (${props.appVersionInfo.currentVersion}).`
 })
 
 const updateTitle = computed(() => {
+  if (props.appUpdateState.status === 'disabled') {
+    return 'Auto-update désactivé'
+  }
+
   if (props.appUpdateState.status === 'downloaded') {
     return 'Mise à jour prête'
   }
 
   if (
     props.appUpdateState.status === 'checking' ||
-    props.appUpdateState.status === 'downloading'
+    props.appUpdateState.status === 'downloading' ||
+    props.appUpdateState.status === 'verifying'
   ) {
     return 'Mise à jour MemeDrop'
   }
@@ -146,12 +164,20 @@ const updateTitle = computed(() => {
 })
 
 const updateActionLabel = computed(() => {
+  if (props.appUpdateState.status === 'disabled') {
+    return 'Auto-update désactivé'
+  }
+
   if (props.appUpdateState.status === 'checking') {
     return 'Recherche...'
   }
 
   if (props.appUpdateState.status === 'downloading') {
     return 'Téléchargement...'
+  }
+
+  if (props.appUpdateState.status === 'verifying') {
+    return 'Vérification...'
   }
 
   if (props.appUpdateState.status === 'downloaded') {
@@ -162,18 +188,38 @@ const updateActionLabel = computed(() => {
     return 'Réessayer'
   }
 
-  if (props.appVersionInfo.updateAvailable || props.appUpdateState.status === 'available') {
+  if (props.appUpdateState.status === 'available') {
     return 'Télécharger la mise à jour'
+  }
+
+  if (props.appVersionInfo.updateAvailable) {
+    return 'Vérifier la mise à jour'
   }
 
   return 'Rechercher une mise à jour'
 })
 
 const isUpdateActionDisabled = computed(
-  () =>
-    !props.appUpdateState.canCheck ||
-    props.appUpdateState.status === 'checking' ||
-    props.appUpdateState.status === 'downloading',
+  () => {
+    if (
+      props.appUpdateState.status === 'disabled' ||
+      props.appUpdateState.status === 'checking' ||
+      props.appUpdateState.status === 'downloading' ||
+      props.appUpdateState.status === 'verifying'
+    ) {
+      return true
+    }
+
+    if (props.appUpdateState.status === 'downloaded') {
+      return !props.appUpdateState.canInstall
+    }
+
+    if (props.appUpdateState.status === 'available') {
+      return !props.appUpdateState.canDownload
+    }
+
+    return !props.appUpdateState.canCheck
+  },
 )
 
 const runUpdateAction = () => {
@@ -182,7 +228,7 @@ const runUpdateAction = () => {
     return
   }
 
-  if (props.appVersionInfo.updateAvailable || props.appUpdateState.status === 'available') {
+  if (props.appUpdateState.status === 'available') {
     emit('downloadAppUpdate')
     return
   }
@@ -244,6 +290,7 @@ const runUpdateAction = () => {
         {{ updateMessage }}
       </p>
       <Button
+        v-if="appUpdateState.status !== 'disabled'"
         class="mt-3"
         variant="warning"
         size="xs"

@@ -47,11 +47,13 @@ export type AppVersionInfo = {
 }
 
 export type AppUpdateStatus =
+  | 'disabled'
   | 'idle'
   | 'checking'
   | 'available'
   | 'not-available'
   | 'downloading'
+  | 'verifying'
   | 'downloaded'
   | 'error'
 

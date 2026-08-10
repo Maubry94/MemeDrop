@@ -13,6 +13,7 @@ export const config: {
   memedropDropCooldownSeconds: number
   memedropServerKey: string
   memedropUpdatesDir: string | undefined
+  memedropLegacyUpdatesDir: string | undefined
   publicBaseUrl: string | undefined
 } = {
   port: Number(process.env.PORT ?? 3010),
@@ -30,6 +31,8 @@ export const config: {
     .filter(Boolean),
   memedropDropCooldownSeconds: Number(process.env.MEMEDROP_DROP_COOLDOWN_SECONDS ?? 0),
   memedropServerKey: process.env.MEMEDROP_SERVER_KEY ?? '',
-  memedropUpdatesDir: process.env.MEMEDROP_UPDATES_DIR,
+  memedropUpdatesDir: process.env.MEMEDROP_UPDATES_DIR?.trim() || undefined,
+  memedropLegacyUpdatesDir:
+    process.env.MEMEDROP_LEGACY_UPDATES_DIR?.trim() || undefined,
   publicBaseUrl: process.env.PUBLIC_BASE_URL,
 }

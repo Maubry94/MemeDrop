@@ -12,6 +12,8 @@ import { sendHomePage } from './pages/homePage.js'
 import { createMemeDropWebSocketServer } from './websocket.js'
 
 let discordStatus = 'starting'
+const SIGNED_WINDOWS_UPDATE_ROUTE = '/updates/win-signed-v1/'
+const LEGACY_WINDOWS_UPDATE_ROUTE = '/updates/win/'
 
 const getPackageVersion = () => {
   try {
@@ -50,7 +52,7 @@ const server = http.createServer((request, response) => {
     return
   }
 
-  if (request.method === 'GET' && requestUrl.pathname.startsWith('/updates/win/')) {
+  if (request.method === 'GET' && requestUrl.pathname.startsWith(SIGNED_WINDOWS_UPDATE_ROUTE)) {
     if (!config.memedropUpdatesDir) {
       sendTextResponse(response, 404, 'MemeDrop updates directory is not configured.\n')
       return
@@ -59,7 +61,21 @@ const server = http.createServer((request, response) => {
     void sendStaticFile(
       response,
       config.memedropUpdatesDir,
-      requestUrl.pathname.slice('/updates/win/'.length),
+      requestUrl.pathname.slice(SIGNED_WINDOWS_UPDATE_ROUTE.length),
+    )
+    return
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname.startsWith(LEGACY_WINDOWS_UPDATE_ROUTE)) {
+    if (!config.memedropLegacyUpdatesDir) {
+      sendTextResponse(response, 404, 'MemeDrop legacy updates directory is not configured.\n')
+      return
+    }
+
+    void sendStaticFile(
+      response,
+      config.memedropLegacyUpdatesDir,
+      requestUrl.pathname.slice(LEGACY_WINDOWS_UPDATE_ROUTE.length),
     )
     return
   }

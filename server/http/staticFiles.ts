@@ -6,6 +6,8 @@ import type http from 'node:http'
 const contentTypes: Record<string, string> = {
   '.blockmap': 'application/octet-stream',
   '.exe': 'application/vnd.microsoft.portable-executable',
+  '.json': 'application/json; charset=utf-8',
+  '.sig': 'application/octet-stream',
   '.yml': 'application/x-yaml; charset=utf-8',
 }
 
@@ -14,7 +16,14 @@ const getContentType = (filePath: string) =>
 
 const resolveStaticPath = (rootDir: string, requestPath: string) => {
   const rootPath = path.resolve(rootDir)
-  const relativePath = decodeURIComponent(requestPath).replace(/^\/+/, '')
+  let relativePath: string
+
+  try {
+    relativePath = decodeURIComponent(requestPath).replace(/^\/+/, '')
+  } catch {
+    return null
+  }
+
   const filePath = path.resolve(rootPath, relativePath)
 
   if (filePath !== rootPath && !filePath.startsWith(`${rootPath}${path.sep}`)) {

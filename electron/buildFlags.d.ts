@@ -1,0 +1,2 @@
+declare const __MEMEDROP_AUTO_UPDATE_ENABLED__: boolean
+declare const __MEMEDROP_UPDATE_FEED_URL__: string

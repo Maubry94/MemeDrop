@@ -15,6 +15,7 @@ dist-ssr
 release
 *.local
 .env
+.secrets/
 
 # Build/cache artifacts
 .vite

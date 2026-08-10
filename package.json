@@ -1,37 +1,21 @@
 {
   "name": "memedrop",
   "private": true,
-  "version": "3.0.1",
+  "version": "3.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build && npm run build:server && electron-builder",
+    "build:app": "vue-tsc && vite build && npm run build:server",
+    "build": "node scripts/buildWindowsRelease.mjs local",
+    "build:update:win": "node scripts/buildWindowsRelease.mjs update",
+    "build:signed:win": "node scripts/buildWindowsRelease.mjs signed",
     "build:server": "tsc -p tsconfig.server.json",
     "discord:clear-global-commands": "node scripts/clearGlobalCommands.mjs",
     "discord:clear-guild-commands": "node scripts/clearGuildCommands.mjs",
-    "pack:win": "vue-tsc && vite build && npm run build:server && electron-builder --win --dir",
+    "pack:win": "node scripts/buildWindowsRelease.mjs unpacked",
     "preview": "vite preview",
-    "server:start": "node dist-server/server/index.js"
-  },
-  "build": {
-    "appId": "com.memedrop.app",
-    "productName": "MemeDrop",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**",
-      "dist-electron/**"
-    ],
-    "win": {
-      "target": "nsis"
-    },
-    "publish": [
-      {
-        "provider": "generic",
-        "url": "https://memedrop.maubry94.ovh/updates/win"
-      }
-    ]
+    "server:start": "node dist-server/server/index.js",
+    "update:keygen": "node scripts/generateUpdateSigningKey.mjs"
   },
   "dependencies": {
     "discord.js": "^14.26.4",

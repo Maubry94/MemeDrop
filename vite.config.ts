@@ -3,8 +3,31 @@ import path from 'node:path'
 import electron from 'vite-plugin-electron/simple'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
+import updatePolicy from './build/update-policy.json'
 
 delete process.env.ELECTRON_RUN_AS_NODE
+
+const updateMode = process.env.MEMEDROP_UPDATE_MODE ?? 'disabled'
+const supportedUpdateModes = new Set(['disabled', 'ed25519', 'authenticode'])
+
+if (!supportedUpdateModes.has(updateMode)) {
+  throw new Error(`Mode d'auto-update inconnu : ${updateMode}.`)
+}
+
+const autoUpdateEnabled = updateMode !== 'disabled'
+const updateFeedUrl = new URL(updatePolicy.feedUrl)
+
+if (
+  updateFeedUrl.protocol !== 'https:' ||
+  updateFeedUrl.username ||
+  updateFeedUrl.password ||
+  updateFeedUrl.search ||
+  updateFeedUrl.hash
+) {
+  throw new Error('build/update-policy.json doit contenir une URL HTTPS sans identifiants, paramètres ou fragment.')
+}
+
+const normalizedUpdateFeedUrl = updateFeedUrl.toString().replace(/\/$/, '')
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -16,6 +39,10 @@ export default defineConfig({
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
         vite: {
+          define: {
+            __MEMEDROP_AUTO_UPDATE_ENABLED__: JSON.stringify(autoUpdateEnabled),
+            __MEMEDROP_UPDATE_FEED_URL__: JSON.stringify(normalizedUpdateFeedUrl),
+          },
           build: {
             rollupOptions: {
               external: ['ws', 'electron-updater'],

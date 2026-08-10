@@ -43,7 +43,7 @@ Chaque utilisateur se connecte avec Discord dans l'app.
 - Icône tray Windows avec menu rapide.
 - Page `Connecté(s)` dans l'app pour voir les autres utilisateurs connectés.
 - Raccourcis globaux pour couper ou désactiver les drops.
-- Mise à jour automatique de l'app desktop depuis le serveur MemeDrop.
+- Mise à jour automatique de l'app desktop uniquement pour les releases Windows signées.
 
 ## Commandes Discord
 
@@ -110,7 +110,7 @@ Cette commande est utile avant un drop ciblé pour savoir qui peut recevoir un d
 
 Affiche en réponse éphémère un bouton pour télécharger la dernière version de l'app desktop MemeDrop.
 
-Depuis la version `3.0.1`, les mises à jour suivantes peuvent être téléchargées et installées directement depuis l'app.
+Les mises à jour peuvent être téléchargées et installées directement depuis l'app uniquement lorsqu'elles ont été construites et vérifiées avec le processus de release signée décrit plus bas.
 
 ### `/help`
 
@@ -146,6 +146,17 @@ http://localhost:3010/auth/discord/callback
 
 L'URL doit correspondre exactement à `PUBLIC_BASE_URL`.
 
+### Rotation des secrets
+
+Si un secret a été affiché dans un terminal, un log ou une conversation, considère-le comme compromis :
+
+1. Dans le Developer Portal Discord, utilise `Reset Token` dans l'onglet `Bot`, puis remplace `DISCORD_BOT_TOKEN` sur le serveur.
+2. Dans `OAuth2`, régénère le client secret, puis remplace `DISCORD_CLIENT_SECRET`.
+3. Génère une nouvelle valeur aléatoire d'au moins 32 octets pour `MEMEDROP_SERVER_KEY`.
+4. Redémarre le serveur et remplace la clé d'accès enregistrée dans chaque app desktop.
+
+Ne stocke jamais les secrets Discord, la clé privée de mise à jour ou un éventuel certificat Authenticode dans Git. Utilise les secrets du système de déploiement ou de la CI.
+
 ## Serveur Docker
 
 Copie `.env.example` vers `.env`, puis renseigne :
@@ -158,8 +169,9 @@ DISCORD_CLIENT_SECRET=your-discord-application-client-secret
 MEMEDROP_ALLOWED_CHANNEL_IDS=
 MEMEDROP_ALLOWED_ROLE_IDS=
 MEMEDROP_DROP_COOLDOWN_SECONDS=0
-MEMEDROP_SERVER_KEY=choose-a-shared-secret
-MEMEDROP_UPDATES_DIR=/updates/win
+MEMEDROP_SERVER_KEY=choose-a-cryptographically-random-shared-secret
+MEMEDROP_UPDATES_DIR=/updates/win-signed-v1
+MEMEDROP_LEGACY_UPDATES_DIR=
 MEMEDROP_SERVER_URL=https://memedrop.example.com
 PUBLIC_BASE_URL=https://memedrop.example.com
 ```
@@ -170,7 +182,9 @@ PUBLIC_BASE_URL=https://memedrop.example.com
 
 `MEMEDROP_DROP_COOLDOWN_SECONDS` limite la fréquence d'envoi des drops par utilisateur. `0` désactive le cooldown.
 
-`MEMEDROP_UPDATES_DIR` indique le dossier, dans le conteneur Docker, qui contient les fichiers d'auto-update Windows.
+`MEMEDROP_UPDATES_DIR` indique le dossier du canal normal. Les manifests de ce canal sont signés avec la clé Ed25519 de MemeDrop, même si l'EXE n'a pas de certificat Windows.
+
+`MEMEDROP_LEGACY_UPDATES_DIR` reste vide en fonctionnement normal. Il n'est activé que temporairement pour faire migrer les anciens clients 3.0.1 depuis `/updates/win/`.
 
 Lance le serveur :
 
@@ -184,7 +198,8 @@ Le serveur expose :
 - `GET /health`
 - `GET /health.json`
 - `GET /ws`
-- `GET /updates/win/:file`
+- `GET /updates/win-signed-v1/:file`
+- `GET /updates/win/:file` uniquement si le canal de migration est activé
 - `POST /auth/discord/session`
 - `GET /auth/discord/session/:id`
 - `GET /auth/discord/callback`
@@ -194,9 +209,10 @@ Pour servir les mises à jour desktop avec Docker, monte un dossier de releases 
 ```yml
 environment:
   PORT: 3010
-  MEMEDROP_UPDATES_DIR: /updates/win
+  MEMEDROP_UPDATES_DIR: /updates/win-signed-v1
 volumes:
-  - /mnt/HDD/Medias/Dev/memeDrop/releases/win:/updates/win:ro
+  - ./releases/win-signed-v1:/updates/win-signed-v1:ro
+  - ./releases/win:/updates/win:ro
 ```
 
 ## App Desktop
@@ -214,7 +230,7 @@ La configuration locale de l'app est stockée dans le dossier utilisateur de l'a
 
 L'onglet `Connecté(s)` affiche les autres utilisateurs actuellement connectés à MemeDrop.
 
-Quand une nouvelle version est disponible, l'app peut la télécharger depuis le serveur MemeDrop et redémarrer pour l'installer.
+Quand une nouvelle version est disponible, l'app vérifie son manifest Ed25519 et le SHA-512 de l'installateur avant de proposer son installation. Le feed HTTPS et la clé publique sont intégrés à l'app : ils sont indépendants de l'URL du serveur MemeDrop configurée par l'utilisateur.
 
 ## Préférences
 
@@ -275,19 +291,95 @@ http://localhost:3010/auth/discord/callback
 
 ## Build Windows
 
-Créer l'installateur Windows :
+Créer un installateur local pour les essais :
 
 ```sh
 npm run build
 ```
 
-Le build génère les fichiers de release dans `release/`. Pour l'auto-update Windows, déposer ces trois fichiers sur le serveur, dans le dossier exposé par `MEMEDROP_UPDATES_DIR` :
+Ce build écrit ses artefacts dans `release/local/`, garde volontairement l'auto-update désactivé et ne doit pas être publié comme mise à jour. La politique commune du feed se trouve dans `build/update-policy.json`.
+
+### Auto-update sans certificat Windows
+
+La signature de mise à jour Ed25519 est indépendante d'Authenticode : l'EXE peut rester non signé par Windows tout en étant vérifié cryptographiquement par MemeDrop.
+
+Une seule fois pour cette identité de publication, génère la paire de clés :
+
+```sh
+npm run update:keygen
+```
+
+Si `build/update-signing-public.pem` existe déjà, ne relance pas cette commande : restaure plutôt la sauvegarde de la clé privée correspondante dans `.secrets/`.
+
+- `build/update-signing-public.pem` est public, suivi dans Git et embarqué dans l'app ;
+- `.secrets/update-signing-private.pem` est ignoré par Git, ne doit jamais être envoyé au serveur et doit être sauvegardé dans un emplacement hors ligne sûr.
+
+Ne régénère pas cette paire à chaque version. Sans l'ancienne clé privée, les applications déjà installées refuseront les nouvelles mises à jour.
+
+Produis ensuite la release publiable :
+
+```sh
+npm run build:update:win
+```
+
+La commande active l'auto-update, construit l'installateur x64, vérifie les métadonnées, calcule son SHA-512 et signe le manifest. Elle génère dans `release/update/` :
 
 ```txt
 latest.yml
 MemeDrop Setup x.x.x.exe
 MemeDrop Setup x.x.x.exe.blockmap
+update-x.x.x.json
+update-x.x.x.json.sig
 ```
+
+Dépose ces cinq fichiers dans le dossier exposé par `MEMEDROP_UPDATES_DIR`. Transfère l'EXE, la blockmap, le manifest et sa signature d'abord, puis `latest.yml` en dernier afin qu'aucun client ne voie une release incomplète.
+
+L'installateur peut encore afficher « Éditeur inconnu » ou une alerte SmartScreen au premier lancement : seule une signature Authenticode reconnue par Windows supprime ce comportement. Cela n'empêche pas l'app de vérifier elle-même les mises à jour suivantes.
+
+### Authenticode facultatif
+
+Si un certificat Authenticode est acquis plus tard, inscris son nom d'éditeur exact et public dans `build/update-policy.json` :
+
+```json
+{
+  "feedUrl": "https://memedrop.maubry94.ovh/updates/win-signed-v1",
+  "windowsPublisherNames": ["Nom exact du certificat Authenticode"]
+}
+```
+
+Cette valeur est volontairement suivie dans Git : une modification de l'identité de confiance doit être relue. Seuls le certificat et son mot de passe sont secrets.
+
+Définis ensuite ces variables dans PowerShell ou dans les secrets de la CI :
+
+```powershell
+$env:CSC_LINK = 'chemin, URL sécurisée ou contenu base64 du certificat PFX'
+$env:CSC_KEY_PASSWORD = 'mot de passe du certificat'
+npm run build:signed:win
+```
+
+Ne place pas ces valeurs dans `.env`. `build:signed:win` refuse de continuer si l'éditeur, le certificat ou la clé Ed25519 manque. Après le build, il contrôle également :
+
+- la signature Authenticode de l'installateur ;
+- l'éditeur attendu dans le certificat et `app-update.yml` ;
+- l'URL HTTPS figée du feed ;
+- la version et le SHA-512 de `latest.yml` ;
+- le manifest Ed25519 utilisé par l'app.
+
+Le build Authenticode génère les mêmes cinq fichiers dans `release/signed/`. Si une vérification échoue, ne publie aucun fichier.
+
+### Première migration depuis la version 3.0.1
+
+La version 3.0.1 ne connaît pas encore la clé Ed25519. Pour permettre l'auto-update demandé sans installation manuelle, l'ancien feed constitue donc un pont temporaire moins sûr :
+
+1. Publie les cinq fichiers de `release/update/` sur le canal normal `releases/win-signed-v1/`.
+2. Copie exactement le même EXE, sa blockmap et `latest.yml` dans `releases/win/`, en copiant `latest.yml` en dernier. Ne publie jamais un build de `release/local/`.
+3. Active temporairement `MEMEDROP_LEGACY_UPDATES_DIR=/updates/win` et redéploie le serveur.
+4. Demande aux proches utilisant 3.0.1 de lancer la mise à jour. Si possible, confirme-leur hors bande le SHA-512 de l'EXE.
+5. Dès que tout le monde utilise la première version durcie, vide `MEMEDROP_LEGACY_UPDATES_DIR`, supprime les fichiers du canal legacy et redéploie. Ne fais plus évoluer ce canal.
+
+Pendant cette courte migration, un attaquant capable de remplacer simultanément l'ancien `latest.yml` et l'EXE pourrait encore tromper un client 3.0.1. Les versions suivantes utilisent uniquement `/updates/win-signed-v1/` et refuseront tout manifest ou installateur qui ne correspond pas à la clé publique embarquée.
+
+Lors d'une future rotation de clé Ed25519, publie d'abord avec l'ancienne clé une version qui embarque aussi la nouvelle. Pour une rotation de certificat Authenticode, autorise temporairement les deux éditeurs dans `windowsPublisherNames`.
 
 Créer seulement le dossier Windows non packagé :
 
