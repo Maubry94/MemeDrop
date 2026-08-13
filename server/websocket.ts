@@ -2,14 +2,23 @@ import WebSocket, { WebSocketServer } from 'ws'
 import type { ConnectedUser, Drop } from '../shared/types.js'
 import { createDropScheduler } from './dropScheduler.js'
 import { isAuthorizedRequest } from './http/authKey.js'
+import { createTokenBucket } from './security/rateLimit.js'
 import type {
   MemeDropClient,
-  MemeDropWebSocketMessage,
   MemeDropWebSocketServerOptions,
 } from './types.js'
+import { parseClientMessage } from './websocketProtocol.js'
 
 const HEARTBEAT_INTERVAL_MS = 30000
 const MAX_CLIENT_MESSAGE_BYTES = 16 * 1024
+const MAX_WEBSOCKET_CLIENTS = 128
+const MAX_CONNECTIONS_PER_IDENTITY = 4
+const MAX_SOCKET_MESSAGES_PER_BURST = 30
+const SOCKET_MESSAGES_REFILL_PER_SECOND = 10
+const MAX_SOCKET_BUFFERED_BYTES = 1024 * 1024
+const POLICY_VIOLATION_CLOSE_CODE = 1008
+const TEMPORARY_OVERLOAD_CLOSE_CODE = 1013
+const RATE_LIMIT_CLOSE_REASON = 'MemeDrop message rate exceeded'
 const DISCORD_AUTH_REQUIRED_CLOSE_CODE = 4001
 const DISCORD_AUTH_REQUIRED_CLOSE_REASON = 'Discord authentication required'
 const AUTH_EXPIRATION_TIMER_SLICE_MS = 24 * 60 * 60 * 1000
@@ -24,28 +33,19 @@ const getBearerToken = (authorizationHeader: string): string | null => {
 
 const sendJson = (socket: WebSocket, payload: unknown) => {
   if (socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify(payload))
-  }
-}
-
-const parseClientMessage = (data: WebSocket.RawData): MemeDropWebSocketMessage | null => {
-  const parsed = JSON.parse(data.toString()) as Partial<MemeDropWebSocketMessage>
-
-  if (
-    (parsed.type === 'drop-completed' || parsed.type === 'drop-stop') &&
-    typeof parsed.dropId === 'string'
-  ) {
-    return parsed as MemeDropWebSocketMessage
-  }
-
-  if (parsed.type === 'client-state') {
-    return {
-      type: 'client-state',
-      dropsEnabled: parsed.dropsEnabled,
+    if (socket.bufferedAmount > MAX_SOCKET_BUFFERED_BYTES) {
+      console.warn('Client MemeDrop déconnecté: file de sortie WebSocket saturée.')
+      socket.close(TEMPORARY_OVERLOAD_CLOSE_CODE, 'MemeDrop client too slow')
+      return
     }
-  }
 
-  return null
+    socket.send(JSON.stringify(payload), (error) => {
+      if (error && socket.readyState !== WebSocket.CLOSED) {
+        console.warn(`Envoi WebSocket MemeDrop impossible: ${error.message}`)
+        socket.terminate()
+      }
+    })
+  }
 }
 
 export const createMemeDropWebSocketServer = ({
@@ -60,6 +60,9 @@ export const createMemeDropWebSocketServer = ({
     server,
     path: '/ws',
     maxPayload: MAX_CLIENT_MESSAGE_BYTES,
+  })
+  wss.on('error', (error) => {
+    console.error('Erreur serveur WebSocket MemeDrop:', error)
   })
 
   const getEligibleClients = () =>
@@ -171,6 +174,12 @@ export const createMemeDropWebSocketServer = ({
     const appVersionHeader = getSingleHeaderValue(request.headers['x-memedrop-app-version'])
     const appVersion = appVersionHeader.length <= 100 ? appVersionHeader.trim() : ''
 
+    if (wss.clients.size > MAX_WEBSOCKET_CLIENTS) {
+      console.warn('Client MemeDrop refusé: capacité WebSocket atteinte.')
+      socket.close(TEMPORARY_OVERLOAD_CLOSE_CODE, 'MemeDrop server capacity reached')
+      return
+    }
+
     if (!isAuthorizedRequest(request, serverKey)) {
       console.warn('Client MemeDrop refusé: clé invalide.')
       socket.close(1008, 'Invalid MemeDrop key')
@@ -191,6 +200,20 @@ export const createMemeDropWebSocketServer = ({
       socket.close(DISCORD_AUTH_REQUIRED_CLOSE_CODE, DISCORD_AUTH_REQUIRED_CLOSE_REASON)
       return
     }
+
+    const identityConnectionCount = [...clients.values()].filter(
+      (client) => client.userId === verification.claims.sub,
+    ).length
+    if (identityConnectionCount >= MAX_CONNECTIONS_PER_IDENTITY) {
+      console.warn('Client MemeDrop refusé: trop de connexions pour cette identité.')
+      socket.close(TEMPORARY_OVERLOAD_CLOSE_CODE, 'Too many MemeDrop connections')
+      return
+    }
+
+    const messageBucket = createTokenBucket({
+      capacity: MAX_SOCKET_MESSAGES_PER_BURST,
+      refillPerSecond: SOCKET_MESSAGES_REFILL_PER_SECOND,
+    })
 
     let authExpirationTimer: NodeJS.Timeout | null = null
     const scheduleAuthExpiration = () => {
@@ -226,9 +249,15 @@ export const createMemeDropWebSocketServer = ({
     broadcastConnectedUsers()
     dropScheduler.scheduleDrops()
 
-    socket.on('message', (data) => {
+    socket.on('message', (data, isBinary) => {
+      if (isBinary || !messageBucket.consume()) {
+        console.warn('Client MemeDrop déconnecté: messages invalides ou trop fréquents.')
+        socket.close(POLICY_VIOLATION_CLOSE_CODE, RATE_LIMIT_CLOSE_REASON)
+        return
+      }
+
       try {
-        const message = parseClientMessage(data)
+        const message = parseClientMessage(data.toString())
         if (!message) {
           return
         }
@@ -241,8 +270,9 @@ export const createMemeDropWebSocketServer = ({
         }
         if (message.type === 'client-state') {
           const client = clients.get(socket)
-          if (client) {
-            client.dropsEnabled = message.dropsEnabled !== false
+          const dropsEnabled = message.dropsEnabled === true
+          if (client && client.dropsEnabled !== dropsEnabled) {
+            client.dropsEnabled = dropsEnabled
             broadcastConnectedUsers()
           }
         }
@@ -284,6 +314,7 @@ export const createMemeDropWebSocketServer = ({
       socket.ping()
     }
   }, HEARTBEAT_INTERVAL_MS)
+  heartbeatTimer.unref()
 
   wss.on('close', () => {
     clearInterval(heartbeatTimer)

@@ -2,11 +2,16 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import type http from 'node:http'
 import type { DiscordUser } from '../../shared/types.js'
 import { isAuthorizedRequest } from '../http/authKey.js'
+import { getRequestPeerKey, getSafeOAuthBaseUrl } from '../http/request.js'
 import { sendJsonResponse } from '../http/responses.js'
 import { sendAuthPage } from '../pages/authPage.js'
+import { createFixedWindowRateLimiter } from '../security/rateLimit.js'
 import type { IdentityTokenService } from '../security/identityToken.js'
 
 const AUTH_SESSION_MS = 5 * 60 * 1000
+const MAX_AUTH_SESSIONS = 256
+const AUTH_STARTS_PER_MINUTE_PER_PEER = 10
+const DISCORD_FETCH_TIMEOUT_MS = 10_000
 
 type DiscordOAuthOptions = {
   clientId?: string
@@ -40,9 +45,6 @@ type DiscordTokenResponse = {
   access_token: string
 }
 
-const getHeaderValue = (value: string | string[] | undefined): string | undefined =>
-  Array.isArray(value) ? value[0] : value
-
 const hashPollToken = (pollToken: string) =>
   createHash('sha256').update(pollToken, 'utf8').digest()
 
@@ -58,13 +60,14 @@ const isValidPollToken = (request: http.IncomingMessage, expectedHash: Buffer) =
 }
 
 const getPublicBaseUrl = (request: http.IncomingMessage, publicBaseUrl?: string) => {
-  if (publicBaseUrl) {
-    return publicBaseUrl.replace(/\/$/, '')
+  const baseUrl = getSafeOAuthBaseUrl(request, publicBaseUrl)
+  if (!baseUrl) {
+    throw new Error(
+      'PUBLIC_BASE_URL must be an HTTPS origin (or an HTTP loopback origin for local development).',
+    )
   }
 
-  const protocol = getHeaderValue(request.headers['x-forwarded-proto']) ?? 'http'
-  const host = getHeaderValue(request.headers['x-forwarded-host']) ?? request.headers.host ?? 'localhost'
-  return `${protocol}://${host}`
+  return baseUrl
 }
 
 const getOAuthRedirectUri = (request: http.IncomingMessage, publicBaseUrl?: string) =>
@@ -89,6 +92,11 @@ export const createDiscordOAuthHandlers = ({
   identityTokens,
 }: DiscordOAuthOptions) => {
   const authSessions = new Map<string, DiscordOAuthSession>()
+  const authStartLimiter = createFixedWindowRateLimiter({
+    limit: AUTH_STARTS_PER_MINUTE_PER_PEER,
+    windowMs: 60_000,
+    maxKeys: 1024,
+  })
 
   const cleanupAuthSessions = () => {
     const now = Date.now()
@@ -110,6 +118,7 @@ export const createDiscordOAuthHandlers = ({
 
     const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
+      signal: AbortSignal.timeout(DISCORD_FETCH_TIMEOUT_MS),
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
       },
@@ -129,6 +138,7 @@ export const createDiscordOAuthHandlers = ({
 
     const token = (await tokenResponse.json()) as DiscordTokenResponse
     const userResponse = await fetch('https://discord.com/api/users/@me', {
+      signal: AbortSignal.timeout(DISCORD_FETCH_TIMEOUT_MS),
       headers: {
         authorization: `Bearer ${token.access_token}`,
       },
@@ -165,6 +175,27 @@ export const createDiscordOAuthHandlers = ({
 
     cleanupAuthSessions()
 
+    if (!authStartLimiter.consume(getRequestPeerKey(request))) {
+      response.setHeader('retry-after', '60')
+      sendJsonResponse(response, 429, { error: 'Too many OAuth sessions.' })
+      return
+    }
+
+    if (authSessions.size >= MAX_AUTH_SESSIONS) {
+      response.setHeader('retry-after', '60')
+      sendJsonResponse(response, 503, { error: 'OAuth session capacity reached.' })
+      return
+    }
+
+    let redirectUri: string
+    try {
+      redirectUri = getOAuthRedirectUri(request, publicBaseUrl)
+    } catch (error) {
+      console.error('Configuration PUBLIC_BASE_URL invalide:', error)
+      sendJsonResponse(response, 503, { error: 'Discord OAuth public URL is invalid.' })
+      return
+    }
+
     const sessionId = randomUUID()
     const pollToken = randomBytes(32).toString('base64url')
     const expiresAt = Date.now() + AUTH_SESSION_MS
@@ -174,7 +205,6 @@ export const createDiscordOAuthHandlers = ({
       pollTokenHash: hashPollToken(pollToken),
     })
 
-    const redirectUri = getOAuthRedirectUri(request, publicBaseUrl)
     const authUrl = new URL('https://discord.com/oauth2/authorize')
     authUrl.searchParams.set('client_id', clientId)
     authUrl.searchParams.set('redirect_uri', redirectUri)

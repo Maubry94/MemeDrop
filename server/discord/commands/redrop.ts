@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { SlashCommandBuilder } from 'discord.js'
 import {
   editDropReplyAndRemember,
@@ -61,7 +62,7 @@ export const redropCommand: MemeDropCommand = {
 
     const drop = withTarget({
       ...recentDrop.drop,
-      id: `redrop-${recentDrop.drop.id}-${Date.now()}`,
+      id: `redrop-${randomUUID()}`,
       caption: caption ?? recentDrop.drop.caption,
       ownerId: interaction.user.id,
       createdAt: new Date().toISOString(),

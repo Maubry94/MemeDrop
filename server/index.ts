@@ -5,6 +5,7 @@ import path from 'node:path'
 import { config } from './config.js'
 import { createDiscordBot } from './discord/client.js'
 import { createDiscordOAuthHandlers } from './discord/oauth.js'
+import { parseRequestUrl } from './http/request.js'
 import { sendJsonResponse, sendTextResponse } from './http/responses.js'
 import { sendStaticFile } from './http/staticFiles.js'
 import { sendHealthPage } from './pages/healthPage.js'
@@ -15,6 +16,7 @@ import { createMemeDropWebSocketServer } from './websocket.js'
 let discordStatus = 'starting'
 const SIGNED_WINDOWS_UPDATE_ROUTE = '/updates/win-signed-v1/'
 const LEGACY_WINDOWS_UPDATE_ROUTE = '/updates/win/'
+const MAX_REQUESTS_PER_SOCKET = 100
 
 const getPackageVersion = () => {
   try {
@@ -53,7 +55,14 @@ const oauthHandlers = createDiscordOAuthHandlers({
 })
 
 const server = http.createServer((request, response) => {
-  const requestUrl = new URL(request.url ?? '/', `http://${request.headers.host}`)
+  response.setHeader('x-content-type-options', 'nosniff')
+  response.setHeader('cache-control', 'no-store')
+  const requestUrl = parseRequestUrl(request.url)
+  if (!requestUrl) {
+    sendTextResponse(response, 400, 'Invalid MemeDrop request target.\n')
+    return
+  }
+
   const healthStatus = {
     ok: true,
     discordStatus,
@@ -76,7 +85,12 @@ const server = http.createServer((request, response) => {
       response,
       config.memedropUpdatesDir,
       requestUrl.pathname.slice(SIGNED_WINDOWS_UPDATE_ROUTE.length),
-    )
+    ).catch((error) => {
+      console.error('Envoi de mise à jour MemeDrop impossible:', error)
+      if (!response.destroyed) {
+        response.destroy(error instanceof Error ? error : undefined)
+      }
+    })
     return
   }
 
@@ -90,7 +104,12 @@ const server = http.createServer((request, response) => {
       response,
       config.memedropLegacyUpdatesDir,
       requestUrl.pathname.slice(LEGACY_WINDOWS_UPDATE_ROUTE.length),
-    )
+    ).catch((error) => {
+      console.error('Envoi de mise à jour legacy MemeDrop impossible:', error)
+      if (!response.destroyed) {
+        response.destroy(error instanceof Error ? error : undefined)
+      }
+    })
     return
   }
 
@@ -120,7 +139,14 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'GET' && requestUrl.pathname === '/auth/discord/callback') {
-    void oauthHandlers.handleDiscordAuthCallback(request, response, requestUrl)
+    void oauthHandlers.handleDiscordAuthCallback(request, response, requestUrl).catch((error) => {
+      console.error('Callback OAuth Discord interrompu:', error)
+      if (!response.headersSent) {
+        sendTextResponse(response, 500, 'Discord OAuth callback failed.\n')
+      } else if (!response.destroyed) {
+        response.destroy(error instanceof Error ? error : undefined)
+      }
+    })
     return
   }
 
@@ -132,6 +158,24 @@ const { broadcastDrop, clients, getConnectedUsers, stopDropByOwner } = createMem
   serverKey: config.memedropServerKey,
   latestAppVersion,
   identityTokens,
+})
+
+server.headersTimeout = 15_000
+server.requestTimeout = 30_000
+server.keepAliveTimeout = 5_000
+server.maxHeadersCount = 64
+server.maxRequestsPerSocket = MAX_REQUESTS_PER_SOCKET
+server.on('clientError', (error, socket) => {
+  console.warn(`Requête HTTP MemeDrop invalide: ${error.message}`)
+  if (socket.writable) {
+    socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n')
+  } else {
+    socket.destroy()
+  }
+})
+server.on('error', (error) => {
+  console.error('Erreur serveur HTTP MemeDrop:', error)
+  process.exit(1)
 })
 
 createDiscordBot({

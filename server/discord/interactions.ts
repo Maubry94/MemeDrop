@@ -197,10 +197,29 @@ export const createInteractionHandler =
         return
       }
 
-      const wasSent = await command.execute(interaction, context)
-
-      if (wasSent) {
+      const previousCooldown = cooldowns.get(interaction.user.id)
+      if (dropCooldownSeconds > 0) {
         cooldowns.set(interaction.user.id, Date.now())
+      }
+
+      try {
+        const wasSent = await command.execute(interaction, context)
+        if (!wasSent && dropCooldownSeconds > 0) {
+          if (previousCooldown === undefined) {
+            cooldowns.delete(interaction.user.id)
+          } else {
+            cooldowns.set(interaction.user.id, previousCooldown)
+          }
+        }
+      } catch (error) {
+        if (dropCooldownSeconds > 0) {
+          if (previousCooldown === undefined) {
+            cooldowns.delete(interaction.user.id)
+          } else {
+            cooldowns.set(interaction.user.id, previousCooldown)
+          }
+        }
+        throw error
       }
     } catch (error) {
       if ((error as DiscordApiErrorLike)?.code === 10062) {

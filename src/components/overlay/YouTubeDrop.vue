@@ -4,10 +4,17 @@ import type { CSSProperties } from 'vue'
 import type { Drop } from '../../../shared/types'
 
 type YouTubeMessage = Record<string, unknown>
+type YouTubeIdentity = {
+  dropId: string
+  generation: number
+}
 
 const YOUTUBE_ORIGIN = 'https://www.youtube.com'
 const YOUTUBE_PLAYER_STATE_ENDED = 0
 const YOUTUBE_HANDSHAKE_INTERVAL_MS = 500
+const YOUTUBE_LOAD_TIMEOUT_MS = 45_000
+const YOUTUBE_STALL_TIMEOUT_MS = 30_000
+const YOUTUBE_PROGRESS_EPSILON_SECONDS = 0.05
 const YOUTUBE_EVENTS = ['onStateChange', 'onError', 'onAutoplayBlocked'] as const
 
 const props = defineProps<{
@@ -21,12 +28,21 @@ const emit = defineEmits<{
 }>()
 
 const youtubeIframe = ref<HTMLIFrameElement | null>(null)
+const iframeGeneration = ref(0)
 
 let youtubeHandshakeTimer: number | undefined
-let completedDropId: string | null = null
+let youtubeHandshakeRevision = 0
+let youtubeWatchdogTimer: number | undefined
+let youtubeWatchdogRevision = 0
+let completedGeneration: number | null = null
+let playerReadyGeneration: number | null = null
+let playbackStartedGeneration: number | null = null
+let lastCurrentTime: number | null = null
 
 const normalizedDropVolume = computed(() => Math.min(Math.max(props.volume, 0), 100) / 100)
-const youtubeIframeId = computed(() => `youtube-player-${props.drop.id}`)
+const youtubeIframeId = computed(
+  () => `youtube-player-${props.drop.id}-${iframeGeneration.value}`,
+)
 
 const youtubeEmbedUrl = computed(() => {
   if (!props.drop.youtubeVideoId) {
@@ -49,59 +65,139 @@ const youtubeEmbedUrl = computed(() => {
   return `${YOUTUBE_ORIGIN}/embed/${encodeURIComponent(props.drop.youtubeVideoId)}?${params.toString()}`
 })
 
-const sendYouTubeMessage = (message: YouTubeMessage) => {
-  youtubeIframe.value?.contentWindow?.postMessage(
-    JSON.stringify(message),
-    YOUTUBE_ORIGIN,
-  )
-}
-
-const sendYouTubeCommand = (func: string, args: unknown[] = []) => {
-  sendYouTubeMessage({ event: 'command', func, args })
-}
-
 const clearYouTubeHandshakeTimer = () => {
-  if (youtubeHandshakeTimer) {
+  youtubeHandshakeRevision += 1
+  if (youtubeHandshakeTimer !== undefined) {
     window.clearInterval(youtubeHandshakeTimer)
     youtubeHandshakeTimer = undefined
   }
 }
 
-const applyDropVolume = () => {
-  sendYouTubeCommand('setVolume', [Math.round(normalizedDropVolume.value * 100)])
+const clearYouTubeWatchdog = () => {
+  youtubeWatchdogRevision += 1
+  if (youtubeWatchdogTimer !== undefined) {
+    window.clearTimeout(youtubeWatchdogTimer)
+    youtubeWatchdogTimer = undefined
+  }
 }
 
-const announceYouTubeListener = () => {
-  sendYouTubeMessage({ event: 'listening', id: youtubeIframeId.value })
+const isCurrentIdentity = ({ dropId, generation }: YouTubeIdentity) =>
+  props.drop.id === dropId &&
+  iframeGeneration.value === generation &&
+  completedGeneration !== generation
+
+const getIframeIdentity = (iframe: HTMLIFrameElement): YouTubeIdentity | null => {
+  const dropId = iframe.dataset.dropId
+  const generation = Number(iframe.dataset.generation)
+  if (!dropId || !Number.isSafeInteger(generation)) {
+    return null
+  }
+
+  const identity = { dropId, generation }
+  return isCurrentIdentity(identity) ? identity : null
 }
 
-const configureYouTubePlayer = () => {
-  YOUTUBE_EVENTS.forEach((eventName) => {
-    sendYouTubeCommand('addEventListener', [eventName])
-  })
-  applyDropVolume()
-  sendYouTubeCommand('playVideo')
-}
-
-const startYouTubeHandshake = () => {
-  clearYouTubeHandshakeTimer()
-  announceYouTubeListener()
-  configureYouTubePlayer()
-  youtubeHandshakeTimer = window.setInterval(
-    announceYouTubeListener,
-    YOUTUBE_HANDSHAKE_INTERVAL_MS,
-  )
-}
-
-const advanceDrop = () => {
-  const dropId = props.drop.id
-  if (!dropId || completedDropId === dropId) {
+const sendYouTubeMessage = (identity: YouTubeIdentity, message: YouTubeMessage) => {
+  const iframe = youtubeIframe.value
+  if (!iframe || !isCurrentIdentity(identity) || getIframeIdentity(iframe) === null) {
     return
   }
 
-  completedDropId = dropId
+  iframe.contentWindow?.postMessage(JSON.stringify(message), YOUTUBE_ORIGIN)
+}
+
+const sendYouTubeCommand = (
+  identity: YouTubeIdentity,
+  func: string,
+  args: unknown[] = [],
+) => {
+  sendYouTubeMessage(identity, { event: 'command', func, args })
+}
+
+const applyDropVolume = (identity: YouTubeIdentity) => {
+  sendYouTubeCommand(identity, 'setVolume', [Math.round(normalizedDropVolume.value * 100)])
+}
+
+const announceYouTubeListener = (identity: YouTubeIdentity) => {
+  sendYouTubeMessage(identity, { event: 'listening', id: youtubeIframeId.value })
+}
+
+const configureYouTubePlayer = (identity: YouTubeIdentity) => {
+  YOUTUBE_EVENTS.forEach((eventName) => {
+    sendYouTubeCommand(identity, 'addEventListener', [eventName])
+  })
+  applyDropVolume(identity)
+  sendYouTubeCommand(identity, 'playVideo')
+}
+
+const startYouTubeHandshake = (identity: YouTubeIdentity) => {
+  if (!isCurrentIdentity(identity)) {
+    return
+  }
+
   clearYouTubeHandshakeTimer()
-  emit('advance', dropId)
+  announceYouTubeListener(identity)
+  configureYouTubePlayer(identity)
+  const expectedHandshakeRevision = youtubeHandshakeRevision
+  youtubeHandshakeTimer = window.setInterval(() => {
+    if (
+      !isCurrentIdentity(identity) ||
+      youtubeHandshakeRevision !== expectedHandshakeRevision
+    ) {
+      return
+    }
+
+    announceYouTubeListener(identity)
+  }, YOUTUBE_HANDSHAKE_INTERVAL_MS)
+}
+
+const advanceDrop = (identity: YouTubeIdentity) => {
+  if (!isCurrentIdentity(identity)) {
+    return
+  }
+
+  completedGeneration = identity.generation
+  clearYouTubeHandshakeTimer()
+  clearYouTubeWatchdog()
+  emit('advance', identity.dropId)
+}
+
+const armYouTubeWatchdog = (
+  identity: YouTubeIdentity,
+  phase: 'load' | 'stall',
+) => {
+  if (!isCurrentIdentity(identity)) {
+    return
+  }
+
+  clearYouTubeWatchdog()
+  const expectedWatchdogRevision = youtubeWatchdogRevision
+  const delay = phase === 'load' ? YOUTUBE_LOAD_TIMEOUT_MS : YOUTUBE_STALL_TIMEOUT_MS
+  youtubeWatchdogTimer = window.setTimeout(() => {
+    if (
+      !isCurrentIdentity(identity) ||
+      youtubeWatchdogRevision !== expectedWatchdogRevision
+    ) {
+      return
+    }
+
+    youtubeWatchdogTimer = undefined
+    youtubeWatchdogRevision += 1
+    console.warn('Lecteur YouTube indisponible.', {
+      ...identity,
+      reason: `${phase}-timeout`,
+    })
+    advanceDrop(identity)
+  }, delay)
+}
+
+const markYouTubeProgress = (identity: YouTubeIdentity) => {
+  if (!isCurrentIdentity(identity)) {
+    return
+  }
+
+  playbackStartedGeneration = identity.generation
+  armYouTubeWatchdog(identity, 'stall')
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -122,22 +218,73 @@ const getYouTubePlayerState = (message: YouTubeMessage) => {
     return typeof state === 'number' ? state : null
   }
 
-  if (message.event === 'infoDelivery' && isRecord(message.info)) {
+  if (
+    (message.event === 'infoDelivery' || message.event === 'initialDelivery') &&
+    isRecord(message.info)
+  ) {
     return typeof message.info.playerState === 'number' ? message.info.playerState : null
   }
 
   return null
 }
 
-const handleYouTubeLoad = () => {
-  startYouTubeHandshake()
+const getYouTubeCurrentTime = (message: YouTubeMessage) => {
+  if (
+    (message.event !== 'infoDelivery' && message.event !== 'initialDelivery') ||
+    !isRecord(message.info)
+  ) {
+    return null
+  }
+
+  const currentTime = message.info.currentTime
+  return typeof currentTime === 'number' && Number.isFinite(currentTime) && currentTime >= 0
+    ? currentTime
+    : null
+}
+
+const handleYouTubeProgress = (identity: YouTubeIdentity, currentTime: number) => {
+  const previousTime = lastCurrentTime
+  if (previousTime === null) {
+    lastCurrentTime = currentTime
+    if (currentTime > YOUTUBE_PROGRESS_EPSILON_SECONDS) {
+      markYouTubeProgress(identity)
+    }
+    return
+  }
+
+  if (
+    currentTime > previousTime + YOUTUBE_PROGRESS_EPSILON_SECONDS ||
+    currentTime < previousTime - 0.5
+  ) {
+    lastCurrentTime = currentTime
+    markYouTubeProgress(identity)
+  }
+}
+
+const handleYouTubeLoad = (event: Event) => {
+  const iframe = event.currentTarget as HTMLIFrameElement
+  if (iframe !== youtubeIframe.value) {
+    return
+  }
+
+  const identity = getIframeIdentity(iframe)
+  if (identity) {
+    startYouTubeHandshake(identity)
+  }
 }
 
 const handleYouTubeMessage = (event: MessageEvent) => {
+  const iframe = youtubeIframe.value
   if (
     event.origin !== YOUTUBE_ORIGIN ||
-    event.source !== youtubeIframe.value?.contentWindow
+    !iframe ||
+    event.source !== iframe.contentWindow
   ) {
+    return
+  }
+
+  const identity = getIframeIdentity(iframe)
+  if (!identity) {
     return
   }
 
@@ -147,37 +294,81 @@ const handleYouTubeMessage = (event: MessageEvent) => {
   }
 
   if (message.event === 'onError' || message.event === 'onAutoplayBlocked') {
-    advanceDrop()
+    advanceDrop(identity)
     return
   }
 
-  if (getYouTubePlayerState(message) === YOUTUBE_PLAYER_STATE_ENDED) {
-    advanceDrop()
+  if (
+    getYouTubePlayerState(message) === YOUTUBE_PLAYER_STATE_ENDED &&
+    playbackStartedGeneration === identity.generation
+  ) {
+    advanceDrop(identity)
     return
   }
 
   if (message.event === 'onReady' || message.event === 'initialDelivery') {
     clearYouTubeHandshakeTimer()
-    configureYouTubePlayer()
+    if (playerReadyGeneration !== identity.generation) {
+      playerReadyGeneration = identity.generation
+      configureYouTubePlayer(identity)
+    }
+  }
+
+  const currentTime = getYouTubeCurrentTime(message)
+  if (currentTime !== null) {
+    handleYouTubeProgress(identity, currentTime)
   }
 }
 
 const handleYouTubeError = (event: Event) => {
-  if (event.currentTarget === youtubeIframe.value) {
-    advanceDrop()
+  const iframe = event.currentTarget as HTMLIFrameElement
+  if (iframe !== youtubeIframe.value) {
+    return
+  }
+
+  const identity = getIframeIdentity(iframe)
+  if (identity) {
+    advanceDrop(identity)
   }
 }
 
+const resetYouTubeDrop = () => {
+  clearYouTubeHandshakeTimer()
+  clearYouTubeWatchdog()
+  iframeGeneration.value += 1
+  completedGeneration = null
+  playerReadyGeneration = null
+  playbackStartedGeneration = null
+  lastCurrentTime = null
+
+  const identity = {
+    dropId: props.drop.id,
+    generation: iframeGeneration.value,
+  }
+  if (!youtubeEmbedUrl.value) {
+    window.queueMicrotask(() => advanceDrop(identity))
+    return
+  }
+
+  armYouTubeWatchdog(identity, 'load')
+}
+
 watch(
-  () => props.volume,
-  () => applyDropVolume(),
+  () => [props.drop.id, props.drop.youtubeVideoId] as const,
+  () => resetYouTubeDrop(),
+  { immediate: true },
 )
 
 watch(
-  () => props.drop.id,
+  () => props.volume,
   () => {
-    clearYouTubeHandshakeTimer()
-    completedDropId = null
+    const identity = {
+      dropId: props.drop.id,
+      generation: iframeGeneration.value,
+    }
+    if (isCurrentIdentity(identity)) {
+      applyDropVolume(identity)
+    }
   },
 )
 
@@ -188,6 +379,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('message', handleYouTubeMessage)
   clearYouTubeHandshakeTimer()
+  clearYouTubeWatchdog()
 })
 </script>
 
@@ -197,9 +389,12 @@ onBeforeUnmount(() => {
     :style="frameStyle"
   >
     <iframe
+      v-if="youtubeEmbedUrl"
       ref="youtubeIframe"
       :id="youtubeIframeId"
-      :key="`youtube-${drop.id}`"
+      :key="`youtube-${drop.id}-${iframeGeneration}`"
+      :data-drop-id="drop.id"
+      :data-generation="iframeGeneration"
       :src="youtubeEmbedUrl"
       allow="autoplay; encrypted-media; picture-in-picture"
       allowfullscreen

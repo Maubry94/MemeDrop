@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import type http from 'node:http'
 
 const contentTypes: Record<string, string> = {
@@ -14,7 +15,10 @@ const contentTypes: Record<string, string> = {
 const getContentType = (filePath: string) =>
   contentTypes[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
 
-const resolveStaticPath = (rootDir: string, requestPath: string) => {
+const isPathInside = (candidatePath: string, rootPath: string) =>
+  candidatePath === rootPath || candidatePath.startsWith(`${rootPath}${path.sep}`)
+
+export const resolveStaticPath = (rootDir: string, requestPath: string) => {
   const rootPath = path.resolve(rootDir)
   let relativePath: string
 
@@ -24,9 +28,17 @@ const resolveStaticPath = (rootDir: string, requestPath: string) => {
     return null
   }
 
+  if (
+    relativePath.includes('\0') ||
+    relativePath.includes('\\') ||
+    relativePath.split('/').some((segment) => segment === '.' || segment === '..')
+  ) {
+    return null
+  }
+
   const filePath = path.resolve(rootPath, relativePath)
 
-  if (filePath !== rootPath && !filePath.startsWith(`${rootPath}${path.sep}`)) {
+  if (!isPathInside(filePath, rootPath)) {
     return null
   }
 
@@ -47,7 +59,18 @@ export const sendStaticFile = async (
   }
 
   try {
-    const fileStat = await stat(filePath)
+    const [realRootPath, realFilePath] = await Promise.all([
+      realpath(path.resolve(rootDir)),
+      realpath(filePath),
+    ])
+
+    if (!isPathInside(realFilePath, realRootPath)) {
+      response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Forbidden.\n')
+      return
+    }
+
+    const fileStat = await stat(realFilePath)
 
     if (!fileStat.isFile()) {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
@@ -58,11 +81,15 @@ export const sendStaticFile = async (
     response.writeHead(200, {
       'cache-control': 'no-store',
       'content-length': fileStat.size,
-      'content-type': getContentType(filePath),
+      'content-type': getContentType(realFilePath),
     })
-    createReadStream(filePath).pipe(response)
-  } catch {
-    response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
-    response.end('File not found.\n')
+    await pipeline(createReadStream(realFilePath), response)
+  } catch (error) {
+    if (!response.headersSent) {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('File not found.\n')
+    } else if (!response.destroyed) {
+      response.destroy(error instanceof Error ? error : undefined)
+    }
   }
 }

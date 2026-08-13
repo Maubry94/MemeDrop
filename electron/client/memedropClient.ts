@@ -291,6 +291,16 @@ export function startMemeDropClient(options: MemeDropClientOptions) {
         return
       }
 
+      if (code === 1008) {
+        stopped = true
+        clearReconnectTimer()
+        onStatus({
+          level: 'error',
+          message: 'Serveur MemeDrop : connexion refusée. Vérifie la clé du serveur.',
+        })
+        return
+      }
+
       onStatus({
         level: 'error',
         message: 'Serveur MemeDrop : déconnecté, reconnexion...',

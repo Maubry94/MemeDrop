@@ -1,6 +1,9 @@
 import type { Drop } from '../shared/types.js'
 
-const DEFAULT_IMAGE_DISPLAY_MS = 9000
+const DEFAULT_IMAGE_SAFETY_TIMEOUT_MS = 60 * 1000
+// Filet de sécurité absolu, volontairement très supérieur aux watchdogs
+// d'inactivité du renderer afin de ne pas couper une lecture normale longue.
+const DEFAULT_MEDIA_SAFETY_TIMEOUT_MS = 6 * 60 * 60 * 1000
 
 type DropScope = 'global' | 'targeted'
 
@@ -21,9 +24,13 @@ type DropSchedulerOptions<TTarget> = {
   sendDrop: (target: TTarget, drop: Drop) => void
   sendClear: (target: TTarget) => void
   getLogSummary?: () => string
-  imageDisplayMs?: number
+  imageSafetyTimeoutMs?: number
+  mediaSafetyTimeoutMs?: number
   logger?: DropSchedulerLogger
 }
+
+const MAX_GLOBAL_QUEUE_LENGTH = 100
+const MAX_TARGETED_QUEUE_LENGTH = 25
 
 export const createDropScheduler = <TTarget>({
   getEligibleTargets,
@@ -31,7 +38,8 @@ export const createDropScheduler = <TTarget>({
   sendDrop,
   sendClear,
   getLogSummary = () => '',
-  imageDisplayMs = DEFAULT_IMAGE_DISPLAY_MS,
+  imageSafetyTimeoutMs = DEFAULT_IMAGE_SAFETY_TIMEOUT_MS,
+  mediaSafetyTimeoutMs = DEFAULT_MEDIA_SAFETY_TIMEOUT_MS,
   logger = console,
 }: DropSchedulerOptions<TTarget>) => {
   const globalQueue: Drop[] = []
@@ -120,12 +128,15 @@ export const createDropScheduler = <TTarget>({
     )
 
     const contentType = drop.contentType?.toLowerCase() ?? ''
-    if (contentType.startsWith('image/')) {
-      job.timer = setTimeout(() => {
-        logger.log(`Drop image terminé par timeout: ${drop.id}.`)
-        finishJob(job, { sendClear: false })
-      }, imageDisplayMs)
-    }
+    const isImage = contentType.startsWith('image/')
+    const timeoutMs = isImage ? imageSafetyTimeoutMs : mediaSafetyTimeoutMs
+    job.timer = setTimeout(() => {
+      logger.warn(
+        `${isImage ? 'Drop image' : 'Drop média'} libéré par timeout de sécurité: ${drop.id}.`,
+      )
+      finishJob(job, { sendClear: true })
+    }, timeoutMs)
+    job.timer.unref()
 
     return job
   }
@@ -197,6 +208,10 @@ export const createDropScheduler = <TTarget>({
       }
 
       const queue = targetedQueues.get(drop.targetUserId) ?? []
+      if (queue.length >= MAX_TARGETED_QUEUE_LENGTH) {
+        logger.warn(`Drop refusé: queue ciblée pleine pour ${drop.targetUserId}.`)
+        return 0
+      }
       queue.push(drop)
       targetedQueues.set(drop.targetUserId, queue)
       scheduleDrops()
@@ -205,6 +220,10 @@ export const createDropScheduler = <TTarget>({
 
     const sentCount = getEligibleTargets().length
     if (!sentCount) {
+      return 0
+    }
+    if (globalQueue.length >= MAX_GLOBAL_QUEUE_LENGTH) {
+      logger.warn('Drop refusé: queue globale pleine.')
       return 0
     }
 

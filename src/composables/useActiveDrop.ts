@@ -1,9 +1,8 @@
-import { computed, onBeforeUnmount, ref, type ComputedRef } from 'vue'
+import { computed, ref, type ComputedRef } from 'vue'
 import { getMediaKind } from '../../shared/media'
 import type { Drop, ServerConfig } from '../../shared/types'
 
 const TEST_DROP_ID = 'memedrop-test-preview'
-const DISPLAY_MS = 9000
 
 type ActiveDropOptions = {
   isOverlayView: ComputedRef<boolean>
@@ -14,7 +13,6 @@ type ActiveDropOptions = {
 export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: ActiveDropOptions) => {
   const isTestDropActive = ref(false)
   const activeDrop = ref<Drop | null>(null)
-  let activeDropTimer: number | undefined
 
   const activeKind = computed(() => getMediaKind(activeDrop.value))
   const hasDrop = computed(() => Boolean(activeDrop.value) && dropsEnabled.value)
@@ -24,13 +22,6 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
       Boolean(serverConfig.value.discordUserId) &&
       (activeDrop.value?.ownerId ?? activeDrop.value?.authorId) === serverConfig.value.discordUserId,
   )
-
-  const clearActiveDropTimer = () => {
-    if (activeDropTimer) {
-      window.clearTimeout(activeDropTimer)
-      activeDropTimer = undefined
-    }
-  }
 
   const completeActiveDrop = async (expectedDropId?: string) => {
     const drop = activeDrop.value
@@ -42,7 +33,6 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
       return
     }
 
-    clearActiveDropTimer()
     activeDrop.value = null
     if (drop.id === TEST_DROP_ID) {
       isTestDropActive.value = false
@@ -53,25 +43,6 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
     } else {
       await window.memedrop?.completeCurrentDrop(drop.id)
     }
-  }
-
-  const scheduleActiveDrop = () => {
-    clearActiveDropTimer()
-    if (!activeDrop.value || !isOverlayView.value) {
-      return
-    }
-
-    if (activeDrop.value.id === TEST_DROP_ID) {
-      return
-    }
-
-    if (activeKind.value !== 'image') {
-      return
-    }
-
-    activeDropTimer = window.setTimeout(() => {
-      void completeActiveDrop(activeDrop.value?.id)
-    }, DISPLAY_MS)
   }
 
   const receiveDrop = (drop: Drop) => {
@@ -86,7 +57,6 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
       void completeActiveDrop(drop.id)
       return
     }
-    scheduleActiveDrop()
   }
 
   const clearServerDrop = () => {
@@ -94,13 +64,11 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
       return
     }
 
-    clearActiveDropTimer()
     activeDrop.value = null
   }
 
   const clearTestDrop = () => {
     if (activeDrop.value?.id === TEST_DROP_ID) {
-      clearActiveDropTimer()
       activeDrop.value = null
     }
 
@@ -141,10 +109,6 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
       createdAt: new Date().toISOString(),
     })
   }
-
-  onBeforeUnmount(() => {
-    clearActiveDropTimer()
-  })
 
   return {
     activeDrop,

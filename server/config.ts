@@ -7,6 +7,25 @@ import {
 
 loadEnv({ quiet: true })
 
+const getIntegerEnvironmentValue = (
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+) => {
+  const rawValue = process.env[name]?.trim()
+  if (!rawValue) {
+    return fallback
+  }
+
+  const value = Number(rawValue)
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}.`)
+  }
+
+  return value
+}
+
 const getServerKey = () => {
   const serverKey = process.env.MEMEDROP_SERVER_KEY?.trim() ?? ''
 
@@ -55,7 +74,7 @@ export const config: {
   publicBaseUrl: string | undefined
 } = {
   host: process.env.MEMEDROP_SERVER_HOST?.trim() || '0.0.0.0',
-  port: Number(process.env.PORT ?? 3010),
+  port: getIntegerEnvironmentValue('PORT', 3010, 1, 65535),
   discordBotToken: process.env.DISCORD_BOT_TOKEN,
   discordGuildId: process.env.DISCORD_GUILD_ID,
   discordClientId: process.env.DISCORD_CLIENT_ID,
@@ -68,7 +87,12 @@ export const config: {
     .split(',')
     .map((channelId) => channelId.trim())
     .filter(Boolean),
-  memedropDropCooldownSeconds: Number(process.env.MEMEDROP_DROP_COOLDOWN_SECONDS ?? 0),
+  memedropDropCooldownSeconds: getIntegerEnvironmentValue(
+    'MEMEDROP_DROP_COOLDOWN_SECONDS',
+    0,
+    0,
+    86_400,
+  ),
   memedropServerKey: getServerKey(),
   memedropIdentitySigningSecret: process.env.MEMEDROP_IDENTITY_SIGNING_SECRET?.trim() ?? '',
   memedropIdentityTokenTtlSeconds: getIdentityTokenTtlSeconds(),

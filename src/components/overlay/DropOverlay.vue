@@ -65,7 +65,7 @@ const isNativeMediaKind = (
           :kind="activeKind"
           :volume="volume"
           :frame-style="mediaFrameStyle"
-          @advance="emit('advance')"
+          @advance="emit('advance', $event)"
         />
         <YouTubeDrop
           v-else-if="activeKind === 'youtube'"
