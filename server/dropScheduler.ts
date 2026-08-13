@@ -246,7 +246,10 @@ export const createDropScheduler = <TTarget>({
       } else {
         logger.log(`Drop global terminé chez tous les clients: ${dropId}.`)
       }
-      finishJob(job, { sendClear: false })
+      // L'ACK d'une cible ne termine que sa lecture locale. Le clear diffusé
+      // ici sert de notification autoritative que le job est terminé partout,
+      // notamment pour que l'auteur puisse conserver l'action de stop jusque-là.
+      finishJob(job, { sendClear: true })
     }
   }
 
@@ -265,7 +268,10 @@ export const createDropScheduler = <TTarget>({
       logger.log(`Drop annulé: plus aucun client cible (${job.drop.id}).`)
       finishJob(job, { sendClear: false })
     } else if (job.done.size >= job.targets.size) {
-      finishJob(job, { sendClear: false })
+      // Une déconnexion peut rendre le job globalement terminé après que les
+      // autres cibles ont déjà acquitté leur lecture : elles doivent également
+      // recevoir la notification de fin.
+      finishJob(job, { sendClear: true })
     } else {
       scheduleDrops()
     }

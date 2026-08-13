@@ -1,5 +1,6 @@
 import type {
   AppPreferences,
+  ActiveDropSnapshot,
   AppUpdateState,
   AppVersionInfo,
   ConnectedUser,
@@ -18,8 +19,9 @@ export type Unsubscribe = () => void
 
 export type MemeDropPreloadApi = {
   onDrop: (handler: (drop: Drop) => void) => Unsubscribe
+  onTestDrop: (handler: (drop: Drop) => void) => Unsubscribe
   onClearDrop: (handler: () => void) => Unsubscribe
-  onTestDropCleared: (handler: () => void) => Unsubscribe
+  onTestDropCleared: (handler: (dropId: string) => void) => Unsubscribe
   onSkipCurrentDrop: (handler: () => void) => Unsubscribe
   onConnectionStatus: (handler: (status: ConnectionStatus) => void) => Unsubscribe
   onConnectedUsers: (handler: (users: ConnectedUser[]) => void) => Unsubscribe
@@ -39,10 +41,11 @@ export type MemeDropPreloadApi = {
   setHideOwnDrops: (enabled: boolean) => Promise<OverlayState>
   toggleDrops: () => Promise<OverlayState>
   toggleHideOwnDrops: () => Promise<OverlayState>
-  skipCurrentDrop: () => Promise<void>
-  completeCurrentDrop: (dropId: string) => Promise<void>
+  skipCurrentDrop: () => Promise<boolean>
+  completeCurrentDrop: (dropId: string) => Promise<boolean>
   stopCurrentDropForEveryone: () => Promise<void>
   getOverlayState: () => Promise<OverlayState>
+  getActiveDropSnapshot: () => Promise<ActiveDropSnapshot>
   getOverlayDisplayPreferences: () => Promise<OverlayDisplayPreferences>
   getOverlayDisplays: () => Promise<OverlayDisplayInfo[]>
   setOverlayDisplayPreferences: (
@@ -70,19 +73,22 @@ export type MemeDropPreloadApi = {
   saveServerConfig: (config: ServerConfig) => Promise<ServerConfig>
   authenticateDiscord: () => Promise<ServerConfig>
   disconnectDiscord: () => Promise<ServerConfig>
-  emitTestDrop: (drop: Drop) => Promise<void>
-  clearTestDrop: () => Promise<void>
+  emitTestDrop: (drop: Drop) => Promise<boolean>
+  clearTestDrop: (dropId: string) => Promise<boolean>
 }
 
 export type MemeDropOverlayPreloadApi = Pick<
   MemeDropPreloadApi,
   | 'onDrop'
+  | 'onTestDrop'
   | 'onClearDrop'
   | 'onTestDropCleared'
   | 'onSkipCurrentDrop'
   | 'onOverlayState'
   | 'onOverlayDisplayPreferences'
   | 'completeCurrentDrop'
+  | 'clearTestDrop'
+  | 'getActiveDropSnapshot'
   | 'getOverlayState'
   | 'getOverlayDisplayPreferences'
 >

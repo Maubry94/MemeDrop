@@ -101,33 +101,61 @@ export const useOverlayPreferences = () => {
     }, 150)
   }
 
-  watch(overlayPosition, () => {
-    scheduleOverlayDisplayPreferencesSave()
-  })
+  watch(
+    overlayPosition,
+    () => {
+      scheduleOverlayDisplayPreferencesSave()
+    },
+    { flush: 'sync' },
+  )
 
-  watch(overlayDisplayId, () => {
-    scheduleOverlayDisplayPreferencesSave()
-  })
+  watch(
+    overlayDisplayId,
+    () => {
+      scheduleOverlayDisplayPreferencesSave()
+    },
+    { flush: 'sync' },
+  )
 
-  watch(dropVolume, () => {
-    scheduleOverlayDisplayPreferencesSave()
-  })
+  watch(
+    dropVolume,
+    () => {
+      scheduleOverlayDisplayPreferencesSave()
+    },
+    { flush: 'sync' },
+  )
 
-  watch(dropSize, () => {
-    scheduleOverlayDisplayPreferencesSave()
-  })
+  watch(
+    dropSize,
+    () => {
+      scheduleOverlayDisplayPreferencesSave()
+    },
+    { flush: 'sync' },
+  )
 
-  watch(customX, () => {
-    scheduleOverlayDisplayPreferencesSave()
-  })
+  watch(
+    customX,
+    () => {
+      scheduleOverlayDisplayPreferencesSave()
+    },
+    { flush: 'sync' },
+  )
 
-  watch(customY, () => {
-    scheduleOverlayDisplayPreferencesSave()
-  })
+  watch(
+    customY,
+    () => {
+      scheduleOverlayDisplayPreferencesSave()
+    },
+    { flush: 'sync' },
+  )
 
-  watch(customAnchor, () => {
-    scheduleOverlayDisplayPreferencesSave()
-  })
+  watch(
+    customAnchor,
+    () => {
+      scheduleOverlayDisplayPreferencesSave()
+    },
+    { flush: 'sync' },
+  )
 
   onBeforeUnmount(() => {
     if (!savePreferencesTimer) {

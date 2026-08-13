@@ -50,21 +50,15 @@ export const useControlState = () => {
     discordUserAvatarUrl: null,
   })
 
-  let syncingOverlayState = false
-
   const isDiscordConnected = computed(() => Boolean(serverConfig.value.discordUserId))
   const otherConnectedUsers = computed(() =>
     connectedUsers.value.filter((user) => user.id !== serverConfig.value.discordUserId),
   )
 
   const applyOverlayState = (state: OverlayState) => {
-    syncingOverlayState = true
     dropsEnabled.value = state.dropsEnabled
     hideOwnDrops.value = state.hideOwnDrops
-    syncingOverlayState = false
   }
-
-  const isSyncingOverlayState = () => syncingOverlayState
 
   return {
     controlTab,
@@ -82,6 +76,5 @@ export const useControlState = () => {
     isDiscordConnected,
     otherConnectedUsers,
     applyOverlayState,
-    isSyncingOverlayState,
   }
 }

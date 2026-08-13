@@ -26,6 +26,7 @@ const props = defineProps<{
   appVersionInfo: AppVersionInfo
   authMessage: string | null
   canStopGlobalDrop: boolean
+  canTriggerTestDrop: boolean
   configSavedMessage: string | null
   connectionStatus: ConnectionStatus | null
   controlTab: ControlTab
@@ -308,6 +309,7 @@ const runUpdateAction = () => {
       :drops-enabled="dropsEnabled"
       :hide-own-drops="hideOwnDrops"
       :can-stop-global-drop="canStopGlobalDrop"
+      :can-trigger-test-drop="canTriggerTestDrop"
       :drop-volume="dropVolume"
       :drop-size="dropSize"
       :is-test-drop-active="isTestDropActive"

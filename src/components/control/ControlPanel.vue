@@ -17,6 +17,7 @@ const props = defineProps<{
   dropsEnabled: boolean
   hideOwnDrops: boolean
   canStopGlobalDrop: boolean
+  canTriggerTestDrop: boolean
   dropVolume: number
   dropSize: number
   isTestDropActive: boolean
@@ -212,6 +213,8 @@ const overlayPositionOptions: SelectOption[] = [
   <Button
     class="mt-auto"
     full-width
+    :disabled="!canTriggerTestDrop"
+    :title="!canTriggerTestDrop ? 'Un drop serveur est déjà en cours.' : undefined"
     @click="$emit('triggerTestDrop')"
   >
     {{ isTestDropActive ? "Masquer l'aperçu" : 'Tester un drop' }}

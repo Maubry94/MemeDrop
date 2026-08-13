@@ -26,8 +26,10 @@ import { createShortcutManager } from './desktop/shortcuts'
 import { createMemeDropTray } from './desktop/tray'
 import { createMemeDropWindows } from './desktop/windows'
 import type {
+  ActiveDropSnapshot,
   ConnectionStatus,
   AppPreferences,
+  Drop,
   OverlayDisplayPreferences,
   OverlayState,
   ServerConnectionConfig,
@@ -114,6 +116,7 @@ let appPreferences: AppPreferences = {
   openAtLogin: false,
 }
 let connectionStatus: ConnectionStatus | null = null
+let currentTestDrop: Drop | null = null
 let isQuitting = false
 let shouldStartControlHidden = false
 
@@ -202,6 +205,17 @@ const sendToWindows = (channel: string, payload: unknown) => {
   windows.sendToWindows(channel, payload)
 }
 
+const clearCurrentTestDrop = (): boolean => {
+  if (!currentTestDrop) {
+    return false
+  }
+
+  const clearedDropId = currentTestDrop.id
+  currentTestDrop = null
+  sendToWindows('test-drop-cleared', clearedDropId)
+  return true
+}
+
 const syncServerConfig = (config = getServerConfig()) => {
   windows.sendToControl('server-config', config)
 }
@@ -249,6 +263,7 @@ const desktopClient = createDesktopClient({
   onAppVersionInfo: (info) => {
     sendToWindows('app-version-info', info)
   },
+  onIncomingDrop: clearCurrentTestDrop,
   onDrop: (drop) => {
     windows.keepOverlayAboveFullscreen()
     sendToWindows('drop-received', drop)
@@ -289,6 +304,9 @@ const discordAuth = createDiscordAuth({
 
 const setDropsEnabled = (enabled: boolean) => {
   dropsEnabled = enabled
+  if (!enabled) {
+    clearCurrentTestDrop()
+  }
   desktopClient.updateDropsEnabled(dropsEnabled)
   tray.updateMenu()
   syncOverlayState()
@@ -328,14 +346,33 @@ const showControlWindow = () => {
   windows.showControlWindow()
 }
 
-const skipCurrentDrop = () => {
-  windows.sendToOverlay('skip-current-drop', null)
-  sendToWindows('test-drop-cleared', null)
+const getActiveDropSnapshot = (view: 'control' | 'overlay'): ActiveDropSnapshot => {
+  const serverDrop =
+    view === 'overlay' ? desktopClient.getPresentedDrop() : desktopClient.getCurrentDrop()
+  return {
+    serverDrop,
+    testDrop: serverDrop || !currentTestDrop ? null : { ...currentTestDrop },
+  }
 }
 
-const completeCurrentDrop = (dropId: string) => {
-  desktopClient.completeDrop(dropId)
+const skipCurrentDrop = (): boolean => {
+  let skipped = clearCurrentTestDrop()
+
+  const serverDropId = desktopClient.getCurrentDropId()
+  if (serverDropId) {
+    const accepted = desktopClient.completeDrop(serverDropId)
+    if (accepted) {
+      windows.sendToOverlay('clear-drop', null)
+    } else {
+      // The overlay keeps the drop and retries the ID-safe acknowledgement.
+      windows.sendToOverlay('skip-current-drop', null)
+    }
+    skipped = accepted || skipped
+  }
+  return skipped
 }
+
+const completeCurrentDrop = (dropId: string): boolean => desktopClient.completeDrop(dropId)
 
 const stopCurrentDropForEveryone = () => {
   desktopClient.stopCurrentDropForEveryone()
@@ -418,6 +455,9 @@ const windows = createMemeDropWindows({
   onShortcutInput: (input) => {
     shortcutManager.captureShortcutInput(input)
   },
+  onControlWindowDeactivated: () => {
+    shortcutManager.cancelShortcutCapture()
+  },
   onControlBoundsChanged: saveControlWindowBounds,
 })
 
@@ -488,6 +528,7 @@ if (hasInstanceLock) app.whenReady().then(async () => {
       return getOverlayState()
     },
     getOverlayState,
+    getActiveDropSnapshot,
     getOverlayDisplayPreferences,
     getOverlayDisplays,
     setOverlayDisplayPreferences: (preferences) => {
@@ -539,13 +580,28 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     completeCurrentDrop,
     stopCurrentDropForEveryone,
     emitTestDrop: (drop) => {
-      if (!dropsEnabled) {
-        return
+      if (
+        !dropsEnabled ||
+        desktopClient.getCurrentDropId() ||
+        !/^memedrop-test-preview-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          drop.id,
+        ) ||
+        drop.url !== 'https://media.giphy.com/media/5GoVLqeAOo6PK/giphy.gif' ||
+        drop.contentType !== 'image/gif'
+      ) {
+        return false
       }
-      windows.sendToOverlay('drop-received', drop)
+
+      currentTestDrop = { ...drop }
+      sendToWindows('test-drop-received', currentTestDrop)
+      return true
     },
-    clearTestDrop: () => {
-      sendToWindows('test-drop-cleared', null)
+    clearTestDrop: (dropId) => {
+      if (currentTestDrop?.id !== dropId) {
+        return false
+      }
+
+      return clearCurrentTestDrop()
     },
   })
 

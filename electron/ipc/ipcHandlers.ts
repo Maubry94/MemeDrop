@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type {
   AppPreferences,
+  ActiveDropSnapshot,
   AppUpdateState,
   AppVersionInfo,
   ConnectedUser,
@@ -22,6 +23,7 @@ export type MemeDropIpcHandlers = {
   setDropsEnabled: (enabled: boolean) => OverlayState
   setHideOwnDrops: (enabled: boolean) => OverlayState
   getOverlayState: () => OverlayState
+  getActiveDropSnapshot: (view: 'control' | 'overlay') => ActiveDropSnapshot
   getOverlayDisplayPreferences: () => OverlayDisplayPreferences
   getOverlayDisplays: () => OverlayDisplayInfo[]
   setOverlayDisplayPreferences: (
@@ -51,11 +53,11 @@ export type MemeDropIpcHandlers = {
   disconnectDiscord: () => ServerConfig
   toggleDrops: () => OverlayState
   toggleHideOwnDrops: () => OverlayState
-  skipCurrentDrop: () => void
-  completeCurrentDrop: (dropId: string) => void
+  skipCurrentDrop: () => boolean
+  completeCurrentDrop: (dropId: string) => boolean
   stopCurrentDropForEveryone: () => void
-  emitTestDrop: (drop: Drop) => void
-  clearTestDrop: () => void
+  emitTestDrop: (drop: Drop) => boolean
+  clearTestDrop: (dropId: string) => boolean
 }
 
 export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
@@ -82,6 +84,13 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
     })
   }
 
+  const requireDropId = (value: unknown) => {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(value)) {
+      throw new Error('Identifiant de drop invalide.')
+    }
+    return value
+  }
+
   handle('set-drops-enabled', (_event, enabled: boolean) =>
     handlers.setDropsEnabled(Boolean(enabled)),
   )
@@ -91,6 +100,14 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
   )
 
   handle('get-overlay-state', () => handlers.getOverlayState(), true)
+  handle(
+    'get-active-drop-snapshot',
+    (event) =>
+      handlers.getActiveDropSnapshot(
+        handlers.isOverlaySender(event.sender) ? 'overlay' : 'control',
+      ),
+    true,
+  )
   handle(
     'get-overlay-display-preferences',
     () => handlers.getOverlayDisplayPreferences(),
@@ -139,14 +156,16 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
   handle('skip-current-drop', () => handlers.skipCurrentDrop())
   handle(
     'complete-current-drop',
-    (_event, dropId: string) => {
-      handlers.completeCurrentDrop(dropId)
-    },
+    (_event, dropId: string) => handlers.completeCurrentDrop(requireDropId(dropId)),
     true,
   )
   handle('stop-current-drop-for-everyone', () =>
     handlers.stopCurrentDropForEveryone(),
   )
   handle('emit-test-drop', (_event, drop: Drop) => handlers.emitTestDrop(drop))
-  handle('clear-test-drop', () => handlers.clearTestDrop())
+  handle(
+    'clear-test-drop',
+    (_event, dropId: string) => handlers.clearTestDrop(requireDropId(dropId)),
+    true,
+  )
 }

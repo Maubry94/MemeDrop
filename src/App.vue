@@ -13,7 +13,6 @@ type AppView = 'overlay' | 'control'
 const viewParam = new URLSearchParams(window.location.search).get('view')
 const view: AppView = viewParam === 'control' ? 'control' : 'overlay'
 const isOverlayView = computed(() => view === 'overlay')
-const isControlView = computed(() => view === 'control')
 
 const {
   controlTab,
@@ -31,7 +30,6 @@ const {
   isDiscordConnected,
   otherConnectedUsers,
   applyOverlayState,
-  isSyncingOverlayState,
 } = useControlState()
 
 const {
@@ -53,6 +51,7 @@ const {
   activeKind,
   hasDrop,
   isTestDropActive,
+  canTriggerTestDrop,
   canStopGlobalDrop,
   completeActiveDrop,
   receiveDrop,
@@ -60,6 +59,7 @@ const {
   clearTestDrop,
   skipCurrentDrop,
   completeLocalDrop,
+  retryServerDropCompletion,
   stopCurrentDropForEveryone,
   triggerTestDrop,
 } = useActiveDrop({
@@ -103,6 +103,7 @@ useMemedropBridge({
   clearServerDrop,
   clearTestDrop,
   completeLocalDrop,
+  retryServerDropCompletion,
 })
 
 const {
@@ -146,15 +147,10 @@ watch(
   },
 )
 
-watch(dropsEnabled, async (value) => {
-  if (!value) {
+watch(dropsEnabled, (value) => {
+  if (!value && isOverlayView.value) {
     void completeActiveDrop()
   }
-
-  if (isSyncingOverlayState() || !isControlView.value) {
-    return
-  }
-  await window.memedrop?.setDropsEnabled(value)
 })
 </script>
 
@@ -181,6 +177,7 @@ watch(dropsEnabled, async (value) => {
       :app-update-state="appUpdateState"
       :auth-message="discordAuthMessage"
       :can-stop-global-drop="canStopGlobalDrop"
+      :can-trigger-test-drop="canTriggerTestDrop"
       :config-saved-message="configSavedMessage"
       :connection-status="connectionStatus"
       :control-tab="controlTab"

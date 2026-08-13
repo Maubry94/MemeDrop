@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 import type { MemeDropPreloadApi, Unsubscribe } from '../shared/preloadApi'
 import type {
   ConnectionStatus,
+  ActiveDropSnapshot,
   ConnectedUser,
   Drop,
   AppPreferences,
@@ -24,8 +25,10 @@ const onChannel = <T>(channel: string, handler: (payload: T) => void): Unsubscri
 
 const memedropApi = {
   onDrop: (handler: (drop: Drop) => void) => onChannel('drop-received', handler),
+  onTestDrop: (handler: (drop: Drop) => void) => onChannel('test-drop-received', handler),
   onClearDrop: (handler: () => void) => onChannel('clear-drop', handler),
-  onTestDropCleared: (handler: () => void) => onChannel('test-drop-cleared', handler),
+  onTestDropCleared: (handler: (dropId: string) => void) =>
+    onChannel('test-drop-cleared', handler),
   onSkipCurrentDrop: (handler: () => void) => onChannel('skip-current-drop', handler),
   onConnectionStatus: (handler: (status: ConnectionStatus) => void) =>
     onChannel('connection-status', handler),
@@ -59,6 +62,8 @@ const memedropApi = {
   completeCurrentDrop: (dropId: string) => ipcRenderer.invoke('complete-current-drop', dropId),
   stopCurrentDropForEveryone: () => ipcRenderer.invoke('stop-current-drop-for-everyone'),
   getOverlayState: () => ipcRenderer.invoke('get-overlay-state'),
+  getActiveDropSnapshot: (): Promise<ActiveDropSnapshot> =>
+    ipcRenderer.invoke('get-active-drop-snapshot'),
   getOverlayDisplayPreferences: () => ipcRenderer.invoke('get-overlay-display-preferences'),
   getOverlayDisplays: () => ipcRenderer.invoke('get-overlay-displays'),
   setOverlayDisplayPreferences: (preferences: OverlayDisplayPreferences) =>
@@ -90,7 +95,7 @@ const memedropApi = {
   authenticateDiscord: () => ipcRenderer.invoke('authenticate-discord'),
   disconnectDiscord: () => ipcRenderer.invoke('disconnect-discord'),
   emitTestDrop: (drop: Drop) => ipcRenderer.invoke('emit-test-drop', drop),
-  clearTestDrop: () => ipcRenderer.invoke('clear-test-drop'),
+  clearTestDrop: (dropId: string) => ipcRenderer.invoke('clear-test-drop', dropId),
 } satisfies MemeDropPreloadApi
 
 contextBridge.exposeInMainWorld('memedrop', memedropApi)

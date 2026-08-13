@@ -58,6 +58,7 @@ type MemeDropWindowsOptions = {
   onControlLoaded: () => void
   shouldCaptureShortcutInput: () => boolean
   onShortcutInput: (input: Input) => void
+  onControlWindowDeactivated: () => void
   onControlBoundsChanged: (bounds: Rectangle) => void
 }
 
@@ -78,6 +79,7 @@ export const createMemeDropWindows = ({
   onControlLoaded,
   shouldCaptureShortcutInput,
   onShortcutInput,
+  onControlWindowDeactivated,
   onControlBoundsChanged,
 }: MemeDropWindowsOptions) => {
   let overlayWindow: BrowserWindow | null = null
@@ -308,8 +310,11 @@ export const createMemeDropWindows = ({
       event.preventDefault()
       onShortcutInput(input)
     })
+    controlWindow.on('blur', onControlWindowDeactivated)
+    controlWindow.on('hide', onControlWindowDeactivated)
     controlWindow.on('close', (event) => {
       saveControlWindowBounds()
+      onControlWindowDeactivated()
 
       if (isQuitting()) {
         return
@@ -324,6 +329,7 @@ export const createMemeDropWindows = ({
       onQuitRequest()
     })
     controlWindow.on('closed', () => {
+      onControlWindowDeactivated()
       controlWindow = null
     })
     controlWindow.on('resize', scheduleControlWindowBoundsSave)

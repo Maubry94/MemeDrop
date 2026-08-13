@@ -76,6 +76,11 @@ export type ServerConfig = {
   discordUserAvatarUrl: string | null
 }
 
+export type ActiveDropSnapshot = {
+  serverDrop: Drop | null
+  testDrop: Drop | null
+}
+
 // Main-process only. Never expose this shape through the preload bridge.
 export type ServerConnectionConfig = ServerConfig & {
   authToken: string

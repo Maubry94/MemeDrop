@@ -3,7 +3,7 @@
   "private": true,
   "description": "Overlay desktop MemeDrop relié à Discord pour afficher des images, sons et vidéos.",
   "author": "Maubry94",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -20,6 +20,7 @@
     "pack:win": "node scripts/buildWindowsRelease.mjs unpacked",
     "preview": "vite preview",
     "server:start": "node dist-server/server/index.js",
+    "test:client": "node --experimental-strip-types --test electron/client/memedropClient.test.ts",
     "test:server": "npm run build:server && node --test \"dist-server/server/**/*.test.js\"",
     "update:keygen": "node scripts/generateUpdateSigningKey.mjs"
   },

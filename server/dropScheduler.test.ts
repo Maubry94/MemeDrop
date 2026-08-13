@@ -61,3 +61,61 @@ test('scheduler bounds the global queue', () => {
   }
   assert.equal(scheduler.enqueueDrop(createDrop('overflow')), 0)
 })
+
+test('normal completion clears every target once before advancing the queue', () => {
+  const firstTarget = { id: 'first-target' }
+  const secondTarget = { id: 'second-target' }
+  const events: string[] = []
+  const scheduler = createDropScheduler({
+    getEligibleTargets: () => [firstTarget, secondTarget],
+    getTargetsByUserId: () => [firstTarget, secondTarget],
+    sendDrop: (target, drop) => events.push(`drop:${drop.id}:${target.id}`),
+    sendClear: (target) => events.push(`clear:${target.id}`),
+    logger: silentLogger,
+  })
+
+  scheduler.enqueueDrop(createDrop('first'))
+  scheduler.enqueueDrop(createDrop('second'))
+  assert.deepEqual(events, [
+    'drop:first:first-target',
+    'drop:first:second-target',
+  ])
+
+  scheduler.completeDropForTarget(firstTarget, 'first')
+  assert.deepEqual(events, [
+    'drop:first:first-target',
+    'drop:first:second-target',
+  ])
+
+  scheduler.completeDropForTarget(secondTarget, 'first')
+  assert.deepEqual(events, [
+    'drop:first:first-target',
+    'drop:first:second-target',
+    'clear:first-target',
+    'clear:second-target',
+    'drop:second:first-target',
+    'drop:second:second-target',
+  ])
+
+  scheduler.completeDropForTarget(secondTarget, 'first')
+  assert.equal(events.filter((event) => event.startsWith('clear:')).length, 2)
+})
+
+test('disconnecting the last pending target notifies targets that already acknowledged', () => {
+  const completedTarget = { id: 'completed-target' }
+  const disconnectedTarget = { id: 'disconnected-target' }
+  const cleared: string[] = []
+  const scheduler = createDropScheduler({
+    getEligibleTargets: () => [completedTarget, disconnectedTarget],
+    getTargetsByUserId: () => [completedTarget, disconnectedTarget],
+    sendDrop: () => undefined,
+    sendClear: (target) => cleared.push(target.id),
+    logger: silentLogger,
+  })
+
+  scheduler.enqueueDrop(createDrop('drop'))
+  scheduler.completeDropForTarget(completedTarget, 'drop')
+  scheduler.removeTarget(disconnectedTarget)
+
+  assert.deepEqual(cleared, ['completed-target'])
+})

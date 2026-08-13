@@ -127,13 +127,26 @@ export const createShortcutManager = ({
   }
 
   const setShortcutCaptureMode = (enabled: boolean) => {
-    shortcutCaptureAction = null
     if (enabled) {
+      shortcutCaptureAction = null
       globalShortcut.unregisterAll()
       return
     }
 
+    if (!cancelShortcutCapture()) {
+      registerGlobalShortcuts()
+    }
+  }
+
+  const cancelShortcutCapture = () => {
+    if (!shortcutCaptureAction) {
+      return false
+    }
+
+    shortcutCaptureAction = null
     registerGlobalShortcuts()
+    onCaptureCancelled()
+    return true
   }
 
   const captureShortcutInput = (input: Input) => {
@@ -147,9 +160,7 @@ export const createShortcutManager = ({
     }
 
     if (key === 'Escape') {
-      shortcutCaptureAction = null
-      registerGlobalShortcuts()
-      onCaptureCancelled()
+      cancelShortcutCapture()
       return
     }
 
@@ -164,18 +175,19 @@ export const createShortcutManager = ({
 
     const action = shortcutCaptureAction
     const accelerator = [...modifiers, key].join('+')
-    const savedShortcuts = setShortcutConfigs(
+    const savedShortcuts = saveShortcutConfigs(
       shortcutConfigs.map((shortcut) =>
         shortcut.action === action ? { ...shortcut, accelerator } : shortcut,
       ),
     )
 
     shortcutCaptureAction = null
+    registerGlobalShortcuts()
     onConfigsChanged(savedShortcuts)
   }
 
   const startShortcutCapture = (action: ShortcutActionId) => {
-    if (!SHORTCUT_LABELS[action]) {
+    if (!Object.prototype.hasOwnProperty.call(SHORTCUT_LABELS, action)) {
       return getShortcutConfigs()
     }
 
@@ -185,14 +197,24 @@ export const createShortcutManager = ({
   }
 
   const setShortcutConfigs = (shortcuts: ShortcutConfig[]) => {
+    const wasCapturing = Boolean(shortcutCaptureAction)
+    shortcutCaptureAction = null
     const savedShortcuts = saveShortcutConfigs(shortcuts)
     registerGlobalShortcuts()
+    if (wasCapturing) {
+      onCaptureCancelled()
+    }
     return savedShortcuts
   }
 
   const resetShortcutConfigs = () => {
+    const wasCapturing = Boolean(shortcutCaptureAction)
+    shortcutCaptureAction = null
     const shortcuts = saveShortcutConfigs(DEFAULT_SHORTCUTS)
     registerGlobalShortcuts()
+    if (wasCapturing) {
+      onCaptureCancelled()
+    }
     return shortcuts
   }
 
@@ -213,6 +235,7 @@ export const createShortcutManager = ({
     setShortcutConfigs,
     resetShortcutConfigs,
     isCapturingShortcut,
+    cancelShortcutCapture,
     dispose,
   }
 }
