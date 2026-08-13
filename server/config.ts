@@ -70,7 +70,6 @@ export const config: {
   memedropIdentitySigningSecret: string
   memedropIdentityTokenTtlSeconds: number
   memedropUpdatesDir: string | undefined
-  memedropLegacyUpdatesDir: string | undefined
   publicBaseUrl: string | undefined
 } = {
   host: process.env.MEMEDROP_SERVER_HOST?.trim() || '0.0.0.0',
@@ -97,7 +96,5 @@ export const config: {
   memedropIdentitySigningSecret: process.env.MEMEDROP_IDENTITY_SIGNING_SECRET?.trim() ?? '',
   memedropIdentityTokenTtlSeconds: getIdentityTokenTtlSeconds(),
   memedropUpdatesDir: process.env.MEMEDROP_UPDATES_DIR?.trim() || undefined,
-  memedropLegacyUpdatesDir:
-    process.env.MEMEDROP_LEGACY_UPDATES_DIR?.trim() || undefined,
   publicBaseUrl: process.env.PUBLIC_BASE_URL,
 }

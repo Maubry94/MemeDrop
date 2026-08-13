@@ -44,7 +44,6 @@ cp .env.example .env
 | `MEMEDROP_DROP_COOLDOWN_SECONDS` | Délai entre deux drops d'un même utilisateur. `0` le désactive. | Non |
 | `MEMEDROP_IDENTITY_TOKEN_TTL_SECONDS` | Durée d'une connexion Discord. Par défaut : 30 jours. | Non |
 | `MEMEDROP_UPDATES_DIR` | Dossier des mises à jour dans le conteneur, si elles sont hébergées par ce serveur. | Non |
-| `MEMEDROP_LEGACY_UPDATES_DIR` | Ancien canal de mise à jour, normalement laissé vide. | Non |
 
 Génère deux valeurs différentes avec cette commande : une pour `MEMEDROP_SERVER_KEY` et une pour `MEMEDROP_IDENTITY_SIGNING_SECRET`.
 

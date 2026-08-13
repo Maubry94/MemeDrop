@@ -8,14 +8,13 @@ import { createDiscordOAuthHandlers } from './discord/oauth.js'
 import { parseRequestUrl } from './http/request.js'
 import { sendJsonResponse, sendTextResponse } from './http/responses.js'
 import { sendStaticFile } from './http/staticFiles.js'
+import { getSignedWindowsUpdateRequestPath } from './http/updateRoute.js'
 import { sendHealthPage } from './pages/healthPage.js'
 import { sendHomePage } from './pages/homePage.js'
 import { createIdentityTokenService } from './security/identityToken.js'
 import { createMemeDropWebSocketServer } from './websocket.js'
 
 let discordStatus = 'starting'
-const SIGNED_WINDOWS_UPDATE_ROUTE = '/updates/win-signed-v1/'
-const LEGACY_WINDOWS_UPDATE_ROUTE = '/updates/win/'
 const MAX_REQUESTS_PER_SOCKET = 100
 
 const getPackageVersion = () => {
@@ -75,7 +74,11 @@ const server = http.createServer((request, response) => {
     return
   }
 
-  if (request.method === 'GET' && requestUrl.pathname.startsWith(SIGNED_WINDOWS_UPDATE_ROUTE)) {
+  const signedUpdateRequestPath = getSignedWindowsUpdateRequestPath(
+    request.method,
+    requestUrl.pathname,
+  )
+  if (signedUpdateRequestPath !== null) {
     if (!config.memedropUpdatesDir) {
       sendTextResponse(response, 404, 'MemeDrop updates directory is not configured.\n')
       return
@@ -84,28 +87,9 @@ const server = http.createServer((request, response) => {
     void sendStaticFile(
       response,
       config.memedropUpdatesDir,
-      requestUrl.pathname.slice(SIGNED_WINDOWS_UPDATE_ROUTE.length),
+      signedUpdateRequestPath,
     ).catch((error) => {
       console.error('Envoi de mise à jour MemeDrop impossible:', error)
-      if (!response.destroyed) {
-        response.destroy(error instanceof Error ? error : undefined)
-      }
-    })
-    return
-  }
-
-  if (request.method === 'GET' && requestUrl.pathname.startsWith(LEGACY_WINDOWS_UPDATE_ROUTE)) {
-    if (!config.memedropLegacyUpdatesDir) {
-      sendTextResponse(response, 404, 'MemeDrop legacy updates directory is not configured.\n')
-      return
-    }
-
-    void sendStaticFile(
-      response,
-      config.memedropLegacyUpdatesDir,
-      requestUrl.pathname.slice(LEGACY_WINDOWS_UPDATE_ROUTE.length),
-    ).catch((error) => {
-      console.error('Envoi de mise à jour legacy MemeDrop impossible:', error)
       if (!response.destroyed) {
         response.destroy(error instanceof Error ? error : undefined)
       }

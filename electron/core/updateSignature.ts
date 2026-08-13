@@ -195,8 +195,8 @@ const assertUpdateInfoMatches = (
   }
 
   if (updateInfo.path) {
-    const legacyFileUrl = getUpdateFileUrl(updateInfo.path, manifest.feedUrl)
-    if (getDecodedPathname(legacyFileUrl) !== expectedPathname) {
+    const historicalFileUrl = getUpdateFileUrl(updateInfo.path, manifest.feedUrl)
+    if (getDecodedPathname(historicalFileUrl) !== expectedPathname) {
       throw new Error("Le chemin historique de latest.yml ne correspond pas au manifeste signé.")
     }
   }
