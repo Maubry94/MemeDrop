@@ -16,8 +16,8 @@ Les commandes Discord disponibles sont `/drop`, `/dropme`, `/dropyt`, `/droptt`,
 
 ## Prérequis
 
-- Windows pour utiliser et construire l'application desktop.
-- [Node.js](https://nodejs.org/) 22.12.0 ou une version plus récente.
+- Windows pour utiliser l'application desktop et créer son installateur.
+- [Node.js](https://nodejs.org/) 22.13.0 ou une version plus récente.
 - [Docker](https://www.docker.com/) avec Docker Compose pour le serveur.
 - Une application Discord avec un bot, installée sur un serveur Discord.
 
@@ -101,6 +101,16 @@ Puis lance l'application dans un autre terminal :
 ```sh
 npm run dev
 ```
+
+Avant de proposer une modification, tu peux lancer les mêmes contrôles que la CI :
+
+```sh
+npm run lint
+npm run typecheck
+npm test
+```
+
+GitHub Actions exécute automatiquement ces contrôles et construit l'application à chaque pull request et à chaque push sur `main`.
 
 ## Déployer en production
 

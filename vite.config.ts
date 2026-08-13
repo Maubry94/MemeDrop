@@ -31,14 +31,17 @@ if (
 const normalizedUpdateFeedUrl = updateFeedUrl.toString().replace(/\/$/, '')
 
 const startDevelopmentElectron = async (
-  startup: (argv?: string[]) => Promise<void>,
+  startup: (argv?: string[]) => Promise<boolean>,
 ) => {
   // Passer explicitement les arguments évite le `--no-sandbox` ajouté par
   // défaut par vite-plugin-electron tout en conservant son cycle de démarrage.
-  await startup(['.'])
+  const started = await startup(['.'])
+  if (!started) {
+    throw new Error('Le démarrage Electron a été empêché par vite-plugin-electron.')
+  }
 
-  // vite-plugin-electron conserve sinon le PID après une fermeture normale et
-  // tente de le tuer une seconde fois dans son hook de sortie Windows.
+  // Détacher le processus terminé du registre du plugin avant de quitter Vite,
+  // sans retirer les autres listeners qui pourraient être ajoutés au child.
   const processRegistry = process as unknown as { electronApp?: ChildProcess }
   const electronApp = processRegistry.electronApp
   if (!electronApp) {
@@ -87,23 +90,12 @@ export default defineConfig({
           },
         },
       },
-      preload: {
-        // Shortcut of `build.rollupOptions.input`.
-        // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
-        input: {
-          preload: path.join(__dirname, 'electron/preload.ts'),
-          overlayPreload: path.join(__dirname, 'electron/overlayPreload.ts'),
-        },
-        vite: {
-          build: {
-            rollupOptions: {
-              output: {
-                inlineDynamicImports: false,
-              },
-            },
-          },
-        },
-      },
+      // Chaque preload est construit séparément : vite-plugin-electron garde
+      // ainsi un bundle autonome sans code partagé chargé dynamiquement.
+      preload: [
+        { input: path.join(__dirname, 'electron/preload.ts') },
+        { input: path.join(__dirname, 'electron/overlayPreload.ts') },
+      ],
     }),
   ],
 })

@@ -19,6 +19,7 @@ class FakeSocket extends EventEmitter {
   sent: string[] = []
   closeCount = 0
   terminateCount = 0
+  sendError: Error | null = null
 
   open() {
     this.readyState = 1
@@ -39,6 +40,9 @@ class FakeSocket extends EventEmitter {
   }
 
   send(data: string, callback?: (error?: Error) => void) {
+    if (this.sendError) {
+      throw this.sendError
+    }
     this.sent.push(data)
     callback?.()
   }
@@ -205,6 +209,24 @@ test('an acknowledgement attempted while disconnected returns false', () => {
   ])
 })
 
+test('a synchronous socket send failure returns false and retires the connection', () => {
+  const harness = createHarness()
+  const socket = harness.runtime.sockets[0]
+  assert.ok(socket)
+
+  socket.open()
+  socket.receive({ type: 'hello' })
+  socket.sendError = new Error('send failed synchronously')
+
+  assert.equal(harness.controller.completeDrop('drop-not-sent'), false)
+  assert.equal(socket.terminateCount, 1)
+  assert.equal(harness.disconnected, 1)
+  assert.equal(harness.runtime.activeTimers(3_000).length, 1)
+  assert.deepEqual(parseSentMessages(socket), [
+    { type: 'client-state', dropsEnabled: true },
+  ])
+})
+
 test('4001 and 1008 are terminal and only 4001 revokes authentication', async (context) => {
   for (const closeCode of [4001, 1008]) {
     await context.test(`close ${closeCode}`, () => {
@@ -235,7 +257,7 @@ test('the latest client state and active drop are replayed once after reconnect'
   assert.ok(firstSocket)
 
   firstSocket.open()
-  harness.controller.updateDropsEnabled(false)
+  assert.equal(harness.controller.updateDropsEnabled(false), false)
   firstSocket.receive({ type: 'hello' })
   firstSocket.receive({
     type: 'active-drop',

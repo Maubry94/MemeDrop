@@ -124,6 +124,7 @@ export function startMemeDropClient(
     }
   }
 
+  const normalizedServerUrl = serverUrl.trim()
   const normalizedAuthToken = authToken?.trim() ?? ''
 
   if (!normalizedAuthToken) {
@@ -177,8 +178,6 @@ export function startMemeDropClient(
     activeConnection = null
     return true
   }
-
-  let connect: () => void
 
   const scheduleReconnect = () => {
     if (stopped || reconnectTimer || activeConnection) {
@@ -270,7 +269,7 @@ export function startMemeDropClient(
     }
   }
 
-  connect = () => {
+  function connect() {
     if (stopped || activeConnection) {
       return
     }
@@ -279,7 +278,7 @@ export function startMemeDropClient(
     let wsUrl: string
 
     try {
-      wsUrl = toWebSocketUrl(serverUrl.trim())
+      wsUrl = toWebSocketUrl(normalizedServerUrl)
     } catch {
       onStatus({
         level: 'error',

@@ -5,8 +5,10 @@ import type {
   Drop,
   ServerConnectionConfig,
 } from '../../shared/types'
-import { startMemeDropClient, type MemeDropClientController } from './memedropClient'
-import { compareAppVersions, getReleaseUrl } from '../core/versionInfo'
+import { startMemeDropClient, type MemeDropClientController } from './memedropClient.ts'
+import { compareAppVersions, getReleaseUrl } from '../core/versionInfo.ts'
+
+type StartMemeDropClient = typeof startMemeDropClient
 
 type DesktopClientOptions = {
   getServerConfig: () => ServerConnectionConfig
@@ -21,6 +23,7 @@ type DesktopClientOptions = {
   onClearDrop: () => void
   onStatus: (status: ConnectionStatus) => void
   onAuthenticationRejected: () => void
+  startClient?: StartMemeDropClient
 }
 
 export const createDesktopClient = ({
@@ -36,6 +39,7 @@ export const createDesktopClient = ({
   onClearDrop,
   onStatus,
   onAuthenticationRejected,
+  startClient = startMemeDropClient,
 }: DesktopClientOptions) => {
   let client: MemeDropClientController | null = null
   let connectedUsers: ConnectedUser[] = []
@@ -103,7 +107,7 @@ export const createDesktopClient = ({
     const serverConfig = getServerConfig()
     const { serverUrl, accessKey, discordUserId } = serverConfig
 
-    client = startMemeDropClient({
+    client = startClient({
       serverUrl,
       accessKey,
       authToken: serverConfig.authToken,

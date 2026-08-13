@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci --omit=dev
-RUN npm install --no-save --omit=dev typescript@5.2.2
+RUN npm install --no-save --omit=dev typescript@5.9.3
 
 COPY server ./server
 COPY shared ./shared

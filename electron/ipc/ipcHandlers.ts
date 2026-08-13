@@ -61,11 +61,9 @@ export type MemeDropIpcHandlers = {
 }
 
 export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
-  type IpcListener = (event: IpcMainInvokeEvent, ...args: any[]) => unknown
-
-  const handle = (
+  const handle = <TArgs extends unknown[]>(
     channel: string,
-    listener: IpcListener,
+    listener: (event: IpcMainInvokeEvent, ...args: TArgs) => unknown,
     allowOverlay = false,
   ) => {
     ipcMain.handle(channel, (event, ...args) => {
@@ -80,7 +78,7 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
         throw new Error(`IPC MemeDrop refusé pour ce renderer : ${channel}.`)
       }
 
-      return listener(event, ...args)
+      return listener(event, ...(args as TArgs))
     })
   }
 
