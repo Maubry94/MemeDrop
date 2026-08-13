@@ -1,6 +1,6 @@
 # MemeDrop
 
-MemeDrop est une application Windows reliée à Discord pour envoyer et recevoir des memes (des drops) dans un overlay au-dessus des autres applications.
+MemeDrop est une application Windows reliée à Discord pour envoyer et recevoir des memes (des drops) dans un overlay au-dessus des autres applications (en écran fenêtré sans bordure). 
 
 ## Fonctionnalités
 
