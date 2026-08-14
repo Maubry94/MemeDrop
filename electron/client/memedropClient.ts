@@ -5,6 +5,9 @@ import { toMemeDropServerUrl } from './serverUrl.ts'
 const SERVER_HEARTBEAT_TIMEOUT_MS = 75000
 const SERVER_HANDSHAKE_TIMEOUT_MS = 15000
 const RECONNECT_DELAY_MS = 3000
+const DISCORD_AUTH_REQUIRED_CLOSE_CODE = 4001
+const POLICY_VIOLATION_CLOSE_CODE = 1008
+const INVALID_ACCESS_KEY_CLOSE_REASON = 'Invalid MemeDrop key'
 
 type MemeDropClientOptions = {
   serverUrl: string | undefined
@@ -113,7 +116,9 @@ export function startMemeDropClient(
 
   if (!serverUrl) {
     onStatus({
-      level: 'error',
+      state: 'configuration-required',
+      reason: 'server-not-configured',
+      level: 'info',
       message: 'Serveur MemeDrop : URL manquante.',
     })
     return {
@@ -129,7 +134,9 @@ export function startMemeDropClient(
 
   if (!normalizedAuthToken) {
     onStatus({
-      level: 'error',
+      state: 'authentication-required',
+      reason: 'discord-required',
+      level: 'info',
       message: 'Serveur MemeDrop : connexion Discord requise.',
     })
     return {
@@ -144,6 +151,7 @@ export function startMemeDropClient(
   let nextGeneration = 0
   let reconnectTimer: NodeJS.Timeout | null = null
   let stopped = false
+  let isReconnectAttempt = false
   let currentDropsEnabled = dropsEnabled
 
   const clearReconnectTimer = () => {
@@ -184,6 +192,7 @@ export function startMemeDropClient(
       return
     }
 
+    isReconnectAttempt = true
     const timer = runtime.setTimer(() => {
       if (reconnectTimer !== timer) {
         return
@@ -225,7 +234,9 @@ export function startMemeDropClient(
       }
 
       onStatus({
-        level: 'error',
+        state: 'reconnecting',
+        reason: 'connection-inactive',
+        level: 'info',
         message: 'Serveur MemeDrop : connexion inactive, reconnexion...',
       })
       terminateAndReconnect(connection)
@@ -249,18 +260,24 @@ export function startMemeDropClient(
           return
         }
 
+        console.error("Envoi vers le serveur MemeDrop interrompu :", error)
         onStatus({
-          level: 'error',
-          message: `Serveur MemeDrop : erreur d'envoi (${error.message}).`,
+          state: 'reconnecting',
+          reason: 'transport-error',
+          level: 'info',
+          message: "Serveur MemeDrop : erreur d'envoi, reconnexion...",
         })
         terminateAndReconnect(connection)
       })
       return true
     } catch (error) {
       if (isActiveConnection(connection)) {
+        console.error("Envoi vers le serveur MemeDrop impossible :", error)
         onStatus({
-          level: 'error',
-          message: `Serveur MemeDrop : erreur d'envoi (${error instanceof Error ? error.message : 'inconnue'}).`,
+          state: 'reconnecting',
+          reason: 'transport-error',
+          level: 'info',
+          message: "Serveur MemeDrop : erreur d'envoi, reconnexion...",
         })
         terminateAndReconnect(connection)
       }
@@ -281,16 +298,27 @@ export function startMemeDropClient(
       wsUrl = toWebSocketUrl(normalizedServerUrl)
     } catch {
       onStatus({
+        state: 'error',
+        reason: 'invalid-server-url',
         level: 'error',
         message: 'Serveur MemeDrop : URL invalide.',
       })
       return
     }
 
-    onStatus({
-      level: 'info',
-      message: 'Serveur MemeDrop : connexion en cours...',
-    })
+    onStatus(
+      isReconnectAttempt
+        ? {
+            state: 'reconnecting',
+            level: 'info',
+            message: 'Serveur MemeDrop : reconnexion en cours...',
+          }
+        : {
+            state: 'connecting',
+            level: 'info',
+            message: 'Serveur MemeDrop : connexion en cours...',
+          },
+    )
 
     let nextSocket: WebSocket
 
@@ -302,6 +330,8 @@ export function startMemeDropClient(
       })
     } catch {
       onStatus({
+        state: 'error',
+        reason: 'invalid-configuration',
         level: 'error',
         message: 'Serveur MemeDrop : configuration de connexion invalide.',
       })
@@ -321,10 +351,19 @@ export function startMemeDropClient(
         return
       }
       resetHeartbeatTimer(connection)
-      onStatus({
-        level: 'info',
-        message: 'Serveur MemeDrop : authentification en cours...',
-      })
+      onStatus(
+        isReconnectAttempt
+          ? {
+              state: 'reconnecting',
+              level: 'info',
+              message: 'Serveur MemeDrop : reconnexion en cours...',
+            }
+          : {
+              state: 'authenticating',
+              level: 'info',
+              message: 'Serveur MemeDrop : authentification en cours...',
+            },
+      )
     })
 
     nextSocket.on('message', (data) => {
@@ -339,7 +378,9 @@ export function startMemeDropClient(
         if (message.type === 'hello') {
           if (!connection.serverReady) {
             connection.serverReady = true
+            isReconnectAttempt = false
             onStatus({
+              state: 'connected',
               level: 'info',
               message: 'Serveur MemeDrop : connecté.',
             })
@@ -379,7 +420,7 @@ export function startMemeDropClient(
       resetHeartbeatTimer(connection)
     })
 
-    nextSocket.on('close', (code) => {
+    nextSocket.on('close', (code, reason) => {
       if (!retireConnection(connection)) {
         return
       }
@@ -390,10 +431,12 @@ export function startMemeDropClient(
 
       onDisconnected()
 
-      if (code === 4001) {
+      if (code === DISCORD_AUTH_REQUIRED_CLOSE_CODE) {
         stopped = true
         clearReconnectTimer()
         onStatus({
+          state: 'refused',
+          reason: 'session-expired',
           level: 'error',
           message: 'Serveur MemeDrop : session Discord expirée, reconnecte-toi.',
         })
@@ -401,18 +444,32 @@ export function startMemeDropClient(
         return
       }
 
-      if (code === 1008) {
+      if (code === POLICY_VIOLATION_CLOSE_CODE) {
         stopped = true
         clearReconnectTimer()
-        onStatus({
-          level: 'error',
-          message: 'Serveur MemeDrop : connexion refusée. Vérifie la clé du serveur.',
-        })
+        const closeReason = reason.toString()
+        onStatus(
+          closeReason === INVALID_ACCESS_KEY_CLOSE_REASON
+            ? {
+                state: 'refused',
+                reason: 'access-denied',
+                level: 'error',
+                message: 'Serveur MemeDrop : connexion refusée. Vérifie la clé du serveur.',
+              }
+            : {
+                state: 'refused',
+                reason: 'server-policy',
+                level: 'error',
+                message: 'Serveur MemeDrop : connexion interrompue par le serveur.',
+              },
+        )
         return
       }
 
       onStatus({
-        level: 'error',
+        state: 'reconnecting',
+        reason: 'transport-error',
+        level: 'info',
         message: 'Serveur MemeDrop : déconnecté, reconnexion...',
       })
       scheduleReconnect()
@@ -422,9 +479,12 @@ export function startMemeDropClient(
       if (!isActiveConnection(connection)) {
         return
       }
+      console.error('Connexion au serveur MemeDrop interrompue :', error)
       onStatus({
-        level: 'error',
-        message: `Serveur MemeDrop : erreur (${error.message}).`,
+        state: 'reconnecting',
+        reason: 'transport-error',
+        level: 'info',
+        message: 'Serveur MemeDrop : connexion interrompue, reconnexion...',
       })
       terminateAndReconnect(connection)
     })

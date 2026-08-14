@@ -198,11 +198,11 @@ export const createDesktopClient = ({
     client?.updateDropsEnabled(enabled)
   }
 
-  const stopCurrentDropForEveryone = () => {
-    if (!currentServerDrop) {
-      return
+  const stopCurrentDropForEveryone = (expectedDropId?: string): boolean => {
+    if (!currentServerDrop || (expectedDropId && currentServerDrop.id !== expectedDropId)) {
+      return false
     }
-    client?.stopDrop(currentServerDrop.id)
+    return client?.stopDrop(currentServerDrop.id) ?? false
   }
 
   const getConnectedUsers = () => connectedUsers

@@ -6,16 +6,25 @@ const TEST_DROP_ID_PREFIX = 'memedrop-test-preview-'
 const COMPLETION_RETRY_DELAY_MS = 2_000
 
 type DropSource = 'server' | 'test'
+export type DropAction = 'skip' | 'stop' | 'preview'
+export type DropActionError = { action: DropAction; message: string }
 
 type ActiveDropOptions = {
   isOverlayView: ComputedRef<boolean>
   dropsEnabled: ComputedRef<boolean>
+  hideOwnDrops: ComputedRef<boolean>
   serverConfig: ComputedRef<ServerConfig>
 }
 
-export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: ActiveDropOptions) => {
+export const useActiveDrop = ({
+  isOverlayView,
+  dropsEnabled,
+  hideOwnDrops,
+  serverConfig,
+}: ActiveDropOptions) => {
   const serverDrop = ref<Drop | null>(null)
   const testDrop = ref<Drop | null>(null)
+  const presentedServerDropId = ref<string | null>(null)
   const activeDrop = computed(() => serverDrop.value ?? testDrop.value)
   const disposed = ref(false)
   let completionInFlight: Promise<boolean> | null = null
@@ -25,17 +34,59 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
 
   const activeKind = computed(() => getMediaKind(activeDrop.value))
   const hasDrop = computed(() => Boolean(activeDrop.value) && dropsEnabled.value)
+  const hasServerDrop = computed(() => Boolean(serverDrop.value))
   const isTestDropActive = computed(() => Boolean(testDrop.value))
   const canTriggerTestDrop = computed(
     () => dropsEnabled.value && (!serverDrop.value || Boolean(testDrop.value)),
   )
-  const canStopGlobalDrop = computed(
+  const isCurrentServerDropOwner = computed(
     () =>
       Boolean(serverDrop.value?.id) &&
       Boolean(serverConfig.value.discordUserId) &&
       (serverDrop.value?.ownerId ?? serverDrop.value?.authorId) ===
         serverConfig.value.discordUserId,
   )
+  const canStopGlobalDrop = computed(
+    () => hasServerDrop.value && isCurrentServerDropOwner.value,
+  )
+  const canSkipCurrentDrop = computed(
+    () =>
+      Boolean(serverDrop.value) && presentedServerDropId.value === serverDrop.value?.id,
+  )
+  const pendingDropAction = ref<DropAction | null>(null)
+  const dropActionError = ref<DropActionError | null>(null)
+
+  const runDropAction = async (
+    action: DropAction,
+    operation: () => Promise<boolean>,
+    failureMessage: string,
+    isFailureRelevant: () => boolean = () => true,
+  ) => {
+    if (pendingDropAction.value) {
+      return false
+    }
+
+    pendingDropAction.value = action
+    dropActionError.value = null
+
+    try {
+      const accepted = await operation()
+      if (!accepted && isFailureRelevant()) {
+        dropActionError.value = { action, message: failureMessage }
+      }
+      return accepted
+    } catch (error) {
+      console.error(`${failureMessage} :`, error)
+      if (isFailureRelevant()) {
+        dropActionError.value = { action, message: failureMessage }
+      }
+      return false
+    } finally {
+      if (pendingDropAction.value === action) {
+        pendingDropAction.value = null
+      }
+    }
+  }
 
   const getCurrentDrop = (source: DropSource) =>
     source === 'server' ? serverDrop.value : testDrop.value
@@ -56,6 +107,7 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
     if (source === 'server') {
       if (serverDrop.value?.id === dropId) {
         serverDrop.value = null
+        presentedServerDropId.value = null
       }
     } else if (testDrop.value?.id === dropId) {
       testDrop.value = null
@@ -176,7 +228,13 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
     return completeDrop(source, drop.id)
   }
 
-  const receiveDrop = (drop: Drop, source: DropSource = 'server') => {
+  const receiveDrop = (
+    drop: Drop,
+    source: DropSource = 'server',
+    isPresented?: boolean,
+  ) => {
+    dropActionError.value = null
+
     if (source === 'test') {
       // A local preview is strictly lower priority and can never displace a real
       // server drop, including during bootstrap replay.
@@ -195,6 +253,11 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
       clearCompletionRetry()
       testDrop.value = null
       serverDrop.value = drop
+      const isHiddenOwnDrop =
+        !isOverlayView.value &&
+        hideOwnDrops.value &&
+        (drop.ownerId ?? drop.authorId) === serverConfig.value.discordUserId
+      presentedServerDropId.value = (isPresented ?? !isHiddenOwnDrop) ? drop.id : null
     }
 
     if (!isOverlayView.value) {
@@ -209,6 +272,8 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
   const clearServerDrop = () => {
     const dropId = serverDrop.value?.id
     serverDrop.value = null
+    presentedServerDropId.value = null
+    dropActionError.value = null
     if (dropId) {
       clearCompletionRetry(`server:${dropId}`)
     }
@@ -221,53 +286,67 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
 
     const dropId = testDrop.value?.id
     testDrop.value = null
+    dropActionError.value = null
     if (dropId) {
       clearCompletionRetry(`test:${dropId}`)
     }
   }
 
-  const skipCurrentDrop = async () => {
-    try {
-      const accepted = await window.memedrop?.skipCurrentDrop()
-      return accepted ?? false
-    } catch (error) {
-      console.error('Impossible de passer le drop courant :', error)
-      return false
+  const skipCurrentDrop = () => {
+    const expectedDropId = presentedServerDropId.value
+    if (!expectedDropId) {
+      return Promise.resolve(false)
     }
+    return runDropAction(
+      'skip',
+      async () => {
+        const accepted = (await window.memedrop?.skipCurrentDrop(expectedDropId)) ?? false
+        if (accepted && presentedServerDropId.value === expectedDropId) {
+          presentedServerDropId.value = null
+        }
+        return accepted
+      },
+      "Impossible de passer le drop sur cet appareil. Vérifie la connexion au serveur.",
+      () => activeDrop.value?.id === expectedDropId,
+    )
   }
 
-  const completeLocalDrop = () => {
-    if (isOverlayView.value) {
-      void completeActiveDrop()
-    }
-  }
-
-  const retryServerDropCompletion = () => {
+  const retryServerDropCompletion = (expectedDropId?: string) => {
     const dropId = serverDrop.value?.id
-    if (isOverlayView.value && dropId) {
+    if (isOverlayView.value && dropId && (!expectedDropId || dropId === expectedDropId)) {
       void completeDrop('server', dropId)
     }
   }
 
-  const stopCurrentDropForEveryone = async () => {
-    await window.memedrop?.stopCurrentDropForEveryone()
+  const stopCurrentDropForEveryone = () => {
+    const expectedDropId = serverDrop.value?.id
+    if (!expectedDropId) {
+      return Promise.resolve(false)
+    }
+    return runDropAction(
+      'stop',
+      async () =>
+        (await window.memedrop?.stopCurrentDropForEveryone(expectedDropId)) ?? false,
+      "Impossible d'arrêter le drop pour tout le monde. Vérifie la connexion au serveur.",
+      () => serverDrop.value?.id === expectedDropId,
+    )
   }
 
-  const triggerTestDrop = async () => {
+  const performTestDropAction = async () => {
     if (serverDrop.value) {
       return false
     }
 
     const currentTestDrop = testDrop.value
     if (currentTestDrop) {
-      try {
-        const accepted = await window.memedrop?.clearTestDrop(currentTestDrop.id)
-        clearDropIfCurrent('test', currentTestDrop.id)
-        return accepted ?? false
-      } catch (error) {
-        console.error('Impossible de fermer le drop de test :', error)
-        return false
+      if (!window.memedrop) {
+        throw new Error('Bridge MemeDrop indisponible pour fermer l’aperçu.')
       }
+      await window.memedrop.clearTestDrop(currentTestDrop.id)
+      clearDropIfCurrent('test', currentTestDrop.id)
+      // If main already cleared this exact preview, the requested final state
+      // is nevertheless reached and should not be shown as a network error.
+      return true
     }
 
     const preview: Drop = {
@@ -282,17 +361,20 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
       createdAt: new Date().toISOString(),
     }
 
-    try {
-      const accepted = await window.memedrop?.emitTestDrop(preview)
-      if (accepted && !serverDrop.value) {
-        testDrop.value = preview
-      }
-      return accepted ?? false
-    } catch (error) {
-      console.error('Impossible de lancer le drop de test :', error)
-      return false
+    const accepted = await window.memedrop?.emitTestDrop(preview)
+    if (accepted && dropsEnabled.value && !serverDrop.value) {
+      testDrop.value = preview
     }
+    return accepted ?? false
   }
+
+  const triggerTestDrop = () =>
+    runDropAction(
+      'preview',
+      performTestDropAction,
+      "Impossible de modifier l'aperçu pour le moment.",
+      () => dropsEnabled.value && (!serverDrop.value || Boolean(testDrop.value)),
+    )
 
   onBeforeUnmount(() => {
     disposed.value = true
@@ -303,16 +385,25 @@ export const useActiveDrop = ({ isOverlayView, dropsEnabled, serverConfig }: Act
     activeDrop,
     activeKind,
     hasDrop,
+    hasServerDrop,
+    canSkipCurrentDrop,
     isTestDropActive,
     canTriggerTestDrop,
+    isCurrentServerDropOwner,
     canStopGlobalDrop,
+    pendingDropAction,
+    dropActionError,
     completeActiveDrop,
     receiveDrop,
     clearServerDrop,
     clearTestDrop,
     skipCurrentDrop,
-    completeLocalDrop,
     retryServerDropCompletion,
+    markServerDropNotPresented: (expectedDropId: string) => {
+      if (presentedServerDropId.value === expectedDropId) {
+        presentedServerDropId.value = null
+      }
+    },
     stopCurrentDropForEveryone,
     triggerTestDrop,
   }

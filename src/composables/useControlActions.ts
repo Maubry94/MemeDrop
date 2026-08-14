@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue'
+import { ref, watch, type Ref } from 'vue'
 import type {
   AppPreferences,
   OverlayState,
@@ -6,6 +6,8 @@ import type {
   ShortcutConfig,
   ShortcutStatus,
 } from '../../shared/types'
+
+export type ActionFeedbackStatus = 'idle' | 'success' | 'error'
 
 type ControlActionsOptions = {
   appPreferences: Ref<AppPreferences>
@@ -23,9 +25,26 @@ export const useControlActions = ({
   applyOverlayState,
 }: ControlActionsOptions) => {
   const configSavedMessage = ref<string | null>(null)
+  const configSaveStatus = ref<ActionFeedbackStatus>('idle')
   const isSavingConfig = ref(false)
   const discordAuthMessage = ref<string | null>(null)
+  const discordAuthStatus = ref<ActionFeedbackStatus>('idle')
   const isAuthenticatingDiscord = ref(false)
+  let lastSavedServerFingerprint = `${serverConfig.value.serverUrl}\u0000${serverConfig.value.accessKey}`
+
+  watch(
+    () => [serverConfig.value.serverUrl, serverConfig.value.accessKey] as const,
+    ([serverUrl, accessKey]) => {
+      const fingerprint = `${serverUrl}\u0000${accessKey}`
+      if (
+        configSaveStatus.value === 'error' ||
+        (configSaveStatus.value === 'success' && fingerprint !== lastSavedServerFingerprint)
+      ) {
+        configSaveStatus.value = 'idle'
+        configSavedMessage.value = null
+      }
+    },
+  )
 
   const updateAppPreferences = async (preferences: AppPreferences) => {
     if (!window.memedrop) {
@@ -98,42 +117,63 @@ export const useControlActions = ({
     await window.memedrop?.installAppUpdate()
   }
 
-  const saveServerConfig = async () => {
+  const saveServerConfig = async (): Promise<boolean> => {
+    if (isSavingConfig.value) {
+      return false
+    }
+
     if (!window.memedrop) {
-      return
+      configSaveStatus.value = 'error'
+      configSavedMessage.value = "L'application ne peut pas enregistrer la configuration."
+      return false
     }
 
     isSavingConfig.value = true
+    configSaveStatus.value = 'idle'
     configSavedMessage.value = null
 
     try {
       serverConfig.value = await window.memedrop.saveServerConfig({ ...serverConfig.value })
+      lastSavedServerFingerprint = `${serverConfig.value.serverUrl}\u0000${serverConfig.value.accessKey}`
+      configSaveStatus.value = 'success'
       configSavedMessage.value = 'Configuration enregistrée.'
+      discordAuthStatus.value = 'idle'
+      discordAuthMessage.value = null
+      return true
     } catch (error) {
       console.error('Enregistrement serveur impossible:', error)
+      configSaveStatus.value = 'error'
       configSavedMessage.value = 'Enregistrement impossible.'
+      return false
     } finally {
       isSavingConfig.value = false
     }
   }
 
   const authenticateDiscord = async () => {
+    if (isAuthenticatingDiscord.value) {
+      return
+    }
+
     if (!window.memedrop) {
       return
     }
 
     isAuthenticatingDiscord.value = true
-    discordAuthMessage.value = 'Connexion Discord en cours...'
+    discordAuthStatus.value = 'idle'
+    discordAuthMessage.value = 'Connexion Discord en cours…'
 
     try {
       serverConfig.value = await window.memedrop.saveServerConfig({ ...serverConfig.value })
       serverConfig.value = await window.memedrop.authenticateDiscord()
-      discordAuthMessage.value = `Connecté avec Discord: ${serverConfig.value.discordUserName}`
+      discordAuthStatus.value = 'success'
+      discordAuthMessage.value = null
     } catch (error) {
       console.error('Connexion Discord impossible:', error)
+      discordAuthStatus.value = 'error'
       discordAuthMessage.value =
         error instanceof Error
-          ? `Connexion Discord impossible: ${error.message}`
+          ? `Connexion Discord impossible : ${error.message}`
           : 'Connexion Discord impossible.'
     } finally {
       isAuthenticatingDiscord.value = false
@@ -146,6 +186,7 @@ export const useControlActions = ({
     }
 
     serverConfig.value = await window.memedrop.disconnectDiscord()
+    discordAuthStatus.value = 'idle'
     discordAuthMessage.value = null
   }
 
@@ -165,8 +206,10 @@ export const useControlActions = ({
 
   return {
     configSavedMessage,
+    configSaveStatus,
     isSavingConfig,
     discordAuthMessage,
+    discordAuthStatus,
     isAuthenticatingDiscord,
     updateAppPreferences,
     updateShortcutConfigs,

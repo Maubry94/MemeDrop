@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, type ComputedRef } from 'vue'
+import { onBeforeUnmount, onMounted, ref, type ComputedRef } from 'vue'
 import type {
   ActiveDropSnapshot,
   AppPreferences,
@@ -6,6 +6,7 @@ import type {
   AppVersionInfo,
   ConnectedUser,
   ConnectionStatus,
+  ControlPanelSectionState,
   Drop,
   OverlayDisplayInfo,
   OverlayDisplayPreferences,
@@ -17,6 +18,9 @@ import type {
 
 type DropSource = 'server' | 'test'
 const INITIAL_STATE_TIMEOUT_MS = 5_000
+const EVENT_BUFFER_LIMIT = 200
+
+export type ControlInitializationStatus = 'initializing' | 'ready' | 'error'
 
 type MemedropBridgeOptions = {
   isOverlayView: ComputedRef<boolean>
@@ -27,15 +31,16 @@ type MemedropBridgeOptions = {
   setAppVersionInfo: (info: AppVersionInfo) => void
   setAppUpdateState: (state: AppUpdateState) => void
   setConnectionStatus: (status: ConnectionStatus | null) => void
+  setControlPanelSectionState: (state: ControlPanelSectionState) => void
   setConnectedUsers: (users: ConnectedUser[]) => void
   setShortcutConfigs: (shortcuts: ShortcutConfig[]) => void
   setShortcutStatus: (status: ShortcutStatus[]) => void
   setServerConfig: (config: ServerConfig) => void
-  receiveDrop: (drop: Drop, source?: DropSource) => void
+  receiveDrop: (drop: Drop, source?: DropSource, isPresented?: boolean) => void
   clearServerDrop: () => void
   clearTestDrop: (expectedDropId?: string) => void
-  completeLocalDrop: () => void
-  retryServerDropCompletion: () => void
+  retryServerDropCompletion: (expectedDropId?: string) => void
+  markServerDropNotPresented: (expectedDropId: string) => void
 }
 
 export const useMemedropBridge = ({
@@ -47,6 +52,7 @@ export const useMemedropBridge = ({
   setAppVersionInfo,
   setAppUpdateState,
   setConnectionStatus,
+  setControlPanelSectionState,
   setConnectedUsers,
   setShortcutConfigs,
   setShortcutStatus,
@@ -54,9 +60,11 @@ export const useMemedropBridge = ({
   receiveDrop,
   clearServerDrop,
   clearTestDrop,
-  completeLocalDrop,
   retryServerDropCompletion,
+  markServerDropNotPresented,
 }: MemedropBridgeOptions) => {
+  const initializationStatus = ref<ControlInitializationStatus>('initializing')
+  const initializationError = ref<string | null>(null)
   const unsubscribers: Array<() => void> = []
   const bufferedEvents: Array<() => void> = []
   let disposed = false
@@ -76,6 +84,9 @@ export const useMemedropBridge = ({
     }
     if (hydrating) {
       bufferedEvents.push(apply)
+      if (bufferedEvents.length > EVENT_BUFFER_LIMIT) {
+        bufferedEvents.shift()
+      }
       return
     }
     apply()
@@ -85,7 +96,7 @@ export const useMemedropBridge = ({
     clearServerDrop()
     clearTestDrop()
     if (snapshot.serverDrop) {
-      receiveDrop(snapshot.serverDrop, 'server')
+      receiveDrop(snapshot.serverDrop, 'server', snapshot.serverDropPresented)
     } else if (snapshot.testDrop) {
       receiveDrop(snapshot.testDrop, 'test')
     }
@@ -99,14 +110,21 @@ export const useMemedropBridge = ({
       return hydrationPromise
     }
 
+    if (initializationStatus.value === 'error') {
+      // A retry snapshot is newer than every event buffered before it starts.
+      bufferedEvents.length = 0
+    }
+
     hydrating = true
+    initializationStatus.value = 'initializing'
+    initializationError.value = null
     const generation = ++hydrationGeneration
 
     const load = async <T>(
       label: string,
       getter: () => Promise<T>,
       apply: (value: T) => void,
-    ): Promise<() => void> => {
+    ): Promise<{ apply: () => void; error: unknown | null }> => {
       let timeout: ReturnType<typeof setTimeout> | null = null
       try {
         const value = await Promise.race([
@@ -118,10 +136,10 @@ export const useMemedropBridge = ({
             )
           }),
         ])
-        return () => apply(value)
+        return { apply: () => apply(value), error: null }
       } catch (error) {
         console.error(`Chargement de l'état initial « ${label} » impossible :`, error)
-        return () => undefined
+        return { apply: () => undefined, error }
       } finally {
         if (timeout) {
           clearTimeout(timeout)
@@ -130,7 +148,7 @@ export const useMemedropBridge = ({
     }
 
     const operation = (async () => {
-      const loads: Array<Promise<() => void>> = []
+      const loads: Array<Promise<{ apply: () => void; error: unknown | null }>> = []
       if (isOverlayView.value) {
         const overlayBridge = window.memedropOverlay
         if (overlayBridge) {
@@ -147,6 +165,8 @@ export const useMemedropBridge = ({
               applyActiveDropSnapshot,
             ),
           )
+        } else {
+          console.error("Chargement de l'état initial impossible : bridge overlay absent.")
         }
       } else {
         const memedrop = window.memedrop
@@ -168,32 +188,57 @@ export const useMemedropBridge = ({
             load('version de l’application', () => memedrop.getAppVersionInfo(), setAppVersionInfo),
             load('mise à jour', () => memedrop.getAppUpdateState(), setAppUpdateState),
             load('connexion', () => memedrop.getConnectionStatus(), setConnectionStatus),
+            load(
+              'sections du panneau',
+              () => memedrop.getControlPanelSectionState(),
+              setControlPanelSectionState,
+            ),
             load('utilisateurs connectés', () => memedrop.getConnectedUsers(), setConnectedUsers),
             load('raccourcis', () => memedrop.getShortcutConfigs(), setShortcutConfigs),
             load('état des raccourcis', () => memedrop.getShortcutStatus(), setShortcutStatus),
             load('configuration serveur', () => memedrop.getServerConfig(), setServerConfig),
           )
+        } else {
+          console.error("Chargement de l'état initial impossible : bridge de contrôle absent.")
         }
       }
 
-      const snapshotAppliers = await Promise.all(loads)
+      const snapshots = await Promise.all(loads)
       if (disposed || generation !== hydrationGeneration) {
         bufferedEvents.length = 0
         return
       }
 
-      for (const apply of snapshotAppliers) {
-        apply()
+      if (
+        loads.length === 0 ||
+        (!isOverlayView.value && snapshots.some((snapshot) => snapshot.error !== null))
+      ) {
+        initializationStatus.value = 'error'
+        initializationError.value =
+          "Une partie de l'application ne répond pas. Réessaie, ou relance MemeDrop si le problème persiste."
+        return
       }
 
-      // Events received after subscription but before the snapshots resolved are
-      // newer than those snapshots. Replay them only after every snapshot has
-      // been applied so stale invoke() results can never win the race.
-      const pendingEvents = bufferedEvents.splice(0)
-      for (const apply of pendingEvents) {
-        apply()
+      try {
+        for (const snapshot of snapshots) {
+          snapshot.apply()
+        }
+
+        // Events received after subscription but before the snapshots resolved are
+        // newer than those snapshots. Replay them only after every snapshot has
+        // been applied so stale invoke() results can never win the race.
+        const pendingEvents = bufferedEvents.splice(0)
+        for (const apply of pendingEvents) {
+          apply()
+        }
+        hydrating = false
+        initializationStatus.value = 'ready'
+      } catch (error) {
+        console.error("Application de l'état initial impossible :", error)
+        initializationStatus.value = 'error'
+        initializationError.value =
+          "Une partie de l'application ne répond pas. Réessaie, ou relance MemeDrop si le problème persiste."
       }
-      hydrating = false
     })().finally(() => {
       if (generation === hydrationGeneration) {
         if (disposed) {
@@ -223,7 +268,11 @@ export const useMemedropBridge = ({
           dispatchEvent(() => clearTestDrop(dropId)),
         ),
       )
-      remember(overlayBridge.onSkipCurrentDrop(() => dispatchEvent(retryServerDropCompletion)))
+      remember(
+        overlayBridge.onSkipCurrentDrop((dropId) =>
+          dispatchEvent(() => retryServerDropCompletion(dropId)),
+        ),
+      )
       remember(overlayBridge.onOverlayState((state) => dispatchEvent(() => applyOverlayState(state))))
       remember(
         overlayBridge.onOverlayDisplayPreferences((preferences) =>
@@ -246,7 +295,11 @@ export const useMemedropBridge = ({
         dispatchEvent(() => clearTestDrop(dropId)),
       ),
     )
-    remember(memedrop.onSkipCurrentDrop(() => dispatchEvent(completeLocalDrop)))
+    remember(
+      memedrop.onSkipCurrentDrop((dropId) =>
+        dispatchEvent(() => markServerDropNotPresented(dropId)),
+      ),
+    )
     remember(memedrop.onConnectionStatus((status) => dispatchEvent(() => setConnectionStatus(status))))
     remember(memedrop.onConnectedUsers((users) => dispatchEvent(() => setConnectedUsers(users))))
     remember(memedrop.onShortcutStatus((status) => dispatchEvent(() => setShortcutStatus(status))))
@@ -280,6 +333,8 @@ export const useMemedropBridge = ({
   })
 
   return {
+    initializationStatus,
+    initializationError,
     requestInitialState,
   }
 }

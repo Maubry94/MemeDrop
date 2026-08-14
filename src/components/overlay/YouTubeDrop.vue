@@ -25,10 +25,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   advance: [dropId?: string]
+  loading: [dropId: string]
+  ready: [dropId: string]
 }>()
 
 const youtubeIframe = ref<HTMLIFrameElement | null>(null)
 const iframeGeneration = ref(0)
+const isPlayerReady = ref(false)
 
 let youtubeHandshakeTimer: number | undefined
 let youtubeHandshakeRevision = 0
@@ -311,6 +314,8 @@ const handleYouTubeMessage = (event: MessageEvent) => {
     if (playerReadyGeneration !== identity.generation) {
       playerReadyGeneration = identity.generation
       configureYouTubePlayer(identity)
+      isPlayerReady.value = true
+      emit('ready', identity.dropId)
     }
   }
 
@@ -336,6 +341,8 @@ const resetYouTubeDrop = () => {
   clearYouTubeHandshakeTimer()
   clearYouTubeWatchdog()
   iframeGeneration.value += 1
+  isPlayerReady.value = false
+  emit('loading', props.drop.id)
   completedGeneration = null
   playerReadyGeneration = null
   playbackStartedGeneration = null
@@ -385,7 +392,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="mx-auto aspect-video w-full max-w-[calc(60vh*16/9)] overflow-hidden rounded-2xl bg-black"
+    class="relative mx-auto aspect-video w-full max-w-[calc(60vh*16/9)] overflow-hidden rounded-2xl bg-black"
     :style="frameStyle"
   >
     <iframe
@@ -398,7 +405,8 @@ onBeforeUnmount(() => {
       :src="youtubeEmbedUrl"
       allow="autoplay; encrypted-media; picture-in-picture"
       allowfullscreen
-      class="h-full w-full border-0"
+      class="absolute inset-0 h-full w-full border-0 transition-opacity duration-200 motion-reduce:transition-none"
+      :class="isPlayerReady ? 'opacity-100' : 'opacity-0'"
       referrerpolicy="strict-origin-when-cross-origin"
       sandbox="allow-presentation allow-same-origin allow-scripts"
       title="Vidéo YouTube MemeDrop"

@@ -1,32 +1,48 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { AppPreferences, ShortcutActionId, ShortcutConfig, ShortcutStatus } from '../../../shared/types'
+import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref } from 'vue'
+import type {
+  AppPreferences,
+  AppUpdateState,
+  AppVersionInfo,
+  ShortcutActionId,
+  ShortcutConfig,
+  ShortcutStatus,
+} from '../../../shared/types'
+import AppUpdatePanel from './AppUpdatePanel.vue'
 import Button from '../ui/Button.vue'
 import Checkbox from '../ui/Checkbox.vue'
 
 const props = defineProps<{
   preferences: AppPreferences
+  appUpdateState: AppUpdateState
+  appVersionInfo: AppVersionInfo
   shortcutConfigs: ShortcutConfig[]
   shortcutStatuses: ShortcutStatus[]
 }>()
 
 const emit = defineEmits<{
   close: []
+  checkForAppUpdate: []
+  downloadAppUpdate: []
+  installAppUpdate: []
+  openReleasePage: []
   updatePreferences: [preferences: AppPreferences]
   updateShortcuts: [shortcuts: ShortcutConfig[]]
   startShortcutCapture: [action: ShortcutActionId]
   resetShortcuts: []
-  quitApp: []
   uninstallApp: []
 }>()
 
 const editingShortcut = ref<ShortcutActionId | null>(null)
+const dialogElement = ref<HTMLElement | null>(null)
+
+let previouslyFocusedElement: HTMLElement | null = null
 
 const fallbackLabels: Record<ShortcutActionId, string> = {
-  toggleDrops: 'Activer/désactiver les drops',
-  skipDrop: 'Masquer le drop actuel',
-  toggleOwnDrops: 'Afficher/masquer mes drops',
-  stopGlobalDrop: 'Stopper le drop envoyé',
+  toggleDrops: 'Désactiver/Activer les drops',
+  skipDrop: 'Passer le drop',
+  toggleOwnDrops: 'Afficher/masquer mes propres drops',
+  stopGlobalDrop: 'Arrêter mon drop',
 }
 
 const shortcutStatusesByAction = computed(() =>
@@ -49,15 +65,84 @@ const startEditingShortcut = (action: ShortcutActionId) => {
   emit('startShortcutCapture', action)
 }
 
+const getFocusableElements = () => {
+  if (!dialogElement.value) {
+    return []
+  }
+
+  return Array.from(
+    dialogElement.value.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => element.getClientRects().length > 0)
+}
+
+const closeDialog = () => {
+  emit('close')
+}
+
+const handleDialogKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    if (editingShortcut.value) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    closeDialog()
+    return
+  }
+
+  if (event.key !== 'Tab') {
+    return
+  }
+
+  const focusableElements = getFocusableElements()
+  if (!focusableElements.length) {
+    event.preventDefault()
+    dialogElement.value?.focus({ preventScroll: true })
+    return
+  }
+
+  const firstElement = focusableElements[0]
+  const lastElement = focusableElements[focusableElements.length - 1]
+  const activeElement = document.activeElement
+
+  if (event.shiftKey) {
+    if (
+      activeElement === dialogElement.value ||
+      activeElement === firstElement ||
+      !dialogElement.value?.contains(activeElement)
+    ) {
+      event.preventDefault()
+      lastElement?.focus()
+    }
+    return
+  }
+
+  if (activeElement === lastElement || activeElement === dialogElement.value) {
+    event.preventDefault()
+    firstElement?.focus()
+  }
+}
+
 let unsubscribeShortcutConfigs: (() => void) | undefined
 let unsubscribeShortcutCaptureCancelled: (() => void) | undefined
 
 onMounted(() => {
+  previouslyFocusedElement = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null
+
   unsubscribeShortcutConfigs = window.memedrop?.onShortcutConfigs(() => {
     editingShortcut.value = null
   })
   unsubscribeShortcutCaptureCancelled = window.memedrop?.onShortcutCaptureCancelled(() => {
     editingShortcut.value = null
+  })
+
+  void nextTick(() => {
+    dialogElement.value?.focus({ preventScroll: true })
   })
 })
 
@@ -66,21 +151,36 @@ onBeforeUnmount(() => {
   unsubscribeShortcutConfigs?.()
   unsubscribeShortcutCaptureCancelled?.()
 })
+
+onUnmounted(() => {
+  if (previouslyFocusedElement?.isConnected) {
+    previouslyFocusedElement.focus({ preventScroll: true })
+  }
+})
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+    @click.self="closeDialog"
+  >
     <section
-      class="max-h-[92vh] w-full max-w-sm overflow-y-auto rounded-lg border border-white/10 bg-slate-950 p-4 text-slate-100 shadow-2xl"
+      ref="dialogElement"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="preferences-dialog-title"
+      tabindex="-1"
+      class="flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-lg border border-white/10 bg-slate-950 text-slate-100 shadow-2xl"
+      @keydown="handleDialogKeydown"
     >
-      <div class="flex items-center justify-between gap-3">
-        <h2 class="text-sm font-semibold">Préférences</h2>
+      <div class="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 p-4">
+        <h2 id="preferences-dialog-title" class="text-sm font-semibold">Préférences</h2>
         <Button
           variant="icon"
           size="icon"
           title="Fermer"
           aria-label="Fermer"
-          @click="$emit('close')"
+          @click="closeDialog"
         >
           <span
             class="size-4 bg-current"
@@ -90,7 +190,8 @@ onBeforeUnmount(() => {
         </Button>
       </div>
 
-      <div class="mt-4 space-y-3">
+      <div class="min-h-0 overflow-y-auto overscroll-contain p-4">
+      <div class="space-y-3">
         <label
           class="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-white/10 bg-slate-900/70 p-3"
         >
@@ -147,11 +248,11 @@ onBeforeUnmount(() => {
           </Button>
         </div>
 
-        <div class="mt-2 space-y-2">
+        <div class="mt-2 divide-y divide-white/10 overflow-hidden rounded-lg border border-white/10 bg-slate-900/70">
           <div
             v-for="shortcut in shortcutConfigs"
             :key="shortcut.action"
-            class="rounded-lg border border-white/10 bg-slate-900/70 p-3"
+            class="px-3 py-2.5"
           >
             <div class="flex items-center justify-between gap-3">
               <div class="min-w-0">
@@ -159,10 +260,13 @@ onBeforeUnmount(() => {
                   {{ shortcutLabel(shortcut) }}
                 </p>
                 <p
-                  class="mt-0.5 text-[11px]"
+                  v-if="!shortcutRegistered(shortcut) || editingShortcut === shortcut.action"
+                  class="mt-0.5 text-xs"
                   :class="shortcutRegistered(shortcut) ? 'text-slate-400' : 'text-rose-300'"
+                  :role="editingShortcut === shortcut.action ? 'status' : undefined"
+                  :aria-live="editingShortcut === shortcut.action ? 'polite' : undefined"
                 >
-                  {{ shortcutRegistered(shortcut) ? 'Disponible' : 'Indisponible' }}
+                  {{ editingShortcut === shortcut.action ? 'Saisis un raccourci — Échap pour annuler.' : 'Indisponible' }}
                 </p>
               </div>
 
@@ -170,11 +274,14 @@ onBeforeUnmount(() => {
                 class="shrink-0"
                 variant="subtle"
                 size="xs"
+                :aria-label="editingShortcut === shortcut.action
+                  ? `${shortcutLabel(shortcut)} : saisis un raccourci, Échap pour annuler`
+                  : `Modifier ${shortcutLabel(shortcut)} (${formatAccelerator(shortcut.accelerator)})`"
                 @click="startEditingShortcut(shortcut.action)"
               >
                 {{
                   editingShortcut === shortcut.action
-                    ? 'Appuie...'
+                    ? 'Saisie…'
                     : formatAccelerator(shortcut.accelerator)
                 }}
               </Button>
@@ -183,15 +290,19 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <div class="mt-5 border-t border-white/10 pt-4">
+        <AppUpdatePanel
+          :state="appUpdateState"
+          :version-info="appVersionInfo"
+          @check="$emit('checkForAppUpdate')"
+          @download="$emit('downloadAppUpdate')"
+          @install="$emit('installAppUpdate')"
+          @open-release-page="$emit('openReleasePage')"
+        />
+      </div>
+
       <div class="mt-5 border-t border-rose-400/20 pt-4">
         <p class="text-xs font-semibold text-rose-300">Zone dangereuse</p>
-        <Button
-          class="mt-2"
-          full-width
-          @click="$emit('quitApp')"
-        >
-          Quitter MemeDrop
-        </Button>
         <Button
           class="mt-2"
           variant="danger"
@@ -200,6 +311,7 @@ onBeforeUnmount(() => {
         >
           Désinstaller MemeDrop
         </Button>
+      </div>
       </div>
     </section>
   </div>

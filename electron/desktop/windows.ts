@@ -1,6 +1,10 @@
 import { BrowserWindow, session } from 'electron'
 import type { Cookie, Display, Input, Rectangle, WebContents } from 'electron'
 import type { ControlWindowBounds } from '../core/appConfig'
+import {
+  CONTROL_WINDOW_MIN_HEIGHT,
+  CONTROL_WINDOW_MIN_WIDTH,
+} from './displays'
 
 type RendererView = 'overlay' | 'control'
 
@@ -48,7 +52,7 @@ type MemeDropWindowsOptions = {
   renderer: RendererLoader
   getAppTitle: () => string
   getOverlayTargetDisplay: () => Display
-  getControlWindowBounds: () => ControlWindowBounds
+  getControlWindowBounds: (bounds?: Partial<ControlWindowBounds>) => ControlWindowBounds
   getShouldStartControlHidden: () => boolean
   setShouldStartControlHidden: (hidden: boolean) => void
   isQuitting: () => boolean
@@ -216,6 +220,35 @@ export const createMemeDropWindows = ({
     }, 400)
   }
 
+  const ensureControlWindowVisible = () => {
+    if (!controlWindow || controlWindow.isDestroyed()) {
+      return
+    }
+
+    const currentBounds = controlWindow.getNormalBounds()
+    const nextBounds = getControlWindowBounds(currentBounds)
+    const normalizedBounds: Rectangle = {
+      x: nextBounds.x ?? currentBounds.x,
+      y: nextBounds.y ?? currentBounds.y,
+      width: nextBounds.width,
+      height: nextBounds.height,
+    }
+
+    controlWindow.setMinimumSize(
+      Math.min(CONTROL_WINDOW_MIN_WIDTH, normalizedBounds.width),
+      Math.min(CONTROL_WINDOW_MIN_HEIGHT, normalizedBounds.height),
+    )
+
+    if (
+      currentBounds.x !== normalizedBounds.x ||
+      currentBounds.y !== normalizedBounds.y ||
+      currentBounds.width !== normalizedBounds.width ||
+      currentBounds.height !== normalizedBounds.height
+    ) {
+      controlWindow.setBounds(normalizedBounds)
+    }
+  }
+
   const createOverlayWindow = () => {
     configureRendererSession()
 
@@ -268,10 +301,11 @@ export const createMemeDropWindows = ({
 
   const createControlWindow = () => {
     configureRendererSession()
+    const initialBounds = getControlWindowBounds()
     controlWindow = new BrowserWindow({
-      ...getControlWindowBounds(),
-      minWidth: 500,
-      minHeight: 370,
+      ...initialBounds,
+      minWidth: Math.min(CONTROL_WINDOW_MIN_WIDTH, initialBounds.width),
+      minHeight: Math.min(CONTROL_WINDOW_MIN_HEIGHT, initialBounds.height),
       resizable: true,
       minimizable: true,
       maximizable: false,
@@ -354,6 +388,7 @@ export const createMemeDropWindows = ({
       controlWindow.restore()
     }
 
+    ensureControlWindowVisible()
     controlWindow.show()
     controlWindow.focus()
   }
@@ -395,6 +430,7 @@ export const createMemeDropWindows = ({
     prepareRendererSession,
     createWindows,
     showControlWindow,
+    ensureControlWindowVisible,
     keepOverlayAboveFullscreen,
     sendToWindows,
     sendToOverlay,

@@ -21,10 +21,10 @@ export const DEFAULT_SHORTCUTS: ShortcutConfig[] = [
 ]
 
 export const SHORTCUT_LABELS: Record<ShortcutActionId, string> = {
-  toggleDrops: 'Activer/désactiver les drops',
-  skipDrop: 'Masquer le drop actuel',
-  toggleOwnDrops: 'Afficher/masquer mes drops',
-  stopGlobalDrop: 'Stopper le drop envoyé',
+  toggleDrops: 'Désactiver/Activer les drops',
+  skipDrop: 'Passer le drop',
+  toggleOwnDrops: 'Afficher/masquer mes propres drops',
+  stopGlobalDrop: 'Arrêter mon drop',
 }
 
 export const normalizeShortcutConfigs = (

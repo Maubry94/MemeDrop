@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
+import { DEFAULT_CONTROL_PANEL_SECTION_STATE } from '../../shared/types'
 import type {
   AppPreferences,
   ActiveDropSnapshot,
@@ -7,6 +8,8 @@ import type {
   AppVersionInfo,
   ConnectedUser,
   ConnectionStatus,
+  ControlPanelSectionId,
+  ControlPanelSectionState,
   Drop,
   OverlayDisplayInfo,
   OverlayDisplayPreferences,
@@ -37,6 +40,11 @@ export type MemeDropIpcHandlers = {
   installAppUpdate: () => Promise<AppUpdateState>
   openReleasePage: () => void
   setAppPreferences: (preferences: AppPreferences) => AppPreferences
+  getControlPanelSectionState: () => ControlPanelSectionState
+  setControlPanelSectionOpen: (
+    sectionId: ControlPanelSectionId,
+    open: boolean,
+  ) => ControlPanelSectionState
   quitApp: () => void
   uninstallApp: () => void
   getConnectionStatus: () => ConnectionStatus | null
@@ -53,9 +61,9 @@ export type MemeDropIpcHandlers = {
   disconnectDiscord: () => ServerConfig
   toggleDrops: () => OverlayState
   toggleHideOwnDrops: () => OverlayState
-  skipCurrentDrop: () => boolean
+  skipCurrentDrop: (dropId: string) => boolean
   completeCurrentDrop: (dropId: string) => boolean
-  stopCurrentDropForEveryone: () => void
+  stopCurrentDropForEveryone: (dropId: string) => boolean
   emitTestDrop: (drop: Drop) => boolean
   clearTestDrop: (dropId: string) => boolean
 }
@@ -86,6 +94,25 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
     if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(value)) {
       throw new Error('Identifiant de drop invalide.')
     }
+    return value
+  }
+
+  const requireControlPanelSectionId = (value: unknown): ControlPanelSectionId => {
+    if (
+      typeof value !== 'string' ||
+      !Object.prototype.hasOwnProperty.call(DEFAULT_CONTROL_PANEL_SECTION_STATE, value)
+    ) {
+      throw new Error('Identifiant de section du panneau de contrôle invalide.')
+    }
+
+    return value as ControlPanelSectionId
+  }
+
+  const requireBoolean = (value: unknown) => {
+    if (typeof value !== 'boolean') {
+      throw new Error('État de section du panneau de contrôle invalide.')
+    }
+
     return value
   }
 
@@ -127,6 +154,17 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
   handle('set-app-preferences', (_event, preferences: AppPreferences) =>
     handlers.setAppPreferences(preferences),
   )
+  handle('get-control-panel-section-state', () =>
+    handlers.getControlPanelSectionState(),
+  )
+  handle(
+    'set-control-panel-section-open',
+    (_event, sectionId: unknown, open: unknown) =>
+      handlers.setControlPanelSectionOpen(
+        requireControlPanelSectionId(sectionId),
+        requireBoolean(open),
+      ),
+  )
   handle('quit-app', () => handlers.quitApp())
   handle('uninstall-app', () => handlers.uninstallApp())
   handle('get-connection-status', () => handlers.getConnectionStatus())
@@ -151,14 +189,16 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
   handle('disconnect-discord', () => handlers.disconnectDiscord())
   handle('toggle-drops', () => handlers.toggleDrops())
   handle('toggle-hide-own-drops', () => handlers.toggleHideOwnDrops())
-  handle('skip-current-drop', () => handlers.skipCurrentDrop())
+  handle('skip-current-drop', (_event, dropId: string) =>
+    handlers.skipCurrentDrop(requireDropId(dropId)),
+  )
   handle(
     'complete-current-drop',
     (_event, dropId: string) => handlers.completeCurrentDrop(requireDropId(dropId)),
     true,
   )
-  handle('stop-current-drop-for-everyone', () =>
-    handlers.stopCurrentDropForEveryone(),
+  handle('stop-current-drop-for-everyone', (_event, dropId: string) =>
+    handlers.stopCurrentDropForEveryone(requireDropId(dropId)),
   )
   handle('emit-test-drop', (_event, drop: Drop) => handlers.emitTestDrop(drop))
   handle(

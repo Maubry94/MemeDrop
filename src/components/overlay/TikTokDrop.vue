@@ -24,10 +24,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   advance: [dropId?: string]
+  loading: [dropId: string]
+  ready: [dropId: string]
 }>()
 
 const tiktokIframe = ref<HTMLIFrameElement | null>(null)
 const iframeRevision = ref(0)
+const isPlayerReady = ref(false)
 let tiktokWatchdogTimer: number | undefined
 let tiktokWatchdogRevision = 0
 let completedDropId: string | null = null
@@ -47,6 +50,17 @@ type TikTokFailureReason =
 type TikTokWatchdogPhase = 'stall' | 'startup'
 
 const normalizedDropVolume = computed(() => Math.min(Math.max(props.volume, 0), 100) / 100)
+
+const portraitFrameStyle = computed<CSSProperties>(() => {
+  const configuredMaxWidth = props.frameStyle.maxWidth
+  const maxWidth = typeof configuredMaxWidth === 'number'
+    ? `${configuredMaxWidth}px`
+    : configuredMaxWidth || '90vw'
+
+  return {
+    width: `min(calc(60vh * 9 / 16), ${maxWidth}, 90vw)`,
+  }
+})
 
 const tiktokEmbedUrl = computed(() => {
   if (!props.drop.tiktokVideoId || !/^\d{10,30}$/.test(props.drop.tiktokVideoId)) {
@@ -123,6 +137,8 @@ function retryTikTokPlayer(expectedDropId: string) {
 
   retryCount += 1
   playerReadyDropId = null
+  isPlayerReady.value = false
+  emit('loading', expectedDropId)
   lastCurrentTime = null
   lastImageIndex = null
   iframeRevision.value += 1
@@ -298,6 +314,8 @@ const handleTikTokMessage = (event: MessageEvent) => {
     if (playerReadyDropId !== expectedDropId) {
       playerReadyDropId = expectedDropId
       configureTikTokPlayer()
+      isPlayerReady.value = true
+      emit('ready', expectedDropId)
     }
     return
   }
@@ -361,6 +379,8 @@ const resetTikTokDrop = (dropId: string) => {
   clearTikTokWatchdog()
   completedDropId = null
   playerReadyDropId = null
+  isPlayerReady.value = false
+  emit('loading', dropId)
   playbackStartedDropId = null
   lastCurrentTime = null
   lastImageIndex = null
@@ -402,8 +422,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="mx-auto flex aspect-video w-full items-center justify-center overflow-hidden rounded-2xl bg-black"
-    :style="frameStyle"
+    class="relative mx-auto aspect-9/16 overflow-hidden rounded-2xl bg-black"
+    :style="portraitFrameStyle"
   >
     <iframe
       v-if="tiktokEmbedUrl"
@@ -413,7 +433,8 @@ onBeforeUnmount(() => {
       :data-drop-id="drop.id"
       :src="tiktokEmbedUrl"
       allow="autoplay; encrypted-media"
-      class="h-full max-h-full aspect-9/16 border-0"
+      class="absolute inset-0 h-full w-full border-0 transition-opacity duration-200 motion-reduce:transition-none"
+      :class="isPlayerReady ? 'opacity-100' : 'opacity-0'"
       referrerpolicy="strict-origin-when-cross-origin"
       sandbox="allow-same-origin allow-scripts"
       title="Vidéo TikTok MemeDrop"

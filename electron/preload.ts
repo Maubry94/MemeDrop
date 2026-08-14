@@ -9,6 +9,8 @@ import type {
   AppPreferences,
   AppUpdateState,
   AppVersionInfo,
+  ControlPanelSectionId,
+  ControlPanelSectionState,
   OverlayDisplayInfo,
   OverlayDisplayPreferences,
   OverlayState,
@@ -29,7 +31,8 @@ const memedropApi = {
   onClearDrop: (handler: () => void) => onChannel('clear-drop', handler),
   onTestDropCleared: (handler: (dropId: string) => void) =>
     onChannel('test-drop-cleared', handler),
-  onSkipCurrentDrop: (handler: () => void) => onChannel('skip-current-drop', handler),
+  onSkipCurrentDrop: (handler: (dropId: string) => void) =>
+    onChannel('skip-current-drop', handler),
   onConnectionStatus: (handler: (status: ConnectionStatus) => void) =>
     onChannel('connection-status', handler),
   onConnectedUsers: (handler: (users: ConnectedUser[]) => void) =>
@@ -58,9 +61,10 @@ const memedropApi = {
   setHideOwnDrops: (enabled: boolean) => ipcRenderer.invoke('set-hide-own-drops', enabled),
   toggleDrops: () => ipcRenderer.invoke('toggle-drops'),
   toggleHideOwnDrops: () => ipcRenderer.invoke('toggle-hide-own-drops'),
-  skipCurrentDrop: () => ipcRenderer.invoke('skip-current-drop'),
+  skipCurrentDrop: (dropId: string) => ipcRenderer.invoke('skip-current-drop', dropId),
   completeCurrentDrop: (dropId: string) => ipcRenderer.invoke('complete-current-drop', dropId),
-  stopCurrentDropForEveryone: () => ipcRenderer.invoke('stop-current-drop-for-everyone'),
+  stopCurrentDropForEveryone: (dropId: string): Promise<boolean> =>
+    ipcRenderer.invoke('stop-current-drop-for-everyone', dropId),
   getOverlayState: () => ipcRenderer.invoke('get-overlay-state'),
   getActiveDropSnapshot: (): Promise<ActiveDropSnapshot> =>
     ipcRenderer.invoke('get-active-drop-snapshot'),
@@ -76,6 +80,13 @@ const memedropApi = {
   installAppUpdate: () => ipcRenderer.invoke('install-app-update'),
   setAppPreferences: (preferences: AppPreferences) =>
     ipcRenderer.invoke('set-app-preferences', preferences),
+  getControlPanelSectionState: (): Promise<ControlPanelSectionState> =>
+    ipcRenderer.invoke('get-control-panel-section-state'),
+  setControlPanelSectionOpen: (
+    sectionId: ControlPanelSectionId,
+    open: boolean,
+  ): Promise<ControlPanelSectionState> =>
+    ipcRenderer.invoke('set-control-panel-section-open', sectionId, open),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   uninstallApp: () => ipcRenderer.invoke('uninstall-app'),
   openReleasePage: () => ipcRenderer.invoke('open-release-page'),

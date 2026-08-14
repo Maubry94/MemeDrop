@@ -1,10 +1,12 @@
 import { computed, ref } from 'vue'
+import { DEFAULT_CONTROL_PANEL_SECTION_STATE } from '../../shared/types'
 import type {
   AppPreferences,
   AppUpdateState,
   AppVersionInfo,
   ConnectedUser,
   ConnectionStatus,
+  ControlPanelSectionState,
   OverlayState,
   ServerConfig,
   ShortcutConfig,
@@ -22,6 +24,9 @@ export const useControlState = () => {
   const shortcutConfigs = ref<ShortcutConfig[]>([])
   const shortcutStatuses = ref<ShortcutStatus[]>([])
   const connectionStatus = ref<ConnectionStatus | null>(null)
+  const controlPanelSectionState = ref<ControlPanelSectionState>({
+    ...DEFAULT_CONTROL_PANEL_SECTION_STATE,
+  })
   const appPreferences = ref<AppPreferences>({
     minimizeToTray: false,
     openAtLogin: false,
@@ -50,7 +55,6 @@ export const useControlState = () => {
     discordUserAvatarUrl: null,
   })
 
-  const isDiscordConnected = computed(() => Boolean(serverConfig.value.discordUserId))
   const otherConnectedUsers = computed(() =>
     connectedUsers.value.filter((user) => user.id !== serverConfig.value.discordUserId),
   )
@@ -69,11 +73,11 @@ export const useControlState = () => {
     shortcutConfigs,
     shortcutStatuses,
     connectionStatus,
+    controlPanelSectionState,
     appPreferences,
     appVersionInfo,
     appUpdateState,
     serverConfig,
-    isDiscordConnected,
     otherConnectedUsers,
     applyOverlayState,
   }

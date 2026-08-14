@@ -24,7 +24,9 @@ const createDrop = (id: string, ownerId = 'other-user'): Drop => ({
 
 const createHarness = () => {
   const callbacks: ClientCallbacks[] = []
-  const controllers: Array<MemeDropClientController & { completeAccepted: boolean }> = []
+  const controllers: Array<
+    MemeDropClientController & { completeAccepted: boolean; stopAccepted: boolean }
+  > = []
   const presented: Drop[] = []
   const controlOnly: Drop[] = []
   const connectedUsersSnapshots: ConnectedUser[][] = []
@@ -48,12 +50,16 @@ const createHarness = () => {
 
   const startClient = ((options: ClientCallbacks) => {
     callbacks.push(options)
-    const controller: MemeDropClientController & { completeAccepted: boolean } = {
+    const controller: MemeDropClientController & {
+      completeAccepted: boolean
+      stopAccepted: boolean
+    } = {
       completeAccepted: true,
+      stopAccepted: true,
       completeDrop: () => controller.completeAccepted,
       stopDrop: (dropId) => {
         stoppedDropIds.push(dropId)
-        return true
+        return controller.stopAccepted
       },
       updateDropsEnabled: () => true,
       stop: () => undefined,
@@ -160,11 +166,35 @@ test('hidden own drops remain stoppable until the authoritative server clear', (
   assert.deepEqual(harness.desktop.getCurrentDrop(), ownDrop)
   assert.equal(harness.desktop.completeDrop('own-drop'), true)
   assert.deepEqual(harness.desktop.getCurrentDrop(), ownDrop)
-  harness.desktop.stopCurrentDropForEveryone()
+  assert.equal(harness.desktop.stopCurrentDropForEveryone(), true)
   assert.deepEqual(harness.stoppedDropIds, ['own-drop'])
 
   callbacks.onClearDrop()
   assert.equal(harness.desktop.getCurrentDrop(), null)
+})
+
+test('global stop reports whether the current drop stop was sent', () => {
+  const harness = createHarness()
+
+  assert.equal(harness.desktop.stopCurrentDropForEveryone(), false)
+
+  harness.desktop.startOrRestart()
+  const callbacks = harness.callbacks[0]
+  const controller = harness.controllers[0]
+  assert.ok(callbacks)
+  assert.ok(controller)
+
+  callbacks.onDrop(createDrop('drop-to-stop'))
+  controller.stopAccepted = false
+
+  assert.equal(harness.desktop.stopCurrentDropForEveryone('another-drop'), false)
+  assert.deepEqual(harness.stoppedDropIds, [])
+  assert.equal(harness.desktop.stopCurrentDropForEveryone(), false)
+  assert.deepEqual(harness.stoppedDropIds, ['drop-to-stop'])
+
+  controller.stopAccepted = true
+  assert.equal(harness.desktop.stopCurrentDropForEveryone(), true)
+  assert.deepEqual(harness.stoppedDropIds, ['drop-to-stop', 'drop-to-stop'])
 })
 
 test('callbacks from an obsolete client generation cannot mutate desktop snapshots', () => {
@@ -179,7 +209,12 @@ test('callbacks from an obsolete client generation cannot mutate desktop snapsho
 
   staleCallbacks.onDrop(createDrop('stale'))
   staleCallbacks.onConnectedUsers([], '99.0.0')
-  staleCallbacks.onStatus({ level: 'error', message: 'stale status' })
+  staleCallbacks.onStatus({
+    state: 'error',
+    reason: 'transport-error',
+    level: 'error',
+    message: 'stale status',
+  })
   staleCallbacks.onAuthenticationRejected()
 
   assert.equal(harness.desktop.getCurrentDrop(), null)

@@ -16,7 +16,31 @@ export type Drop = {
   createdAt: string
 }
 
+export type ConnectionState =
+  | 'configuration-required'
+  | 'authentication-required'
+  | 'connecting'
+  | 'authenticating'
+  | 'connected'
+  | 'reconnecting'
+  | 'refused'
+  | 'error'
+
+export type ConnectionStatusReason =
+  | 'server-not-configured'
+  | 'discord-required'
+  | 'session-expired'
+  | 'access-denied'
+  | 'invalid-server-url'
+  | 'invalid-configuration'
+  | 'connection-inactive'
+  | 'transport-error'
+  | 'server-policy'
+  | 'computer-resumed'
+
 export type ConnectionStatus = {
+  state: ConnectionState
+  reason?: ConnectionStatusReason
   level: 'info' | 'error'
   message: string
 }
@@ -78,6 +102,7 @@ export type ServerConfig = {
 
 export type ActiveDropSnapshot = {
   serverDrop: Drop | null
+  serverDropPresented: boolean
   testDrop: Drop | null
 }
 
@@ -133,4 +158,17 @@ export type ShortcutStatus = ShortcutConfig & {
 export type AppPreferences = {
   minimizeToTray: boolean
   openAtLogin: boolean
+}
+
+export type ControlPanelSectionId =
+  | 'dropReception'
+  | 'overlayAppearance'
+  | 'accountAndServer'
+
+export type ControlPanelSectionState = Record<ControlPanelSectionId, boolean>
+
+export const DEFAULT_CONTROL_PANEL_SECTION_STATE: ControlPanelSectionState = {
+  dropReception: true,
+  overlayAppearance: true,
+  accountAndServer: false,
 }

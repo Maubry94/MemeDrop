@@ -5,6 +5,8 @@ import type {
   AppVersionInfo,
   ConnectedUser,
   ConnectionStatus,
+  ControlPanelSectionId,
+  ControlPanelSectionState,
   Drop,
   OverlayDisplayInfo,
   OverlayDisplayPreferences,
@@ -22,7 +24,7 @@ export type MemeDropPreloadApi = {
   onTestDrop: (handler: (drop: Drop) => void) => Unsubscribe
   onClearDrop: (handler: () => void) => Unsubscribe
   onTestDropCleared: (handler: (dropId: string) => void) => Unsubscribe
-  onSkipCurrentDrop: (handler: () => void) => Unsubscribe
+  onSkipCurrentDrop: (handler: (dropId: string) => void) => Unsubscribe
   onConnectionStatus: (handler: (status: ConnectionStatus) => void) => Unsubscribe
   onConnectedUsers: (handler: (users: ConnectedUser[]) => void) => Unsubscribe
   onShortcutStatus: (handler: (status: ShortcutStatus[]) => void) => Unsubscribe
@@ -41,9 +43,9 @@ export type MemeDropPreloadApi = {
   setHideOwnDrops: (enabled: boolean) => Promise<OverlayState>
   toggleDrops: () => Promise<OverlayState>
   toggleHideOwnDrops: () => Promise<OverlayState>
-  skipCurrentDrop: () => Promise<boolean>
+  skipCurrentDrop: (dropId: string) => Promise<boolean>
   completeCurrentDrop: (dropId: string) => Promise<boolean>
-  stopCurrentDropForEveryone: () => Promise<void>
+  stopCurrentDropForEveryone: (dropId: string) => Promise<boolean>
   getOverlayState: () => Promise<OverlayState>
   getActiveDropSnapshot: () => Promise<ActiveDropSnapshot>
   getOverlayDisplayPreferences: () => Promise<OverlayDisplayPreferences>
@@ -58,6 +60,11 @@ export type MemeDropPreloadApi = {
   downloadAppUpdate: () => Promise<AppUpdateState>
   installAppUpdate: () => Promise<AppUpdateState>
   setAppPreferences: (preferences: AppPreferences) => Promise<AppPreferences>
+  getControlPanelSectionState: () => Promise<ControlPanelSectionState>
+  setControlPanelSectionOpen: (
+    sectionId: ControlPanelSectionId,
+    open: boolean,
+  ) => Promise<ControlPanelSectionState>
   quitApp: () => Promise<void>
   uninstallApp: () => Promise<void>
   openReleasePage: () => Promise<void>

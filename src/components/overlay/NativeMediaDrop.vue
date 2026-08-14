@@ -24,6 +24,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   advance: [dropId: string]
+  loading: [dropId: string]
+  ready: [dropId: string]
 }>()
 
 const imageElement = ref<HTMLImageElement | null>(null)
@@ -35,9 +37,11 @@ let nativeMediaWatchdogTimer: number | undefined
 let nativeMediaWatchdogRevision = 0
 let completedGeneration: number | null = null
 let playbackStartedGeneration: number | null = null
+let visuallyReadyGeneration: number | null = null
 let lastCurrentTime: number | null = null
 
 const normalizedDropVolume = computed(() => Math.min(Math.max(props.volume, 0), 100) / 100)
+const audioFileName = computed(() => props.drop.fileName?.trim() || 'Audio MemeDrop')
 
 const clearNativeMediaWatchdog = () => {
   nativeMediaWatchdogRevision += 1
@@ -137,6 +141,8 @@ const handleImageLoad = (event: Event) => {
     return
   }
 
+  visuallyReadyGeneration = identity.generation
+  emit('ready', identity.dropId)
   armNativeMediaWatchdog(identity, IMAGE_DISPLAY_TIMEOUT_MS, 'display-complete')
 }
 
@@ -148,9 +154,41 @@ const handleImageError = (event: Event) => {
 }
 
 const handleMediaMetadata = (event: Event) => {
-  if (getMediaIdentity(event)) {
-    applyDropVolume()
+  const identity = getMediaIdentity(event)
+  if (!identity) {
+    return
   }
+
+  applyDropVolume()
+}
+
+const handleMediaLoadedData = (event: Event) => {
+  const media = event.currentTarget as HTMLMediaElement
+  const identity = getMediaIdentity(event)
+  if (!identity) {
+    return
+  }
+
+  applyDropVolume()
+  if (media === videoElement.value && visuallyReadyGeneration !== identity.generation) {
+    visuallyReadyGeneration = identity.generation
+    emit('ready', identity.dropId)
+  }
+}
+
+const handleMediaPlaying = (event: Event) => {
+  const media = event.currentTarget as HTMLMediaElement
+  const identity = getMediaIdentity(event)
+  if (
+    !identity ||
+    media !== audioElement.value ||
+    visuallyReadyGeneration === identity.generation
+  ) {
+    return
+  }
+
+  visuallyReadyGeneration = identity.generation
+  emit('ready', identity.dropId)
 }
 
 const markMediaProgress = (identity: NativeMediaIdentity) => {
@@ -217,7 +255,10 @@ const resetNativeMedia = () => {
   mediaGeneration.value += 1
   completedGeneration = null
   playbackStartedGeneration = null
+  visuallyReadyGeneration = null
   lastCurrentTime = null
+
+  emit('loading', props.drop.id)
 
   const identity = {
     dropId: props.drop.id,
@@ -254,8 +295,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     v-if="kind === 'image' || kind === 'video'"
-    class="mx-auto aspect-video w-full max-w-[calc(60vh*16/9)] overflow-hidden rounded-2xl bg-black"
-    :style="frameStyle"
+    class="relative mx-auto flex w-fit max-w-full items-center justify-center overflow-hidden rounded-xl bg-slate-950 ring-1 ring-white/5"
   >
     <img
       v-if="kind === 'image'"
@@ -265,7 +305,8 @@ onBeforeUnmount(() => {
       :data-generation="mediaGeneration"
       :src="drop.url"
       :alt="drop.caption ?? 'MemeDrop image'"
-      class="h-full w-full object-contain"
+      class="block h-auto w-auto max-w-full object-contain"
+      :style="frameStyle"
       @error="handleImageError"
       @load="handleImageLoad"
     />
@@ -278,9 +319,11 @@ onBeforeUnmount(() => {
       :src="drop.url"
       autoplay
       playsinline
-      class="h-full w-full object-contain"
+      class="block h-auto w-auto max-w-full object-contain"
+      :style="frameStyle"
       @ended="handleMediaEnded"
       @error="handleMediaError"
+      @loadeddata="handleMediaLoadedData"
       @loadedmetadata="handleMediaMetadata"
       @stalled="handleMediaStall"
       @timeupdate="handleMediaTimeUpdate"
@@ -288,20 +331,46 @@ onBeforeUnmount(() => {
     />
   </div>
 
-  <audio
-    v-else
-    ref="audioElement"
-    :key="`audio-${drop.id}-${mediaGeneration}`"
-    :data-drop-id="drop.id"
-    :data-generation="mediaGeneration"
-    :src="drop.url"
-    autoplay
-    controls
-    @ended="handleMediaEnded"
-    @error="handleMediaError"
-    @loadedmetadata="handleMediaMetadata"
-    @stalled="handleMediaStall"
-    @timeupdate="handleMediaTimeUpdate"
-    @waiting="handleMediaStall"
-  />
+  <template v-else>
+    <div
+      class="mx-auto flex min-h-20 w-full min-w-0 items-center gap-3 rounded-xl border border-white/5 bg-slate-950/90 p-3 shadow-inner"
+      :style="frameStyle"
+    >
+      <span
+        class="flex size-11 shrink-0 items-end justify-center gap-1 rounded-full bg-sky-400/10 px-2.5 py-3 text-sky-200"
+        aria-hidden="true"
+      >
+        <span class="h-2 w-1 rounded-full bg-current opacity-60" />
+        <span class="h-4 w-1 rounded-full bg-current" />
+        <span class="h-3 w-1 rounded-full bg-current opacity-80" />
+        <span class="h-1.5 w-1 rounded-full bg-current opacity-50" />
+      </span>
+      <span class="min-w-0 flex-1">
+        <span class="block text-xs text-slate-400">Lecture audio</span>
+        <span class="mt-0.5 block truncate text-base font-semibold text-slate-100">
+          {{ audioFileName }}
+        </span>
+      </span>
+    </div>
+
+    <audio
+      ref="audioElement"
+      :key="`audio-${drop.id}-${mediaGeneration}`"
+      :data-drop-id="drop.id"
+      :data-generation="mediaGeneration"
+      :src="drop.url"
+      autoplay
+      class="sr-only"
+      aria-hidden="true"
+      tabindex="-1"
+      @ended="handleMediaEnded"
+      @error="handleMediaError"
+      @loadeddata="handleMediaLoadedData"
+      @loadedmetadata="handleMediaMetadata"
+      @playing="handleMediaPlaying"
+      @stalled="handleMediaStall"
+      @timeupdate="handleMediaTimeUpdate"
+      @waiting="handleMediaStall"
+    />
+  </template>
 </template>

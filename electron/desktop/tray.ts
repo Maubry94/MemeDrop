@@ -33,11 +33,13 @@ export const createMemeDropTray = ({
           click: onShowControlWindow,
         },
         {
-          label: getDropsEnabled() ? 'Desactiver les drops' : 'Activer les drops',
+          label: getDropsEnabled() ? 'Désactiver les drops' : 'Activer les drops',
           click: onToggleDrops,
         },
         {
-          label: getHideOwnDrops() ? 'Voir mes drops' : 'Masquer mes drops',
+          label: getHideOwnDrops()
+            ? 'Afficher mes propres drops'
+            : 'Masquer mes propres drops',
           click: onToggleHideOwnDrops,
         },
         { type: 'separator' },

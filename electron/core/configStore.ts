@@ -3,9 +3,12 @@ import {
   readAppConfigFile,
   writeAppConfigFile,
   type ControlWindowBounds,
-} from './appConfig'
+} from './appConfig.ts'
+import { DEFAULT_CONTROL_PANEL_SECTION_STATE } from '../../shared/types.ts'
 import type {
   AppPreferences,
+  ControlPanelSectionId,
+  ControlPanelSectionState,
   DiscordUser,
   OverlayDisplayPreferences,
   ServerConnectionConfig,
@@ -21,6 +24,27 @@ const AUTH_TOKEN_PATTERN = /^[A-Za-z0-9._-]+$/
 
 const normalizeString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : ''
+
+const normalizeControlPanelSectionState = (
+  state: Partial<ControlPanelSectionState> | undefined,
+): ControlPanelSectionState => ({
+  dropReception:
+    typeof state?.dropReception === 'boolean'
+      ? state.dropReception
+      : DEFAULT_CONTROL_PANEL_SECTION_STATE.dropReception,
+  overlayAppearance:
+    typeof state?.overlayAppearance === 'boolean'
+      ? state.overlayAppearance
+      : DEFAULT_CONTROL_PANEL_SECTION_STATE.overlayAppearance,
+  accountAndServer:
+    typeof state?.accountAndServer === 'boolean'
+      ? state.accountAndServer
+      : DEFAULT_CONTROL_PANEL_SECTION_STATE.accountAndServer,
+})
+
+const isControlPanelSectionId = (value: unknown): value is ControlPanelSectionId =>
+  typeof value === 'string' &&
+  Object.prototype.hasOwnProperty.call(DEFAULT_CONTROL_PANEL_SECTION_STATE, value)
 
 const normalizeServerConfig = (config: ServerConfig): ServerConfig => ({
   serverUrl: normalizeString(config.serverUrl),
@@ -245,6 +269,31 @@ export const createConfigStore = (userDataPath: string) => {
     })
   }
 
+  const getControlPanelSectionState = (): ControlPanelSectionState =>
+    normalizeControlPanelSectionState(readConfig().controlPanel)
+
+  const setControlPanelSectionOpen = (
+    sectionId: ControlPanelSectionId,
+    open: boolean,
+  ): ControlPanelSectionState => {
+    if (!isControlPanelSectionId(sectionId) || typeof open !== 'boolean') {
+      throw new Error("État de section du panneau de contrôle invalide.")
+    }
+
+    const stored = readConfig()
+    const state = {
+      ...normalizeControlPanelSectionState(stored.controlPanel),
+      [sectionId]: open,
+    }
+
+    writeConfig({
+      ...stored,
+      controlPanel: state,
+    })
+
+    return state
+  }
+
   const getShortcutConfigMap = () => readConfig().shortcuts
 
   const saveShortcutConfigs = (shortcuts: ShortcutConfig[]) => {
@@ -282,6 +331,8 @@ export const createConfigStore = (userDataPath: string) => {
     saveOverlayDisplayPreferences,
     getAppPreferences,
     saveAppPreferences,
+    getControlPanelSectionState,
+    setControlPanelSectionOpen,
     getShortcutConfigMap,
     saveShortcutConfigs,
     getControlWindowBounds,

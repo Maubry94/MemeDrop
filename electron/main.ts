@@ -186,9 +186,9 @@ const loadAppPreferences = () => {
   applyOpenAtLogin()
 }
 
-const getControlWindowBounds = (): ControlWindowBounds => {
-  return getSavedControlWindowBounds(screen, getConfigStore().getControlWindowBounds())
-}
+const getControlWindowBounds = (
+  bounds: Partial<ControlWindowBounds> = getConfigStore().getControlWindowBounds(),
+): ControlWindowBounds => getSavedControlWindowBounds(screen, bounds)
 
 const saveControlWindowBounds = (bounds: ControlWindowBounds) => {
   getConfigStore().saveControlWindowBounds(bounds)
@@ -351,32 +351,43 @@ const getActiveDropSnapshot = (view: 'control' | 'overlay'): ActiveDropSnapshot 
     view === 'overlay' ? desktopClient.getPresentedDrop() : desktopClient.getCurrentDrop()
   return {
     serverDrop,
+    serverDropPresented: Boolean(desktopClient.getPresentedDrop()),
     testDrop: serverDrop || !currentTestDrop ? null : { ...currentTestDrop },
   }
 }
 
-const skipCurrentDrop = (): boolean => {
-  let skipped = clearCurrentTestDrop()
+const skipCurrentDrop = (expectedDropId?: string): boolean => {
+  let skipped = false
+
+  if (currentTestDrop && (!expectedDropId || currentTestDrop.id === expectedDropId)) {
+    skipped = clearCurrentTestDrop()
+  }
 
   const serverDropId = desktopClient.getCurrentDropId()
-  if (serverDropId) {
+  if (serverDropId && (!expectedDropId || serverDropId === expectedDropId)) {
     const accepted = desktopClient.completeDrop(serverDropId)
     if (accepted) {
       windows.sendToOverlay('clear-drop', null)
+      windows.sendToControl('skip-current-drop', serverDropId)
     } else {
       // The overlay keeps the drop and retries the ID-safe acknowledgement.
-      windows.sendToOverlay('skip-current-drop', null)
+      windows.sendToOverlay('skip-current-drop', serverDropId)
     }
     skipped = accepted || skipped
   }
   return skipped
 }
 
-const completeCurrentDrop = (dropId: string): boolean => desktopClient.completeDrop(dropId)
-
-const stopCurrentDropForEveryone = () => {
-  desktopClient.stopCurrentDropForEveryone()
+const completeCurrentDrop = (dropId: string): boolean => {
+  const accepted = desktopClient.completeDrop(dropId)
+  if (accepted) {
+    windows.sendToControl('skip-current-drop', dropId)
+  }
+  return accepted
 }
+
+const stopCurrentDropForEveryone = (expectedDropId?: string): boolean =>
+  desktopClient.stopCurrentDropForEveryone(expectedDropId)
 
 const shortcutManager = createShortcutManager({
   loadShortcuts: () => getConfigStore().getShortcutConfigMap(),
@@ -504,13 +515,17 @@ if (hasInstanceLock) app.whenReady().then(async () => {
   screen.on('display-removed', () => {
     syncOverlayDisplays()
     windows.keepOverlayAboveFullscreen()
+    windows.ensureControlWindowVisible()
   })
   screen.on('display-metrics-changed', () => {
     syncOverlayDisplays()
     windows.keepOverlayAboveFullscreen()
+    windows.ensureControlWindowVisible()
   })
   powerMonitor.on('resume', () => {
     setConnectionStatus({
+      state: 'reconnecting',
+      reason: 'computer-resumed',
       level: 'info',
       message: 'Serveur MemeDrop : réveil du PC, reconnexion...',
     })
@@ -550,6 +565,10 @@ if (hasInstanceLock) app.whenReady().then(async () => {
       setAppPreferences(preferences)
       return getAppPreferences()
     },
+    getControlPanelSectionState: () =>
+      getConfigStore().getControlPanelSectionState(),
+    setControlPanelSectionOpen: (sectionId, open) =>
+      getConfigStore().setControlPanelSectionOpen(sectionId, open),
     quitApp,
     uninstallApp,
     getConnectionStatus: () => connectionStatus,

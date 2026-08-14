@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type {
   AppPreferences,
+  ControlPanelSectionState,
   OverlayDisplayPreferences,
   OverlayState,
   ServerConnectionConfig,
@@ -22,6 +23,7 @@ export type AppConfigFile = {
   app?: Partial<AppPreferences>
   shortcuts?: Partial<Record<ShortcutActionId, string>>
   controlWindow?: Partial<ControlWindowBounds>
+  controlPanel?: Partial<ControlPanelSectionState>
 }
 
 export const getAppConfigPath = (userDataPath: string) => path.join(userDataPath, 'config.json')

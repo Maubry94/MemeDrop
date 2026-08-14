@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   --color-overlay-bg: rgba(8, 10, 14, 0.72);
   --color-overlay-border: rgba(255, 255, 255, 0.14);
 }
@@ -9,6 +9,7 @@
 :root {
   font-family: var(--font-sans);
   color: #f8fafc;
+  color-scheme: dark;
 }
 
 html,
@@ -18,6 +19,7 @@ body,
   height: 100%;
   margin: 0;
   background: transparent;
+  overflow: hidden;
 }
 
 button,
@@ -31,6 +33,7 @@ summary * {
   cursor: pointer;
 }
 
-button:disabled {
-  cursor: default;
+button:disabled,
+button:disabled * {
+  cursor: not-allowed;
 }

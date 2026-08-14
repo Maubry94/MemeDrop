@@ -3,7 +3,7 @@
   "private": true,
   "description": "Overlay desktop MemeDrop relié à Discord pour afficher des images, sons et vidéos.",
   "author": "Maubry94",
-  "version": "3.0.9",
+  "version": "4.0.0",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -22,7 +22,7 @@
     "preview": "vite preview",
     "server:start": "node dist-server/server/index.js",
     "test": "npm run test:client && npm run test:server",
-    "test:client": "node --experimental-strip-types --test electron/client/memedropClient.test.ts electron/client/desktopClient.test.ts",
+    "test:client": "node --experimental-strip-types --test electron/client/memedropClient.test.ts electron/client/desktopClient.test.ts electron/core/configStore.test.ts electron/desktop/displays.test.ts src/composables/controlOnboarding.test.ts src/composables/connectionPresentation.test.ts src/composables/dropActionPresentation.test.ts src/composables/updatePresentation.test.ts",
     "test:server": "npm run build:server && node --test \"dist-server/server/**/*.test.js\"",
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "update:keygen": "node scripts/generateUpdateSigningKey.mjs"

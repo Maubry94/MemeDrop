@@ -7,6 +7,7 @@ import { useControlActions } from './composables/useControlActions'
 import { useControlState } from './composables/useControlState'
 import { useMemedropBridge } from './composables/useMemedropBridge'
 import { useOverlayPreferences } from './composables/useOverlayPreferences'
+import type { ControlPanelSectionId } from '../shared/types'
 
 type AppView = 'overlay' | 'control'
 
@@ -23,11 +24,11 @@ const {
   shortcutConfigs,
   shortcutStatuses,
   connectionStatus,
+  controlPanelSectionState,
   appPreferences,
   appVersionInfo,
   appUpdateState,
   serverConfig,
-  isDiscordConnected,
   otherConnectedUsers,
   applyOverlayState,
 } = useControlState()
@@ -50,25 +51,35 @@ const {
   activeDrop,
   activeKind,
   hasDrop,
+  hasServerDrop,
+  canSkipCurrentDrop,
   isTestDropActive,
   canTriggerTestDrop,
+  isCurrentServerDropOwner,
   canStopGlobalDrop,
+  pendingDropAction,
+  dropActionError,
   completeActiveDrop,
   receiveDrop,
   clearServerDrop,
   clearTestDrop,
   skipCurrentDrop,
-  completeLocalDrop,
   retryServerDropCompletion,
+  markServerDropNotPresented,
   stopCurrentDropForEveryone,
   triggerTestDrop,
 } = useActiveDrop({
   isOverlayView,
   dropsEnabled: computed(() => dropsEnabled.value),
+  hideOwnDrops: computed(() => hideOwnDrops.value),
   serverConfig: computed(() => serverConfig.value),
 })
 
-useMemedropBridge({
+const {
+  initializationStatus,
+  initializationError,
+  requestInitialState,
+} = useMemedropBridge({
   isOverlayView,
   applyOverlayState,
   applyOverlayDisplayPreferences,
@@ -87,6 +98,9 @@ useMemedropBridge({
   setConnectionStatus: (status) => {
     connectionStatus.value = status
   },
+  setControlPanelSectionState: (state) => {
+    controlPanelSectionState.value = state
+  },
   setConnectedUsers: (users) => {
     connectedUsers.value = users
   },
@@ -102,14 +116,16 @@ useMemedropBridge({
   receiveDrop,
   clearServerDrop,
   clearTestDrop,
-  completeLocalDrop,
   retryServerDropCompletion,
+  markServerDropNotPresented,
 })
 
 const {
   configSavedMessage,
+  configSaveStatus,
   isSavingConfig,
   discordAuthMessage,
+  discordAuthStatus,
   isAuthenticatingDiscord,
   updateAppPreferences,
   updateShortcutConfigs,
@@ -134,17 +150,51 @@ const {
   applyOverlayState,
 })
 
+const updateControlPanelSection = async (
+  section: ControlPanelSectionId,
+  open: boolean,
+) => {
+  if (controlPanelSectionState.value[section] === open) {
+    return
+  }
+
+  const previousOpen = controlPanelSectionState.value[section]
+  controlPanelSectionState.value = {
+    ...controlPanelSectionState.value,
+    [section]: open,
+  }
+
+  try {
+    await window.memedrop?.setControlPanelSectionOpen(section, open)
+  } catch (error) {
+    if (controlPanelSectionState.value[section] === open) {
+      controlPanelSectionState.value = {
+        ...controlPanelSectionState.value,
+        [section]: previousOpen,
+      }
+    }
+    console.error(`Enregistrement de la section « ${section} » impossible :`, error)
+  }
+}
+
 watch(
-  () => serverConfig.value.discordUserId,
-  (discordUserId) => {
+  () => [
+    serverConfig.value.discordUserId,
+    connectionStatus.value?.reason,
+  ] as const,
+  ([discordUserId, connectionReason]) => {
     if (!discordUserId && !isAuthenticatingDiscord.value) {
-      discordAuthMessage.value = connectionStatus.value?.message.includes(
-        'session Discord expirée',
-      )
-        ? 'Session Discord expirée. Reconnecte-toi pour continuer.'
-        : null
+      const sessionExpired = connectionReason === 'session-expired'
+      if (sessionExpired) {
+        discordAuthStatus.value = 'error'
+        discordAuthMessage.value = 'Session Discord expirée. Reconnecte-toi pour continuer.'
+      } else if (discordAuthStatus.value !== 'error') {
+        discordAuthStatus.value = 'idle'
+        discordAuthMessage.value = null
+      }
     }
   },
+  { immediate: true },
 )
 
 watch(dropsEnabled, (value) => {
@@ -155,7 +205,7 @@ watch(dropsEnabled, (value) => {
 </script>
 
 <template>
-  <div class="h-full w-full">
+  <div class="h-full w-full overflow-hidden">
     <OverlayApp
       v-if="isOverlayView"
       :active-drop="activeDrop"
@@ -176,10 +226,14 @@ watch(dropsEnabled, (value) => {
       :app-version-info="appVersionInfo"
       :app-update-state="appUpdateState"
       :auth-message="discordAuthMessage"
+      :auth-status="discordAuthStatus"
+      :can-skip-current-drop="canSkipCurrentDrop"
       :can-stop-global-drop="canStopGlobalDrop"
       :can-trigger-test-drop="canTriggerTestDrop"
       :config-saved-message="configSavedMessage"
+      :config-save-status="configSaveStatus"
       :connection-status="connectionStatus"
+      :control-panel-section-state="controlPanelSectionState"
       :control-tab="controlTab"
       :custom-anchor="customAnchor"
       :custom-x="customX"
@@ -187,16 +241,21 @@ watch(dropsEnabled, (value) => {
       :drop-size="dropSize"
       :drop-volume="dropVolume"
       :drops-enabled="dropsEnabled"
+      :drop-action-error="dropActionError"
+      :has-server-drop="hasServerDrop"
       :hide-own-drops="hideOwnDrops"
       :is-authenticating-discord="isAuthenticatingDiscord"
-      :is-discord-connected="isDiscordConnected"
       :is-preferences-open="isPreferencesOpen"
       :is-saving-config="isSavingConfig"
+      :is-current-server-drop-owner="isCurrentServerDropOwner"
       :is-test-drop-active="isTestDropActive"
+      :initialization-status="initializationStatus"
+      :initialization-error="initializationError"
       :other-connected-users="otherConnectedUsers"
       :overlay-display-id="overlayDisplayId"
       :overlay-displays="overlayDisplays"
       :overlay-position="overlayPosition"
+      :pending-drop-action="pendingDropAction"
       :shortcut-configs="shortcutConfigs"
       :shortcut-statuses="shortcutStatuses"
       @authenticate="authenticateDiscord"
@@ -209,6 +268,7 @@ watch(dropsEnabled, (value) => {
       @install-app-update="installAppUpdate"
       @quit-app="quitApp"
       @reset-shortcuts="resetShortcutConfigs"
+      @retry-initialization="requestInitialState"
       @save-server-config="saveServerConfig"
       @skip-current-drop="skipCurrentDrop"
       @start-shortcut-capture="startShortcutCapture"
@@ -219,6 +279,7 @@ watch(dropsEnabled, (value) => {
       @uninstall-app="uninstallApp"
       @update-app-preferences="updateAppPreferences"
       @update-control-tab="controlTab = $event"
+      @update-control-panel-section="updateControlPanelSection"
       @update-custom-anchor="customAnchor = $event"
       @update-custom-x="customX = $event"
       @update-custom-y="customY = $event"

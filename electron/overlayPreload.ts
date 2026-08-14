@@ -20,7 +20,8 @@ const overlayApi = {
   onClearDrop: (handler: () => void) => onChannel('clear-drop', handler),
   onTestDropCleared: (handler: (dropId: string) => void) =>
     onChannel('test-drop-cleared', handler),
-  onSkipCurrentDrop: (handler: () => void) => onChannel('skip-current-drop', handler),
+  onSkipCurrentDrop: (handler: (dropId: string) => void) =>
+    onChannel('skip-current-drop', handler),
   onOverlayState: (handler: (state: OverlayState) => void) =>
     onChannel('overlay-state', handler),
   onOverlayDisplayPreferences: (

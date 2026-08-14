@@ -30,9 +30,9 @@ class FakeSocket extends EventEmitter {
     this.emit('message', Buffer.from(JSON.stringify(payload)), false)
   }
 
-  remoteClose(code: number) {
+  remoteClose(code: number, reason = '') {
     this.readyState = 3
-    this.emit('close', code, Buffer.alloc(0))
+    this.emit('close', code, Buffer.from(reason))
   }
 
   fail(error = new Error('fake transport failure')) {
@@ -102,7 +102,10 @@ class FakeRuntime implements MemeDropClientRuntime {
   }
 }
 
-const createHarness = () => {
+const createHarness = ({
+  serverUrl = 'http://127.0.0.1:3010',
+  authToken = 'test-token',
+}: { serverUrl?: string; authToken?: string } = {}) => {
   const runtime = new FakeRuntime()
   const statuses: ConnectionStatus[] = []
   const drops: Drop[] = []
@@ -112,9 +115,9 @@ const createHarness = () => {
 
   const controller = startMemeDropClient(
     {
-      serverUrl: 'http://127.0.0.1:3010',
+      serverUrl,
       accessKey: 'test-key',
-      authToken: 'test-token',
+      authToken,
       appVersion: '3.0.7',
       dropsEnabled: true,
       onDrop: (drop) => drops.push(drop),
@@ -152,6 +155,26 @@ const createHarness = () => {
 
 const parseSentMessages = (socket: FakeSocket) =>
   socket.sent.map((message) => JSON.parse(message) as Record<string, unknown>)
+
+test('missing server or Discord configuration is an offline state, not an error', async (context) => {
+  await context.test('server URL missing', () => {
+    const harness = createHarness({ serverUrl: '' })
+
+    assert.equal(harness.statuses.at(-1)?.state, 'configuration-required')
+    assert.equal(harness.statuses.at(-1)?.reason, 'server-not-configured')
+    assert.equal(harness.statuses.at(-1)?.level, 'info')
+    assert.equal(harness.runtime.sockets.length, 0)
+  })
+
+  await context.test('Discord authentication missing', () => {
+    const harness = createHarness({ authToken: '' })
+
+    assert.equal(harness.statuses.at(-1)?.state, 'authentication-required')
+    assert.equal(harness.statuses.at(-1)?.reason, 'discord-required')
+    assert.equal(harness.statuses.at(-1)?.level, 'info')
+    assert.equal(harness.runtime.sockets.length, 0)
+  })
+})
 
 test('a stale heartbeat cannot terminate or reconnect a newer socket', () => {
   const harness = createHarness()
@@ -209,7 +232,8 @@ test('an acknowledgement attempted while disconnected returns false', () => {
   ])
 })
 
-test('a synchronous socket send failure returns false and retires the connection', () => {
+test('a synchronous socket send failure returns false and retires the connection', (context) => {
+  context.mock.method(console, 'error', () => undefined)
   const harness = createHarness()
   const socket = harness.runtime.sockets[0]
   assert.ok(socket)
@@ -236,7 +260,7 @@ test('4001 and 1008 are terminal and only 4001 revokes authentication', async (c
 
       socket.open()
       socket.receive({ type: 'hello' })
-      socket.remoteClose(closeCode)
+      socket.remoteClose(closeCode, closeCode === 1008 ? 'Invalid MemeDrop key' : '')
 
       assert.equal(harness.disconnected, 1)
       assert.equal(harness.authenticationRejected, closeCode === 4001 ? 1 : 0)
@@ -247,11 +271,58 @@ test('4001 and 1008 are terminal and only 4001 revokes authentication', async (c
           ? 'Serveur MemeDrop : session Discord expirée, reconnecte-toi.'
           : 'Serveur MemeDrop : connexion refusée. Vérifie la clé du serveur.',
       )
+      assert.equal(harness.statuses.at(-1)?.state, 'refused')
+      assert.equal(
+        harness.statuses.at(-1)?.reason,
+        closeCode === 4001 ? 'session-expired' : 'access-denied',
+      )
     })
   }
 })
 
-test('the latest client state and active drop are replayed once after reconnect', () => {
+test('connection phases distinguish initial connection from automatic reconnection', () => {
+  const harness = createHarness()
+  const firstSocket = harness.runtime.sockets[0]
+  assert.ok(firstSocket)
+
+  assert.equal(harness.statuses.at(-1)?.state, 'connecting')
+  firstSocket.open()
+  assert.equal(harness.statuses.at(-1)?.state, 'authenticating')
+  firstSocket.receive({ type: 'hello' })
+  assert.equal(harness.statuses.at(-1)?.state, 'connected')
+
+  firstSocket.remoteClose(1006)
+  assert.equal(harness.statuses.at(-1)?.state, 'reconnecting')
+  harness.runtime.run(harness.runtime.latestTimer(3_000))
+  assert.equal(harness.statuses.at(-1)?.state, 'reconnecting')
+
+  const secondSocket = harness.runtime.sockets[1]
+  assert.ok(secondSocket)
+  secondSocket.open()
+  assert.equal(harness.statuses.at(-1)?.state, 'reconnecting')
+  secondSocket.receive({ type: 'hello' })
+  assert.equal(harness.statuses.at(-1)?.state, 'connected')
+})
+
+test('a policy close is not presented as an invalid server key', () => {
+  const harness = createHarness()
+  const socket = harness.runtime.sockets[0]
+  assert.ok(socket)
+
+  socket.remoteClose(1008, 'MemeDrop message rate exceeded')
+
+  assert.equal(harness.statuses.at(-1)?.state, 'refused')
+  assert.equal(harness.statuses.at(-1)?.reason, 'server-policy')
+  assert.equal(
+    harness.statuses.at(-1)?.message,
+    'Serveur MemeDrop : connexion interrompue par le serveur.',
+  )
+  assert.equal(harness.runtime.activeTimers(3_000).length, 0)
+})
+
+test('the latest client state and active drop are replayed once after reconnect', (context) => {
+  context.mock.method(console, 'error', () => undefined)
+  context.mock.method(console, 'log', () => undefined)
   const harness = createHarness()
   const firstSocket = harness.runtime.sockets[0]
   assert.ok(firstSocket)
