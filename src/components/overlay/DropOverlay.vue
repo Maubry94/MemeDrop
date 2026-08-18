@@ -170,7 +170,10 @@ const isNativeMediaKind = (
         />
       </div>
 
-      <div v-if="activeDrop.caption || activeDrop.author" class="mt-3 min-w-0 space-y-2 px-1 pb-0.5">
+      <div
+        v-if="activeDrop.caption || activeDrop.author"
+        class="mt-3 w-0 min-w-full max-w-full space-y-2 px-1 pb-0.5"
+      >
         <p v-if="activeDrop.caption" class="drop-caption font-semibold leading-snug text-slate-100">
           {{ activeDrop.caption }}
         </p>
