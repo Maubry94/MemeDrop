@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+:root {
+  min-width: 320px;
+  font-family: var(--font-sans);
+  color: #f8fafc;
+  color-scheme: dark;
+  background: #020617;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  background: #020617;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+a,
+button,
+[tabindex]:not([tabindex="-1"]) {
+  outline: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  border-radius: 0.5rem;
+  box-shadow: 0 0 0 2px #020617, 0 0 0 4px #7dd3fc;
+}
+
+.page-container {
+  width: min(100% - 2rem, 72rem);
+  margin-inline: auto;
+}
+
+.surface-card {
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 1rem;
+  background: rgb(15 23 42 / 0.68);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.18);
+  backdrop-filter: blur(12px);
+}
+
+.eyebrow {
+  color: #7dd3fc;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gradient-text {
+  color: transparent;
+  background-image: linear-gradient(90deg, #7dd3fc, #a5b4fc);
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+
+.site-glow {
+  position: fixed;
+  z-index: -1;
+  width: 34rem;
+  height: 34rem;
+  border-radius: 9999px;
+  filter: blur(90px);
+  pointer-events: none;
+  opacity: 0.16;
+}
+
+.site-glow-top {
+  top: -20rem;
+  left: -12rem;
+  background: #38bdf8;
+}
+
+.site-glow-bottom {
+  right: -16rem;
+  bottom: -22rem;
+  background: #6366f1;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 50;
+  top: 0.75rem;
+  left: 0.75rem;
+  translate: 0 -5rem;
+  border-radius: 0.5rem;
+  padding: 0.65rem 0.9rem;
+  background: #e0f2fe;
+  color: #020617;
+  font-size: 0.875rem;
+  font-weight: 700;
+  transition: translate 150ms ease;
+}
+
+.skip-link:focus {
+  translate: 0;
+}
+
+@media (min-width: 640px) {
+  .page-container {
+    width: min(100% - 3rem, 72rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -1,0 +1,35 @@
+services:
+  memedrop-server:
+    build:
+      context: your/path/to/memedrop
+      dockerfile: apps/server/Dockerfile
+    env_file:
+      - your/path/to/memedrop/apps/server/.env
+    environment:
+      PORT: "3010"
+      MEMEDROP_TRUST_PROXY: "true"
+    expose:
+      - "3010"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3010/health.json')
+          .then(r => process.exit(r.ok ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      memedrop-shared:
+        aliases:
+          - memedrop-server
+
+networks:
+  memedrop-shared:
+    external: true
+    name: memedrop-shared

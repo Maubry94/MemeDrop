@@ -3,19 +3,35 @@ services:
     container_name: memedrop-server-local
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: apps/server/Dockerfile
     restart: unless-stopped
     env_file:
-      - .env
+      - apps/server/.env
     environment:
       PORT: 3010
-    ports:
-      - "${PORT:-3010}:3010"
-    volumes:
-      - ./releases/win-signed-v1:/updates/win-signed-v1:ro
+      MEMEDROP_TRUST_PROXY: "true"
+    expose:
+      - "3010"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3010/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3010/health.json').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  memedrop-web:
+    container_name: memedrop-web-local
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PORT:-3010}:80"
+    volumes:
+      - ./releases/win-signed-v1:/updates/win-signed-v1:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -7,9 +7,10 @@ export default tseslint.config(
   {
     ignores: [
       'coverage/**',
+      'apps/*/dist/**',
+      'apps/*/dist-*/**',
       'dist/**',
-      'dist-electron/**',
-      'dist-server/**',
+      'dist-*/**',
       'node_modules/**',
       'release/**',
       'releases/**',
@@ -42,17 +43,20 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/**/*.{ts,vue}'],
+    files: ['apps/desktop/renderer/**/*.{ts,vue}', 'apps/web/src/**/*.{ts,vue}'],
     languageOptions: {
       globals: globals.browser,
     },
   },
   {
     files: [
-      'electron/**/*.ts',
-      'server/**/*.ts',
-      'shared/**/*.ts',
-      'scripts/**/*.{js,mjs,cjs}',
+      'apps/desktop/electron/**/*.ts',
+      'apps/desktop/shared/**/*.ts',
+      'apps/desktop/scripts/**/*.{js,mjs,cjs}',
+      'apps/server/src/**/*.ts',
+      'apps/server/scripts/**/*.{js,mjs,cjs}',
+      'apps/*/*.{js,mjs,cjs,ts}',
+      'packages/**/*.ts',
       '*.{js,mjs,cjs,ts}',
     ],
     languageOptions: {
@@ -61,7 +65,7 @@ export default tseslint.config(
   },
   {
     // electron-builder charge encore sa configuration via CommonJS.
-    files: ['electron-builder.config.cjs'],
+    files: ['apps/desktop/electron-builder.config.cjs'],
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
     },
@@ -70,10 +74,10 @@ export default tseslint.config(
     // Ces modules inspectent volontairement des caractères de contrôle aux
     // frontières cryptographiques, HTTP et des URLs provenant du réseau.
     files: [
-      'electron/core/updateSignature.ts',
-      'server/http/request.ts',
-      'server/security/identityToken.ts',
-      'server/utils/tiktok.ts',
+      'apps/desktop/electron/core/updateSignature.ts',
+      'apps/server/src/http/request.ts',
+      'apps/server/src/security/identityToken.ts',
+      'apps/server/src/utils/tiktok.ts',
     ],
     rules: {
       'no-control-regex': 'off',

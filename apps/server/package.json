@@ -1,0 +1,27 @@
+{
+  "name": "@memedrop/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "discord:clear-global-commands": "node scripts/clearGlobalCommands.mjs",
+    "discord:clear-guild-commands": "node scripts/clearGuildCommands.mjs",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test \"dist/**/*.test.js\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "discord.js": "^14.26.4",
+    "dotenv": "^17.4.2",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@memedrop/protocol": "*",
+    "@types/node": "22.20.1",
+    "typescript": "5.9.3"
+  }
+}

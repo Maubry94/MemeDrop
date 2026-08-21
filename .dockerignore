@@ -1,8 +1,13 @@
+apps/*/dist
+apps/*/dist-*
 dist
-dist-electron
+dist-*
 release
+releases
 node_modules
 npm-debug.log
 .env
+**/.env
+.secrets
 .git
 .vscode

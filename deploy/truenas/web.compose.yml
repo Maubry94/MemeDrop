@@ -1,0 +1,28 @@
+services:
+  memedrop-web:
+    build:
+      context: your/path/to/memedrop
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "127.0.0.1:3010:80"
+    restart: unless-stopped
+    volumes:
+      - your/path/to/memedrop/releases/win-signed-v1:/updates/win-signed-v1:ro
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - --spider
+        - http://127.0.0.1/
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - memedrop-shared
+
+networks:
+  memedrop-shared:
+    external: true
+    name: memedrop-shared
