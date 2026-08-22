@@ -1,0 +1,27 @@
+# Remplace /mnt/POOL/DATASET/memedrop par le chemin absolu de ton dépôt.
+services:
+  memedrop-web:
+    build:
+      context: /mnt/POOL/DATASET/memedrop
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3010:80"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - --spider
+        - http://127.0.0.1/
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - memedrop-shared
+
+networks:
+  memedrop-shared:
+    external: true
+    name: memedrop-shared

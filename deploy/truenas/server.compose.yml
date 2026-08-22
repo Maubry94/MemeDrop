@@ -1,0 +1,43 @@
+# Remplace /mnt/POOL/DATASET/memedrop par le chemin absolu de ton dépôt.
+services:
+  memedrop-server:
+    build:
+      context: /mnt/POOL/DATASET/memedrop
+      dockerfile: apps/server/Dockerfile
+    env_file:
+      - /mnt/POOL/DATASET/memedrop/apps/server/.env
+    environment:
+      PORT: "3010"
+      MEMEDROP_TRUST_PROXY: "true"
+      MEMEDROP_UPDATES_DIR: /updates/win-signed-v1
+    # TrueNAS SCALE utilise souvent le GID 568 pour le groupe apps.
+    # Vérifie le groupe autorisé à lire les releases et adapte ce GID.
+    group_add:
+      - "568"
+    expose:
+      - "3010"
+    volumes:
+      - /mnt/POOL/DATASET/memedrop/releases/win-signed-v1:/updates/win-signed-v1:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3010/health.json')
+          .then(r => process.exit(r.ok ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      memedrop-shared:
+        aliases:
+          - memedrop-server
+
+networks:
+  memedrop-shared:
+    external: true
+    name: memedrop-shared

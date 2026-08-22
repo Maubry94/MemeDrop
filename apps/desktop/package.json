@@ -1,0 +1,43 @@
+{
+  "name": "@memedrop/desktop",
+  "private": true,
+  "description": "Application desktop MemeDrop pour recevoir et afficher les drops Discord.",
+  "author": "Maubry94",
+  "version": "4.0.1",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "build:installer": "node scripts/buildWindowsRelease.mjs local",
+    "build:update:win": "node scripts/buildWindowsRelease.mjs update",
+    "build:signed:win": "node scripts/buildWindowsRelease.mjs signed",
+    "pack:win": "node scripts/buildWindowsRelease.mjs unpacked",
+    "preview": "vite preview",
+    "test": "node --experimental-strip-types --test electron/client/memedropClient.test.ts electron/client/desktopClient.test.ts electron/core/configStore.test.ts electron/desktop/displays.test.ts renderer/composables/controlOnboarding.test.ts renderer/composables/connectionPresentation.test.ts renderer/composables/dropActionPresentation.test.ts renderer/composables/updatePresentation.test.ts",
+    "typecheck": "vue-tsc --noEmit",
+    "update:keygen": "node scripts/generateUpdateSigningKey.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "electron-updater": "6.8.9",
+    "vue": "3.5.41",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@memedrop/protocol": "*",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "22.20.1",
+    "@vitejs/plugin-vue": "6.0.8",
+    "electron": "43.4.0",
+    "electron-builder": "26.15.7",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vite-plugin-electron": "1.1.1",
+    "vue-tsc": "3.3.9"
+  }
+}

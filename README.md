@@ -1,154 +1,215 @@
 # MemeDrop
 
-MemeDrop est une application Windows reliée à Discord pour envoyer et recevoir des memes (des drops) dans un overlay au-dessus des autres applications (en écran fenêtré sans bordure). 
+MemeDrop est une application Windows reliée à Discord pour envoyer et recevoir des images, sons et vidéos dans un overlay au-dessus des autres applications.
 
 ## Fonctionnalités
 
-- Drops d'images, de vidéos, de sons, de vidéos YouTube et de TikTok.
+- Drops d’images, de vidéos, de sons, de vidéos YouTube et TikTok.
 - Envoi global, ciblé vers une personne ou uniquement à soi-même.
-- Légendes, envoi anonyme et renvoi d'un drop récent.
-- Files d'attente et possibilité d'arrêter un drop en cours.
-- Overlay personnalisable : position, taille, volume et affichage de ses propres drops.
-- Connexion Discord, liste des utilisateurs connectés, raccourcis globaux et icône dans la zone de notification Windows.
-- Mises à jour directement depuis l'application.
+- Légendes, envoi anonyme et renvoi d’un drop récent.
+- Files d’attente et arrêt d’un drop en cours.
+- Overlay personnalisable : écran, position, taille, volume et affichage de ses propres drops.
+- Connexion Discord, utilisateurs connectés, raccourcis globaux et icône Windows.
+- Mises à jour directement depuis l’application.
 
-Les commandes Discord disponibles sont `/drop`, `/dropme`, `/dropyt`, `/droptt`, `/redrop`, `/dropstatus`, `/download` et `/help`.
+Les commandes Discord sont `/drop`, `/dropme`, `/dropyt`, `/droptt`, `/redrop`, `/dropstatus`, `/download` et `/help`.
+
+## Organisation du dépôt
+
+MemeDrop utilise des workspaces npm avec un seul `package-lock.json` :
+
+```text
+apps/desktop    Application Vue et Electron pour Windows
+apps/server     Backend, bot Discord, OAuth et WebSocket
+apps/web        Site Vue et passerelle Nginx
+packages/protocol  Types échangés entre le desktop et le serveur
+deploy/truenas  Configurations des deux Custom Apps TrueNAS
+```
+
+Le fichier `compose.yml` lance le serveur et le site. Seul `memedrop-web` expose le port `3010`; il transmet les routes techniques, dont les téléchargements de mise à jour, au backend.
 
 ## Prérequis
 
-- Windows pour utiliser l'application desktop et créer son installateur.
-- [Node.js](https://nodejs.org/) 22.13.0 ou une version plus récente.
-- [Docker](https://www.docker.com/) avec Docker Compose pour le serveur.
-- Une application Discord avec un bot, installée sur un serveur Discord.
+- Windows pour utiliser l’application desktop et créer son installateur.
+- Node.js 22.13.0 ou plus récent.
+- Docker avec Docker Compose pour le serveur et le site.
+- Une application Discord avec un bot.
 
 ## Configuration
 
-Copie `.env.example` vers `.env`, puis renseigne les valeurs correspondant à ton installation.
+Crée le fichier du serveur :
 
-```powershell
-cp .env.example .env
+```sh
+cp apps/server/.env.example apps/server/.env
 ```
 
 | Variable | Description | Obligatoire |
 | --- | --- | --- |
 | `DISCORD_BOT_TOKEN` | Token du bot Discord. | Oui |
-| `DISCORD_CLIENT_ID` | Identifiant de l'application Discord. | Oui |
-| `DISCORD_CLIENT_SECRET` | Secret OAuth2 de l'application Discord. | Oui |
-| `DISCORD_GUILD_ID` | Identifiant du serveur Discord utilisé par MemeDrop. | Oui |
-| `MEMEDROP_SERVER_KEY` | Clé d'accès partagée entre le serveur et les applications, avec au moins 16 caractères aléatoires. | Oui |
-| `MEMEDROP_IDENTITY_SIGNING_SECRET` | Clé aléatoire réservée au serveur, créée avec la commande ci-dessous. | Oui |
-| `MEMEDROP_SERVER_URL` | Adresse par défaut utilisée par l'application desktop. Elle n'est pas utilisée par le conteneur. | Pour l'app |
-| `PUBLIC_BASE_URL` | Adresse publique du serveur, utilisée notamment pour OAuth Discord. | Pour le serveur |
-| `MEMEDROP_ALLOWED_CHANNEL_IDS` | Salons autorisés, séparés par des virgules. Vide pour tous les salons. | Non |
-| `MEMEDROP_ALLOWED_ROLE_IDS` | Rôles autorisés, séparés par des virgules. Vide pour tous les membres. | Non |
-| `MEMEDROP_DROP_COOLDOWN_SECONDS` | Délai entre deux drops d'un même utilisateur. `0` le désactive. | Non |
-| `MEMEDROP_IDENTITY_TOKEN_TTL_SECONDS` | Durée d'une connexion Discord. Par défaut : 30 jours. | Non |
-| `MEMEDROP_UPDATES_DIR` | Dossier des mises à jour dans le conteneur, si elles sont hébergées par ce serveur. | Non |
+| `DISCORD_CLIENT_ID` | Identifiant de l’application Discord. | Oui |
+| `DISCORD_CLIENT_SECRET` | Secret OAuth2 de l’application Discord. | Oui |
+| `DISCORD_GUILD_ID` | Identifiant du serveur Discord. | Oui |
+| `MEMEDROP_SERVER_KEY` | Clé partagée avec les applications, avec au moins 16 caractères aléatoires. | Oui |
+| `MEMEDROP_IDENTITY_SIGNING_SECRET` | Clé aléatoire privée utilisée pour les sessions Discord. | Oui |
+| `PUBLIC_BASE_URL` | Adresse publique de MemeDrop utilisée pour OAuth. | Oui |
+| `MEMEDROP_ALLOWED_CHANNEL_IDS` | Salons autorisés, séparés par des virgules. Vide pour tous. | Non |
+| `MEMEDROP_ALLOWED_ROLE_IDS` | Rôles autorisés, séparés par des virgules. Vide pour tous. | Non |
+| `MEMEDROP_DROP_COOLDOWN_SECONDS` | Délai entre deux drops d’un utilisateur. `0` le désactive. | Non |
+| `MEMEDROP_IDENTITY_TOKEN_TTL_SECONDS` | Durée d’une session Discord, 30 jours par défaut. | Non |
+| `MEMEDROP_UPDATES_DIR` | Dossier contenant les mises à jour Windows. Compose le configure automatiquement. | Non |
 
-Génère deux valeurs différentes avec cette commande : une pour `MEMEDROP_SERVER_KEY` et une pour `MEMEDROP_IDENTITY_SIGNING_SECRET`.
+Génère deux valeurs différentes pour les deux secrets MemeDrop :
 
 ```sh
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
+Pour le développement local du desktop, crée si besoin un fichier d’environnement dédié :
+
+```sh
+cp apps/desktop/.env.example apps/desktop/.env
+```
+
+Ce fichier est lu lorsque l’application est lancée depuis le dépôt, mais il n’est pas inclus dans l’installateur Windows. Lors d’une première installation, l’utilisateur renseigne dans l’application l’adresse et la clé fournies par la personne qui héberge MemeDrop. Elles sont ensuite conservées sur l’appareil, y compris après une mise à jour.
+
 ## Configurer le bot Discord
 
 1. Crée une application dans le [Discord Developer Portal](https://discord.com/developers/applications).
 2. Dans `Bot`, crée le bot et copie son token dans `DISCORD_BOT_TOKEN`.
-3. Récupère l'Application ID pour `DISCORD_CLIENT_ID`, puis le Client Secret dans `OAuth2` pour `DISCORD_CLIENT_SECRET`.
-4. Active le mode développeur dans Discord et copie l'identifiant du serveur dans `DISCORD_GUILD_ID`.
-5. Dans le générateur d'URL OAuth2, sélectionne les scopes `bot` et `applications.commands`, puis installe le bot sur le serveur Discord.
-6. Dans `OAuth2`, ajoute l'URL de redirection correspondant exactement à `PUBLIC_BASE_URL` suivie de `/auth/discord/callback`.
+3. Copie l’Application ID dans `DISCORD_CLIENT_ID` et le secret OAuth2 dans `DISCORD_CLIENT_SECRET`.
+4. Active le mode développeur Discord et copie l’identifiant du serveur dans `DISCORD_GUILD_ID`.
+5. Dans le générateur OAuth2, sélectionne `bot` et `applications.commands`, puis installe le bot.
+6. Ajoute exactement `PUBLIC_BASE_URL` suivi de `/auth/discord/callback` aux Redirect URI OAuth2.
 
-Aucune permission de bot supplémentaire, aucun intent Discord privilégié et aucune `Interactions Endpoint URL` ne sont nécessaires. Les membres doivent simplement pouvoir utiliser les commandes d'application dans le salon.
+En local, l’URI de redirection est :
 
-En local :
-
-```txt
+```text
 http://localhost:3010/auth/discord/callback
 ```
 
-En production :
-
-```txt
-https://memedrop.example.com/auth/discord/callback
-```
+Aucun intent Discord privilégié ni `Interactions Endpoint URL` n’est nécessaire.
 
 ## Lancer en local
 
-Utilise ces adresses dans `.env` :
+Dans `apps/server/.env`, utilise :
 
 ```env
-MEMEDROP_SERVER_URL=http://localhost:3010
 PUBLIC_BASE_URL=http://localhost:3010
 ```
 
-Installe les dépendances :
+Dans `apps/desktop/.env`, utilise :
+
+```env
+MEMEDROP_SERVER_URL=http://localhost:3010
+MEMEDROP_SERVER_KEY=la-meme-cle-que-le-serveur
+```
+
+Installe toutes les dépendances puis lance le serveur et le site :
 
 ```sh
 npm install
-```
-
-Lance le serveur :
-
-```sh
 docker compose up --build
 ```
 
-Puis lance l'application dans un autre terminal :
+Le site est disponible sur `http://localhost:3010`. Lance ensuite le desktop dans un autre terminal :
 
 ```sh
 npm run dev
 ```
 
-Avant de proposer une modification, tu peux lancer les mêmes contrôles que la CI :
+Pour travailler sur le site avec le rechargement automatique :
 
 ```sh
-npm run lint
-npm run typecheck
-npm test
+npm run dev:web
 ```
 
-GitHub Actions exécute automatiquement ces contrôles et construit l'application à chaque pull request et à chaque push sur `main`.
+Le site de développement utilise `http://localhost:5174` et transmet `/health.json` au serveur Docker.
 
 ## Déployer en production
 
-1. Renseigne l'adresse publique du serveur dans son `.env` :
+Configure `PUBLIC_BASE_URL` avec l’origine HTTPS publique exacte et ajoute son callback dans Discord. Expose ensuite le port `3010` du service web derrière un reverse proxy HTTPS ou un tunnel prenant en charge les WebSockets. Cloudflare Tunnel est une option, mais il n’est pas obligatoire.
 
-```env
-PUBLIC_BASE_URL=https://memedrop.example.com
-```
-
-2. Ajoute `https://memedrop.example.com/auth/discord/callback` aux Redirect URI Discord.
-3. Lance le serveur en arrière-plan :
+Avec Compose :
 
 ```sh
 docker compose up -d --build
 ```
 
-4. Vérifie son fonctionnement avec `https://memedrop.example.com/health.json`.
-
-Les utilisateurs renseignent ensuite `https://memedrop.example.com` et la même `MEMEDROP_SERVER_KEY` dans les paramètres de l'application. Un `.env` placé à côté de l'exécutable peut aussi fournir ces valeurs par défaut.
-
-## Construire l'application Windows
-
-Pense à mettre à jour la version dans `package.json` avant de créer une release.
+Pour reconstruire uniquement le backend sans interrompre le site :
 
 ```sh
-# Installateur local pour les essais, dans release/local/
+docker compose up -d --build --no-deps memedrop-server
+```
+
+La page `/health` reste disponible pendant une panne du backend. La sonde `/health.json` renvoie alors un HTTP `503` et les mises à jour sont temporairement indisponibles.
+
+### TrueNAS
+
+Choisis un chemin absolu pour le dépôt sur un dataset accessible aux Apps. Les exemples utilisent `/mnt/POOL/DATASET/memedrop` : remplace `POOL` et `DATASET` par les valeurs de ton installation dans les deux fichiers Compose.
+
+Les deux Custom Apps utilisent ce même dépôt, mais restent arrêtables et redéployables séparément :
+
+- serveur : `deploy/truenas/server.compose.yml`;
+- site : `deploy/truenas/web.compose.yml`.
+
+Depuis le dossier du dépôt, crée la configuration du serveur si elle n’existe pas encore :
+
+```sh
+cd /mnt/POOL/DATASET/memedrop
+cp apps/server/.env.example apps/server/.env
+```
+
+Renseigne ensuite `apps/server/.env`, puis crée une seule fois le réseau partagé :
+
+```sh
+sudo docker network create --driver bridge memedrop-shared
+```
+
+Les fichiers de mise à jour sont placés dans `releases/win-signed-v1`. Ce dossier est monté uniquement dans la Custom App serveur.
+
+Le processus Node s’exécute sans privilèges root. Le groupe ajouté avec `group_add` doit disposer au minimum de la lecture sur les releases et du droit de traverser leurs dossiers. Pour utiliser le groupe TrueNAS `apps`, vérifie son GID :
+
+```sh
+getent group apps
+```
+
+Le troisième champ est son GID, généralement `568`. Renseigne cette valeur dans `group_add` de `deploy/truenas/server.compose.yml`, puis accorde à ce groupe les droits nécessaires depuis l’interface TrueNAS. Tu peux utiliser un autre groupe en renseignant son GID à la place ; aucun accès global à `Everyone` n’est requis.
+
+Crée enfin les deux Custom Apps à partir de leurs fichiers Compose. Le site est publié sur le port `3010` de TrueNAS. Pour un accès public, place ce port derrière le reverse proxy HTTPS ou le tunnel de ton choix et conserve la même origine dans `PUBLIC_BASE_URL`.
+
+## Vérifier le projet
+
+Les commandes racine contrôlent tous les workspaces :
+
+```sh
+npm run lint
+npm run typecheck
+npm test
+npm run build:protocol
+npm run build:app
+npm run build:server
+npm run build:web
+```
+
+## Construire l’application Windows
+
+La version publique se trouve uniquement dans `apps/desktop/package.json`.
+
+```sh
+# Installateur local dans release/local/
 npm run build
 
-# Release avec mise à jour, dans release/update/
+# Release avec auto-update dans release/update/
 npm run build:update:win
 
-# Release avec certificat Windows, si configuré, dans release/signed/
+# Release Authenticode dans release/signed/
 npm run build:signed:win
 ```
 
-Avant la première release avec mise à jour, génère une seule fois les clés de publication :
+Avant la première release avec mise à jour :
 
 ```sh
 npm run update:keygen
 ```
 
-Sauvegarde la clé privée générée dans `.secrets/` et ne la publie jamais. Les commandes de build créent les fichiers localement ; leur mise en ligne reste manuelle. Un build provenant de `release/local/` ne doit pas être utilisé comme mise à jour.
+La clé privée reste dans `.secrets/` et ne doit jamais être publiée. Pour déployer une mise à jour, copie le contenu de `release/update/` ou `release/signed/` dans `releases/win-signed-v1/`; le serveur sert ce dossier sans reconstruction.

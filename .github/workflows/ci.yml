@@ -42,3 +42,23 @@ jobs:
 
       - name: Build application
         run: npm run build:app
+
+      - name: Build server
+        run: npm run build:server
+
+      - name: Build website
+        run: npm run build:web
+
+      - name: Build protocol
+        run: npm run build:protocol
+
+      - name: Prepare Compose environment
+        run: cp apps/server/.env.example apps/server/.env
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Build container images
+        run: |
+          docker build --file apps/server/Dockerfile --tag memedrop-server:ci .
+          docker build --file apps/web/Dockerfile --tag memedrop-web:ci .
