@@ -64,13 +64,13 @@ Génère deux valeurs différentes pour les deux secrets MemeDrop :
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Le fichier optionnel `apps/desktop/.env` ne contient que les valeurs locales par défaut de l’application :
+Pour le développement local du desktop, crée si besoin un fichier d’environnement dédié :
 
 ```sh
 cp apps/desktop/.env.example apps/desktop/.env
 ```
 
-L’utilisateur peut aussi saisir l’adresse et la clé directement dans l’application.
+Ce fichier est lu lorsque l’application est lancée depuis le dépôt, mais il n’est pas inclus dans l’installateur Windows. Lors d’une première installation, l’utilisateur renseigne dans l’application l’adresse et la clé fournies par la personne qui héberge MemeDrop. Elles sont ensuite conservées sur l’appareil, y compris après une mise à jour.
 
 ## Configurer le bot Discord
 

@@ -7,11 +7,11 @@ const releaseUrl = 'https://github.com/Maubry94/MemeDrop/releases/latest'
 const steps = [
   {
     title: "Installe l'application",
-    description: 'Télécharge MemeDrop pour Windows et garde l’overlay prêt en arrière-plan.',
+    description: 'Télécharge MemeDrop pour Windows, installe-le puis lance l’application.',
   },
   {
-    title: 'Connecte Discord',
-    description: 'Associe ton compte depuis l’application pour que le bot retrouve ton écran.',
+    title: 'Configure et connecte',
+    description: 'Renseigne les informations du serveur, qui seront conservées, puis associe ton compte Discord.',
   },
   {
     title: 'Envoie un drop',

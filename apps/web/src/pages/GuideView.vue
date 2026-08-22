@@ -9,8 +9,8 @@ const setupSteps = [
     description: 'Récupère la dernière version Windows sur GitHub, puis lance l’installateur.',
   },
   {
-    title: 'Vérifie le serveur',
-    description: 'L’adresse du serveur est préremplie. Si besoin, ouvre les préférences pour la modifier.',
+    title: 'Configure le serveur',
+    description: 'Renseigne l’adresse et la clé fournies par la personne qui héberge MemeDrop. Elles seront conservées sur cet appareil.',
   },
   {
     title: 'Associe ton compte Discord',
@@ -71,7 +71,7 @@ const troubleshooting = [
       <p class="eyebrow">Guide d’utilisation</p>
       <h1 class="mt-3 text-4xl font-black tracking-tight text-white sm:text-5xl">De l’installation au premier drop.</h1>
       <p class="mt-5 text-base leading-7 text-slate-300 sm:text-lg">
-        Installe l’application, associe Discord et choisis la commande adaptée. Le reste se passe automatiquement.
+        Installe l’application, configure ton serveur, associe Discord et choisis la commande adaptée.
       </p>
       <div class="mt-7">
         <AppLink :href="releaseUrl" external>Télécharger la dernière version</AppLink>
