@@ -26,7 +26,7 @@ packages/protocol  Types échangés entre le desktop et le serveur
 deploy/truenas  Configurations des deux Custom Apps TrueNAS
 ```
 
-Le fichier `compose.yml` lance le serveur et le site. Seul `memedrop-web` expose le port `3010`; il transmet les routes techniques au backend et sert directement les mises à jour.
+Le fichier `compose.yml` lance le serveur et le site. Seul `memedrop-web` expose le port `3010`; il transmet les routes techniques, dont les téléchargements de mise à jour, au backend.
 
 ## Prérequis
 
@@ -39,8 +39,8 @@ Le fichier `compose.yml` lance le serveur et le site. Seul `memedrop-web` expose
 
 Crée le fichier du serveur :
 
-```powershell
-Copy-Item apps/server/.env.example apps/server/.env
+```sh
+cp apps/server/.env.example apps/server/.env
 ```
 
 | Variable | Description | Obligatoire |
@@ -56,6 +56,7 @@ Copy-Item apps/server/.env.example apps/server/.env
 | `MEMEDROP_ALLOWED_ROLE_IDS` | Rôles autorisés, séparés par des virgules. Vide pour tous. | Non |
 | `MEMEDROP_DROP_COOLDOWN_SECONDS` | Délai entre deux drops d’un utilisateur. `0` le désactive. | Non |
 | `MEMEDROP_IDENTITY_TOKEN_TTL_SECONDS` | Durée d’une session Discord, 30 jours par défaut. | Non |
+| `MEMEDROP_UPDATES_DIR` | Dossier contenant les mises à jour Windows. Compose le configure automatiquement. | Non |
 
 Génère deux valeurs différentes pour les deux secrets MemeDrop :
 
@@ -65,8 +66,8 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 Le fichier optionnel `apps/desktop/.env` ne contient que les valeurs locales par défaut de l’application :
 
-```powershell
-Copy-Item apps/desktop/.env.example apps/desktop/.env
+```sh
+cp apps/desktop/.env.example apps/desktop/.env
 ```
 
 L’utilisateur peut aussi saisir l’adresse et la clé directement dans l’application.
@@ -126,7 +127,7 @@ Le site de développement utilise `http://localhost:5174` et transmet `/health.j
 
 ## Déployer en production
 
-Configure `PUBLIC_BASE_URL` avec l’origine HTTPS publique, ajoute son callback dans Discord, puis fais pointer Cloudflare Tunnel vers le port `3010` du service web.
+Configure `PUBLIC_BASE_URL` avec l’origine HTTPS publique exacte et ajoute son callback dans Discord. Expose ensuite le port `3010` du service web derrière un reverse proxy HTTPS ou un tunnel prenant en charge les WebSockets. Cloudflare Tunnel est une option, mais il n’est pas obligatoire.
 
 Avec Compose :
 
@@ -140,32 +141,41 @@ Pour reconstruire uniquement le backend sans interrompre le site :
 docker compose up -d --build --no-deps memedrop-server
 ```
 
-La page `/health` reste disponible pendant une panne du backend. La sonde `/health.json` renvoie alors un HTTP `503`.
+La page `/health` reste disponible pendant une panne du backend. La sonde `/health.json` renvoie alors un HTTP `503` et les mises à jour sont temporairement indisponibles.
 
 ### TrueNAS
 
-Les deux Custom Apps utilisent le même checkout `/mnt/HDD/Medias/Dev/memedrop`, mais restent arrêtables et redéployables séparément :
+Choisis un chemin absolu pour le dépôt sur un dataset accessible aux Apps. Les exemples utilisent `/mnt/POOL/DATASET/memedrop` : remplace `POOL` et `DATASET` par les valeurs de ton installation dans les deux fichiers Compose.
+
+Les deux Custom Apps utilisent ce même dépôt, mais restent arrêtables et redéployables séparément :
 
 - serveur : `deploy/truenas/server.compose.yml`;
 - site : `deploy/truenas/web.compose.yml`.
 
-Crée une seule fois leur réseau partagé :
+Depuis le dossier du dépôt, crée la configuration du serveur si elle n’existe pas encore :
+
+```sh
+cd /mnt/POOL/DATASET/memedrop
+cp apps/server/.env.example apps/server/.env
+```
+
+Renseigne ensuite `apps/server/.env`, puis crée une seule fois le réseau partagé :
 
 ```sh
 sudo docker network create --driver bridge memedrop-shared
 ```
 
-Place la configuration serveur dans `/mnt/HDD/Medias/Dev/memedrop/apps/server/.env` et les releases dans `/mnt/HDD/Medias/Dev/memedrop/releases/win-signed-v1`.
+Les fichiers de mise à jour sont placés dans `releases/win-signed-v1`. Ce dossier est monté uniquement dans la Custom App serveur.
 
-Pour migrer depuis les deux anciens checkouts TrueNAS :
+Le processus Node s’exécute sans privilèges root. Le groupe ajouté avec `group_add` doit disposer au minimum de la lecture sur les releases et du droit de traverser leurs dossiers. Pour utiliser le groupe TrueNAS `apps`, vérifie son GID :
 
-1. Clone ou copie le dépôt dans `/mnt/HDD/Medias/Dev/memedrop`.
-2. Copie l’ancien `.env` serveur vers `apps/server/.env` et les releases existantes vers `releases/win-signed-v1`.
-3. Bascule d’abord la Custom App serveur vers `server.compose.yml`, puis vérifie sa santé.
-4. Bascule ensuite la Custom App web vers `web.compose.yml` et vérifie le site, OAuth, WebSocket et les mises à jour.
-5. Garde les anciens dossiers intacts jusqu’à la validation complète afin de pouvoir revenir en arrière.
+```sh
+getent group apps
+```
 
-Le port web est publié uniquement sur `127.0.0.1:3010`. Cloudflare Tunnel doit donc tourner sur l’hôte TrueNAS et cibler cette adresse locale.
+Le troisième champ est son GID, généralement `568`. Renseigne cette valeur dans `group_add` de `deploy/truenas/server.compose.yml`, puis accorde à ce groupe les droits nécessaires depuis l’interface TrueNAS. Tu peux utiliser un autre groupe en renseignant son GID à la place ; aucun accès global à `Everyone` n’est requis.
+
+Crée enfin les deux Custom Apps à partir de leurs fichiers Compose. Le site est publié sur le port `3010` de TrueNAS. Pour un accès public, place ce port derrière le reverse proxy HTTPS ou le tunnel de ton choix et conserve la même origine dans `PUBLIC_BASE_URL`.
 
 ## Vérifier le projet
 
@@ -202,4 +212,4 @@ Avant la première release avec mise à jour :
 npm run update:keygen
 ```
 
-La clé privée reste dans `.secrets/` et ne doit jamais être publiée. Pour déployer une mise à jour, copie le contenu de `release/update/` ou `release/signed/` dans `releases/win-signed-v1/`; le conteneur web sert ce dossier sans reconstruction.
+La clé privée reste dans `.secrets/` et ne doit jamais être publiée. Pour déployer une mise à jour, copie le contenu de `release/update/` ou `release/signed/` dans `releases/win-signed-v1/`; le serveur sert ce dossier sans reconstruction.

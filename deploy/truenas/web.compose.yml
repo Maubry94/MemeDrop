@@ -1,13 +1,12 @@
+# Remplace /mnt/POOL/DATASET/memedrop par le chemin absolu de ton dépôt.
 services:
   memedrop-web:
     build:
-      context: your/path/to/memedrop
+      context: /mnt/POOL/DATASET/memedrop
       dockerfile: apps/web/Dockerfile
     ports:
-      - "127.0.0.1:3010:80"
+      - "3010:80"
     restart: unless-stopped
-    volumes:
-      - your/path/to/memedrop/releases/win-signed-v1:/updates/win-signed-v1:ro
     healthcheck:
       test:
         - CMD

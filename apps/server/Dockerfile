@@ -43,4 +43,6 @@ COPY --from=builder /workspace/apps/server/dist ./dist
 
 EXPOSE 3010
 
+USER node
+
 CMD ["node", "dist/index.js"]

@@ -7,6 +7,8 @@ import { createDiscordBot } from './discord/client.js'
 import { createDiscordOAuthHandlers } from './discord/oauth.js'
 import { parseRequestUrl } from './http/request.js'
 import { sendJsonResponse, sendTextResponse } from './http/responses.js'
+import { sendStaticFile } from './http/staticFiles.js'
+import { getSignedWindowsUpdateRequestPath } from './http/updateRoute.js'
 import { createIdentityTokenService } from './security/identityToken.js'
 import { createMemeDropWebSocketServer } from './websocket.js'
 
@@ -70,6 +72,32 @@ const server = http.createServer((request, response) => {
     discordStatus,
     clients: clients.size,
     latestAppVersion,
+  }
+
+  const signedUpdateRequestPath = getSignedWindowsUpdateRequestPath(
+    request.method,
+    requestUrl.pathname,
+  )
+  if (signedUpdateRequestPath !== null) {
+    if (!config.memedropUpdatesDir) {
+      sendTextResponse(response, 404, 'MemeDrop updates directory is not configured.\n')
+      return
+    }
+
+    void sendStaticFile(
+      response,
+      config.memedropUpdatesDir,
+      signedUpdateRequestPath,
+      request.method === 'HEAD',
+    ).catch((error) => {
+      console.error('Envoi de mise à jour MemeDrop impossible:', error)
+      if (!response.headersSent) {
+        sendTextResponse(response, 500, 'MemeDrop update file unavailable.\n')
+      } else if (!response.writableEnded && !response.destroyed) {
+        response.destroy(error instanceof Error ? error : undefined)
+      }
+    })
+    return
   }
 
   if (requestUrl.pathname === '/health.json') {
