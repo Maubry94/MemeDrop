@@ -13,6 +13,7 @@ apps/*/dist-*
 dist
 dist-*
 release
+/releases/
 *.local
 .env
 .secrets/

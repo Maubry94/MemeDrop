@@ -157,6 +157,7 @@ Depuis le dossier du dépôt, crée la configuration du serveur si elle n’exis
 ```sh
 cd /mnt/POOL/DATASET/memedrop
 cp apps/server/.env.example apps/server/.env
+mkdir -p releases/win-signed-v1
 ```
 
 Renseigne ensuite `apps/server/.env`, puis crée une seule fois le réseau partagé :
@@ -212,4 +213,4 @@ Avant la première release avec mise à jour :
 npm run update:keygen
 ```
 
-La clé privée reste dans `.secrets/` et ne doit jamais être publiée. Pour déployer une mise à jour, copie le contenu de `release/update/` ou `release/signed/` dans `releases/win-signed-v1/`; le serveur sert ce dossier sans reconstruction.
+La clé privée reste dans `.secrets/` et ne doit jamais être publiée. Pour déployer une mise à jour, crée au besoin `releases/win-signed-v1`, puis copie dedans le contenu de `release/update/` ou `release/signed/`; le serveur sert ce dossier sans reconstruction. Ce répertoire de déploiement est ignoré par Git.
