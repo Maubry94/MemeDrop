@@ -10,7 +10,10 @@ import {
   writeAppConfigFile,
   type AppConfigFile,
 } from './appConfig.ts'
-import { createConfigStore } from './configStore.ts'
+import {
+  createConfigStore,
+  normalizeOverlayDisplayPreferences,
+} from './configStore.ts'
 
 const createTemporaryUserData = (context: TestContext) => {
   const userDataPath = mkdtempSync(path.join(tmpdir(), 'memedrop-config-store-'))
@@ -93,5 +96,49 @@ test('rejects unknown section identifiers and non-boolean values', (context) => 
   assert.throws(
     () => store.setControlPanelSectionOpen('dropReception', 'false' as unknown as boolean),
     /invalide/,
+  )
+})
+
+test('normalizes overlay display preferences at the IPC and storage boundary', () => {
+  assert.deepEqual(
+    normalizeOverlayDisplayPreferences({
+      displayId: '../invalid',
+      position: 'outside' as never,
+      volume: 200,
+      size: Number.NaN,
+      customX: -10,
+      customY: 110,
+      customAnchor: 'custom' as never,
+    }),
+    {
+      displayId: 'primary',
+      position: 'full',
+      volume: 100,
+      size: 100,
+      customX: 0,
+      customY: 100,
+      customAnchor: 'full',
+    },
+  )
+
+  assert.deepEqual(
+    normalizeOverlayDisplayPreferences({
+      displayId: '-123456',
+      position: 'custom',
+      volume: 35,
+      size: 125,
+      customX: 17,
+      customY: 82,
+      customAnchor: 'bottom-right',
+    }),
+    {
+      displayId: '-123456',
+      position: 'custom',
+      volume: 35,
+      size: 125,
+      customX: 17,
+      customY: 82,
+      customAnchor: 'bottom-right',
+    },
   )
 })

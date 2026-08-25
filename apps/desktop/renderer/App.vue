@@ -216,6 +216,7 @@ watch(dropsEnabled, (value) => {
       :drop-volume="dropVolume"
       :drop-size="dropSize"
       :is-custom-position="overlayPosition === 'custom'"
+      :keep-test-image-visible="isTestDropActive"
       @advance="completeActiveDrop"
     />
 

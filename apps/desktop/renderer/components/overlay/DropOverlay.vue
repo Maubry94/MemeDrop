@@ -7,6 +7,7 @@ import DropAuthor from './DropAuthor.vue'
 import NativeMediaDrop from './NativeMediaDrop.vue'
 import TikTokDrop from './TikTokDrop.vue'
 import YouTubeDrop from './YouTubeDrop.vue'
+import { getOverlayWrapperStyle } from './overlayLayout'
 
 const props = defineProps<{
   activeDrop: Drop | null
@@ -17,6 +18,7 @@ const props = defineProps<{
   volume: number
   size: number
   isCustomPosition: boolean
+  keepTestImageVisible: boolean
 }>()
 
 const emit = defineEmits<{
@@ -55,7 +57,7 @@ const overlayWrapperClasses = computed(() =>
 )
 
 const overlayWrapperStyle = computed<CSSProperties>(() =>
-  props.isCustomPosition ? props.customStyle : {},
+  getOverlayWrapperStyle(props.isCustomPosition, props.customStyle),
 )
 
 const landscapeFrameWidth = computed(
@@ -146,6 +148,7 @@ const isNativeMediaKind = (
           :kind="activeKind"
           :volume="volume"
           :frame-style="mediaFrameStyle"
+          :keep-image-visible="keepTestImageVisible"
           @advance="emit('advance', $event)"
           @loading="handleDropLoading"
           @ready="handleDropReady"

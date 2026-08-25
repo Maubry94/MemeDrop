@@ -12,7 +12,10 @@ import { config as loadEnv } from 'dotenv'
 import { createAppActions } from './core/appActions'
 import { createAppUpdater } from './core/appUpdater'
 import type { ControlWindowBounds } from './core/appConfig'
-import { createConfigStore } from './core/configStore'
+import {
+  createConfigStore,
+  normalizeOverlayDisplayPreferences,
+} from './core/configStore'
 import { createDesktopClient } from './client/desktopClient'
 import {
   getControlWindowBounds as getSavedControlWindowBounds,
@@ -72,6 +75,9 @@ export const VITE_DEV_SERVER_URL = app.isPackaged
   : validateDevelopmentServerUrl(process.env['VITE_DEV_SERVER_URL'])
 const APP_ID = 'com.memedrop.app'
 const START_MINIMIZED_ARG = '--memedrop-start-minimized'
+const OVERLAY_DISPLAY_PREFERENCES_SAVE_DELAY_MS = 150
+const OVERLAY_DISPLAY_PREFERENCES_RETRY_DELAY_MS = 1_000
+const OVERLAY_DISPLAY_PREFERENCES_MAX_RETRIES = 3
 
 app.enableSandbox()
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
@@ -119,6 +125,10 @@ let connectionStatus: ConnectionStatus | null = null
 let currentTestDrop: Drop | null = null
 let isQuitting = false
 let shouldStartControlHidden = false
+let overlayDisplayPreferences: OverlayDisplayPreferences | null = null
+let overlayDisplayPreferencesDirty = false
+let overlayDisplayPreferencesSaveFailures = 0
+let overlayDisplayPreferencesSaveTimer: ReturnType<typeof setTimeout> | null = null
 
 const loadAppEnv = () => {
   const candidates = [
@@ -149,14 +159,65 @@ const saveOverlayPreferences = () => {
 
 const loadOverlayPreferences = () => {
   hideOwnDrops = getConfigStore().getHideOwnDrops()
+  overlayDisplayPreferences = getConfigStore().getOverlayDisplayPreferences()
 }
 
-const getOverlayDisplayPreferences = (): OverlayDisplayPreferences =>
-  getConfigStore().getOverlayDisplayPreferences()
+const getOverlayDisplayPreferences = (): OverlayDisplayPreferences => {
+  overlayDisplayPreferences ??= getConfigStore().getOverlayDisplayPreferences()
+  return { ...overlayDisplayPreferences }
+}
 
-const saveOverlayDisplayPreferences = (
+const flushOverlayDisplayPreferences = () => {
+  if (overlayDisplayPreferencesSaveTimer) {
+    clearTimeout(overlayDisplayPreferencesSaveTimer)
+    overlayDisplayPreferencesSaveTimer = null
+  }
+
+  if (!overlayDisplayPreferencesDirty || !overlayDisplayPreferences) {
+    return
+  }
+
+  try {
+    overlayDisplayPreferences = getConfigStore().saveOverlayDisplayPreferences(
+      overlayDisplayPreferences,
+    )
+    overlayDisplayPreferencesDirty = false
+    overlayDisplayPreferencesSaveFailures = 0
+  } catch (error) {
+    console.error("Enregistrement des préférences d'affichage impossible :", error)
+    overlayDisplayPreferencesSaveFailures += 1
+    if (
+      !isQuitting &&
+      overlayDisplayPreferencesSaveFailures <= OVERLAY_DISPLAY_PREFERENCES_MAX_RETRIES
+    ) {
+      overlayDisplayPreferencesSaveTimer = setTimeout(() => {
+        overlayDisplayPreferencesSaveTimer = null
+        flushOverlayDisplayPreferences()
+      }, OVERLAY_DISPLAY_PREFERENCES_RETRY_DELAY_MS)
+    }
+  }
+}
+
+const scheduleOverlayDisplayPreferencesSave = () => {
+  if (overlayDisplayPreferencesSaveTimer) {
+    clearTimeout(overlayDisplayPreferencesSaveTimer)
+  }
+
+  overlayDisplayPreferencesSaveTimer = setTimeout(() => {
+    overlayDisplayPreferencesSaveTimer = null
+    flushOverlayDisplayPreferences()
+  }, OVERLAY_DISPLAY_PREFERENCES_SAVE_DELAY_MS)
+}
+
+const updateOverlayDisplayPreferences = (
   preferences: OverlayDisplayPreferences,
-): OverlayDisplayPreferences => getConfigStore().saveOverlayDisplayPreferences(preferences)
+): OverlayDisplayPreferences => {
+  overlayDisplayPreferences = normalizeOverlayDisplayPreferences(preferences)
+  overlayDisplayPreferencesDirty = true
+  overlayDisplayPreferencesSaveFailures = 0
+  scheduleOverlayDisplayPreferencesSave()
+  return getOverlayDisplayPreferences()
+}
 
 const getOverlayDisplays = () => getAvailableOverlayDisplays(screen)
 
@@ -546,10 +607,13 @@ if (hasInstanceLock) app.whenReady().then(async () => {
     getOverlayDisplayPreferences,
     getOverlayDisplays,
     setOverlayDisplayPreferences: (preferences) => {
-      const savedPreferences = saveOverlayDisplayPreferences(preferences)
-      syncOverlayDisplayPreferences()
-      windows.keepOverlayAboveFullscreen()
-      return savedPreferences
+      const previousDisplayId = getOverlayDisplayPreferences().displayId
+      const updatedPreferences = updateOverlayDisplayPreferences(preferences)
+      windows.sendToOverlay('overlay-display-preferences', updatedPreferences)
+      if (updatedPreferences.displayId !== previousDisplayId) {
+        windows.keepOverlayAboveFullscreen()
+      }
+      return updatedPreferences
     },
     getAppPreferences,
     getAppVersionInfo: desktopClient.getAppVersionInfo,
@@ -611,6 +675,7 @@ if (hasInstanceLock) app.whenReady().then(async () => {
       }
 
       currentTestDrop = { ...drop }
+      windows.keepOverlayAboveFullscreen()
       sendToWindows('test-drop-received', currentTestDrop)
       return true
     },
@@ -635,6 +700,7 @@ app.on('before-quit', () => {
 })
 
 app.on('will-quit', () => {
+  flushOverlayDisplayPreferences()
   windows.dispose()
   tray.destroy()
   rendererServer.close()

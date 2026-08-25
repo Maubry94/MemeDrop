@@ -10,7 +10,9 @@ import type {
   ControlPanelSectionId,
   ControlPanelSectionState,
   DiscordUser,
+  OverlayAnchor,
   OverlayDisplayPreferences,
+  OverlayPosition,
   ServerConnectionConfig,
   ServerConfig,
   ShortcutActionId,
@@ -21,9 +23,70 @@ const MAX_AUTH_TOKEN_LENGTH = 4096
 const MAX_AUTH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const AUTH_CLOCK_SKEW_MS = 60 * 1000
 const AUTH_TOKEN_PATTERN = /^[A-Za-z0-9._-]+$/
+const DISPLAY_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+const OVERLAY_ANCHORS = new Set<OverlayAnchor>([
+  'full',
+  'top-left',
+  'top-right',
+  'bottom-left',
+  'bottom-right',
+])
+const OVERLAY_POSITIONS = new Set<OverlayPosition>([
+  ...OVERLAY_ANCHORS,
+  'custom',
+])
 
 const normalizeString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : ''
+
+const normalizeFiniteNumber = (
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+) => {
+  const numberValue =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim()
+        ? Number(value)
+        : Number.NaN
+
+  return Number.isFinite(numberValue)
+    ? Math.min(maximum, Math.max(minimum, numberValue))
+    : fallback
+}
+
+const normalizeDisplayId = (value: unknown) => {
+  const displayId =
+    typeof value === 'string' || typeof value === 'number'
+      ? String(value).trim()
+      : ''
+
+  return DISPLAY_ID_PATTERN.test(displayId) ? displayId : 'primary'
+}
+
+const normalizeOverlayAnchor = (value: unknown): OverlayAnchor =>
+  typeof value === 'string' && OVERLAY_ANCHORS.has(value as OverlayAnchor)
+    ? value as OverlayAnchor
+    : 'full'
+
+const normalizeOverlayPosition = (value: unknown): OverlayPosition =>
+  typeof value === 'string' && OVERLAY_POSITIONS.has(value as OverlayPosition)
+    ? value as OverlayPosition
+    : 'full'
+
+export const normalizeOverlayDisplayPreferences = (
+  preferences: Partial<OverlayDisplayPreferences> | undefined,
+): OverlayDisplayPreferences => ({
+  displayId: normalizeDisplayId(preferences?.displayId),
+  position: normalizeOverlayPosition(preferences?.position),
+  volume: normalizeFiniteNumber(preferences?.volume, 100, 0, 100),
+  size: normalizeFiniteNumber(preferences?.size, 100, 40, 130),
+  customX: normalizeFiniteNumber(preferences?.customX, 50, 0, 100),
+  customY: normalizeFiniteNumber(preferences?.customY, 50, 0, 100),
+  customAnchor: normalizeOverlayAnchor(preferences?.customAnchor),
+})
 
 const normalizeControlPanelSectionState = (
   state: Partial<ControlPanelSectionState> | undefined,
@@ -220,37 +283,23 @@ export const createConfigStore = (userDataPath: string) => {
 
   const getOverlayDisplayPreferences = (): OverlayDisplayPreferences => {
     const stored = readConfig().overlay ?? {}
-
-    return {
-      displayId: String(stored.displayId ?? 'primary'),
-      position: stored.position ?? 'full',
-      volume: Number(stored.volume ?? 100),
-      size: Number(stored.size ?? 100),
-      customX: Number(stored.customX ?? 50),
-      customY: Number(stored.customY ?? 50),
-      customAnchor: stored.customAnchor ?? 'full',
-    }
+    return normalizeOverlayDisplayPreferences(stored)
   }
 
   const saveOverlayDisplayPreferences = (
     preferences: OverlayDisplayPreferences,
   ): OverlayDisplayPreferences => {
+    const normalizedPreferences = normalizeOverlayDisplayPreferences(preferences)
     const stored = readConfig()
     writeConfig({
       ...stored,
       overlay: {
         ...stored.overlay,
-        displayId: preferences.displayId,
-        position: preferences.position,
-        volume: preferences.volume,
-        size: preferences.size,
-        customX: preferences.customX,
-        customY: preferences.customY,
-        customAnchor: preferences.customAnchor,
+        ...normalizedPreferences,
       },
     })
 
-    return getOverlayDisplayPreferences()
+    return normalizedPreferences
   }
 
   const getAppPreferences = (): AppPreferences => {

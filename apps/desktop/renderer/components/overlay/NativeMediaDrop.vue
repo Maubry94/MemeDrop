@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import type { MediaKind } from '../../../shared/media'
 import type { Drop } from '../../../shared/types'
+import { getImageDisplayTimeout } from './nativeMediaPolicy'
 
 type NativeMediaKind = Extract<MediaKind, 'image' | 'video' | 'audio'>
 type NativeMediaIdentity = {
@@ -10,7 +11,6 @@ type NativeMediaIdentity = {
   generation: number
 }
 
-const IMAGE_DISPLAY_TIMEOUT_MS = 9_000
 const NATIVE_MEDIA_LOAD_TIMEOUT_MS = 30_000
 const NATIVE_MEDIA_STALL_TIMEOUT_MS = 30_000
 const NATIVE_MEDIA_PROGRESS_EPSILON_SECONDS = 0.05
@@ -20,6 +20,7 @@ const props = defineProps<{
   kind: NativeMediaKind
   volume: number
   frameStyle: CSSProperties
+  keepImageVisible: boolean
 }>()
 
 const emit = defineEmits<{
@@ -143,7 +144,12 @@ const handleImageLoad = (event: Event) => {
 
   visuallyReadyGeneration = identity.generation
   emit('ready', identity.dropId)
-  armNativeMediaWatchdog(identity, IMAGE_DISPLAY_TIMEOUT_MS, 'display-complete')
+  const displayTimeout = getImageDisplayTimeout(props.keepImageVisible)
+  if (displayTimeout === null) {
+    clearNativeMediaWatchdog()
+    return
+  }
+  armNativeMediaWatchdog(identity, displayTimeout, 'display-complete')
 }
 
 const handleImageError = (event: Event) => {

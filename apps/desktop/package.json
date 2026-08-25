@@ -3,7 +3,7 @@
   "private": true,
   "description": "Application desktop MemeDrop pour recevoir et afficher les drops Discord.",
   "author": "Maubry94",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -17,7 +17,7 @@
     "build:signed:win": "node scripts/buildWindowsRelease.mjs signed",
     "pack:win": "node scripts/buildWindowsRelease.mjs unpacked",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test electron/client/memedropClient.test.ts electron/client/desktopClient.test.ts electron/core/configStore.test.ts electron/desktop/displays.test.ts renderer/composables/controlOnboarding.test.ts renderer/composables/connectionPresentation.test.ts renderer/composables/dropActionPresentation.test.ts renderer/composables/updatePresentation.test.ts",
+    "test": "node --experimental-strip-types --test electron/client/memedropClient.test.ts electron/client/desktopClient.test.ts electron/core/configStore.test.ts electron/desktop/displays.test.ts renderer/components/overlay/nativeMediaPolicy.test.ts renderer/components/overlay/overlayLayout.test.ts renderer/composables/controlOnboarding.test.ts renderer/composables/connectionPresentation.test.ts renderer/composables/dropActionPresentation.test.ts renderer/composables/frameCoalescedSync.test.ts renderer/composables/updatePresentation.test.ts",
     "typecheck": "vue-tsc --noEmit",
     "update:keygen": "node scripts/generateUpdateSigningKey.mjs"
   },

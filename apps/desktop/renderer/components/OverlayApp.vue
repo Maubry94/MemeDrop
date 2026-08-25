@@ -13,6 +13,7 @@ defineProps<{
   dropVolume: number
   dropSize: number
   isCustomPosition: boolean
+  keepTestImageVisible: boolean
 }>()
 
 defineEmits<{
@@ -31,6 +32,7 @@ defineEmits<{
       :volume="dropVolume"
       :size="dropSize"
       :is-custom-position="isCustomPosition"
+      :keep-test-image-visible="keepTestImageVisible"
       @advance="$emit('advance', $event)"
     />
   </div>

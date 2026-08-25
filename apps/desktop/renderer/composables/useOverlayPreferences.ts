@@ -6,6 +6,7 @@ import type {
   OverlayDisplayPreferences,
   OverlayPosition,
 } from '../../shared/types'
+import { createFrameCoalescedSync } from './frameCoalescedSync'
 
 export const useOverlayPreferences = () => {
   const overlayPosition = ref<OverlayPosition>('full')
@@ -17,7 +18,6 @@ export const useOverlayPreferences = () => {
   const customY = ref(50)
   const customAnchor = ref<OverlayAnchor>('full')
   let syncingDisplayPreferences = false
-  let savePreferencesTimer: ReturnType<typeof setTimeout> | null = null
 
   const overlayClasses = computed(() => {
     if (overlayPosition.value === 'custom') {
@@ -62,11 +62,6 @@ export const useOverlayPreferences = () => {
   })
 
   const applyOverlayDisplayPreferences = (preferences: OverlayDisplayPreferences) => {
-    if (savePreferencesTimer) {
-      clearTimeout(savePreferencesTimer)
-      savePreferencesTimer = null
-    }
-
     syncingDisplayPreferences = true
     overlayDisplayId.value = preferences.displayId
     overlayPosition.value = preferences.position
@@ -78,93 +73,52 @@ export const useOverlayPreferences = () => {
     syncingDisplayPreferences = false
   }
 
-  const saveOverlayDisplayPreferences = async () => {
-    if (syncingDisplayPreferences || !window.memedrop) {
-      return
-    }
+  const preferenceSync = createFrameCoalescedSync({
+    read: getCurrentOverlayDisplayPreferences,
+    write: (preferences) =>
+      window.memedrop?.setOverlayDisplayPreferences(preferences),
+    requestFrame: (callback) => window.requestAnimationFrame(callback),
+    cancelFrame: (frameId) => window.cancelAnimationFrame(frameId),
+    onError: (error) => {
+      console.error("Mise à jour des préférences d'affichage impossible :", error)
+    },
+  })
 
-    await window.memedrop.setOverlayDisplayPreferences(getCurrentOverlayDisplayPreferences())
+  watch(
+    [
+      overlayPosition,
+      overlayDisplayId,
+      dropVolume,
+      dropSize,
+      customX,
+      customY,
+      customAnchor,
+    ],
+    () => {
+      if (!syncingDisplayPreferences) {
+        preferenceSync.schedule()
+      }
+    },
+    { flush: 'sync' },
+  )
+
+  const flushPendingPreferenceSync = () => {
+    preferenceSync.flush()
   }
 
-  const scheduleOverlayDisplayPreferencesSave = () => {
-    if (syncingDisplayPreferences) {
-      return
+  const flushPendingPreferenceSyncWhenHidden = () => {
+    if (document.visibilityState === 'hidden') {
+      preferenceSync.flush()
     }
-
-    if (savePreferencesTimer) {
-      clearTimeout(savePreferencesTimer)
-    }
-
-    savePreferencesTimer = setTimeout(() => {
-      savePreferencesTimer = null
-      void saveOverlayDisplayPreferences()
-    }, 150)
   }
 
-  watch(
-    overlayPosition,
-    () => {
-      scheduleOverlayDisplayPreferencesSave()
-    },
-    { flush: 'sync' },
-  )
-
-  watch(
-    overlayDisplayId,
-    () => {
-      scheduleOverlayDisplayPreferencesSave()
-    },
-    { flush: 'sync' },
-  )
-
-  watch(
-    dropVolume,
-    () => {
-      scheduleOverlayDisplayPreferencesSave()
-    },
-    { flush: 'sync' },
-  )
-
-  watch(
-    dropSize,
-    () => {
-      scheduleOverlayDisplayPreferencesSave()
-    },
-    { flush: 'sync' },
-  )
-
-  watch(
-    customX,
-    () => {
-      scheduleOverlayDisplayPreferencesSave()
-    },
-    { flush: 'sync' },
-  )
-
-  watch(
-    customY,
-    () => {
-      scheduleOverlayDisplayPreferencesSave()
-    },
-    { flush: 'sync' },
-  )
-
-  watch(
-    customAnchor,
-    () => {
-      scheduleOverlayDisplayPreferencesSave()
-    },
-    { flush: 'sync' },
-  )
+  window.addEventListener('pagehide', flushPendingPreferenceSync)
+  document.addEventListener('visibilitychange', flushPendingPreferenceSyncWhenHidden)
 
   onBeforeUnmount(() => {
-    if (!savePreferencesTimer) {
-      return
-    }
-
-    clearTimeout(savePreferencesTimer)
-    savePreferencesTimer = null
-    void saveOverlayDisplayPreferences()
+    window.removeEventListener('pagehide', flushPendingPreferenceSync)
+    document.removeEventListener('visibilitychange', flushPendingPreferenceSyncWhenHidden)
+    preferenceSync.flush()
   })
 
   return {
