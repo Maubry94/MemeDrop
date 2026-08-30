@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
+import type { TikTokVolumeApplicationResult } from '../../shared/preloadApi'
 import { DEFAULT_CONTROL_PANEL_SECTION_STATE } from '../../shared/types'
 import type {
   AppPreferences,
@@ -66,6 +67,12 @@ export type MemeDropIpcHandlers = {
   stopCurrentDropForEveryone: (dropId: string) => boolean
   emitTestDrop: (drop: Drop) => boolean
   clearTestDrop: (dropId: string) => boolean
+  applyTikTokVolume: (
+    dropId: string,
+    videoId: string,
+    volume: number,
+  ) => Promise<TikTokVolumeApplicationResult>
+  releaseTikTokAudio: (dropId: string) => boolean
 }
 
 export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
@@ -114,6 +121,27 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
     }
 
     return value
+  }
+
+  const requireTikTokVideoId = (value: unknown) => {
+    if (typeof value !== 'string' || !/^\d{10,30}$/.test(value)) {
+      throw new Error('Identifiant de vidéo TikTok invalide.')
+    }
+
+    return value
+  }
+
+  const requireVolume = (value: unknown) => {
+    if (
+      typeof value !== 'number' ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      value > 100
+    ) {
+      throw new Error('Volume TikTok invalide.')
+    }
+
+    return Math.round(value)
   }
 
   handle('set-drops-enabled', (_event, enabled: boolean) =>
@@ -204,6 +232,32 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
   handle(
     'clear-test-drop',
     (_event, dropId: string) => handlers.clearTestDrop(requireDropId(dropId)),
+    true,
+  )
+  handle(
+    'apply-tiktok-volume',
+    (event, dropId: unknown, videoId: unknown, volume: unknown) => {
+      if (!handlers.isOverlaySender(event.sender)) {
+        throw new Error('Réglage du volume TikTok refusé hors de l’overlay.')
+      }
+
+      return handlers.applyTikTokVolume(
+        requireDropId(dropId),
+        requireTikTokVideoId(videoId),
+        requireVolume(volume),
+      )
+    },
+    true,
+  )
+  handle(
+    'release-tiktok-audio',
+    (event, dropId: unknown) => {
+      if (!handlers.isOverlaySender(event.sender)) {
+        throw new Error('Libération du son TikTok refusée hors de l’overlay.')
+      }
+
+      return handlers.releaseTikTokAudio(requireDropId(dropId))
+    },
     true,
   )
 }

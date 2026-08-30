@@ -2,6 +2,8 @@ import type { Drop } from './types.js'
 
 export type MediaKind = 'none' | 'image' | 'video' | 'audio' | 'youtube' | 'tiktok' | 'file'
 
+export const TIKTOK_FALLBACK_VOLUME = 20
+
 export const getMediaKind = (drop: Drop | null): MediaKind => {
   if (!drop) {
     return 'none'

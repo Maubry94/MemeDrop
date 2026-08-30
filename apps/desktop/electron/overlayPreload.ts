@@ -34,6 +34,10 @@ const overlayApi = {
     ipcRenderer.invoke('get-active-drop-snapshot'),
   getOverlayDisplayPreferences: () =>
     ipcRenderer.invoke('get-overlay-display-preferences'),
+  applyTikTokVolume: (dropId: string, videoId: string, volume: number) =>
+    ipcRenderer.invoke('apply-tiktok-volume', dropId, videoId, volume),
+  releaseTikTokAudio: (dropId: string) =>
+    ipcRenderer.invoke('release-tiktok-audio', dropId),
 } satisfies MemeDropOverlayPreloadApi
 
 contextBridge.exposeInMainWorld('memedropOverlay', overlayApi)

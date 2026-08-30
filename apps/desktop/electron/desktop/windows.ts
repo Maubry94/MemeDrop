@@ -1,10 +1,12 @@
 import { BrowserWindow, session } from 'electron'
 import type { Cookie, Display, Input, Rectangle, WebContents } from 'electron'
 import type { ControlWindowBounds } from '../core/appConfig'
+import type { TikTokVolumeApplicationResult } from '../../shared/preloadApi'
 import {
   CONTROL_WINDOW_MIN_HEIGHT,
   CONTROL_WINDOW_MIN_WIDTH,
 } from './displays'
+import { applyTikTokPlayerVolume } from './tiktokVolume'
 
 type RendererView = 'overlay' | 'control'
 
@@ -90,6 +92,8 @@ export const createMemeDropWindows = ({
   let controlWindow: BrowserWindow | null = null
   let overlayKeepAliveTimer: ReturnType<typeof setInterval> | null = null
   let controlWindowBoundsSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let tiktokAudioGeneration = 0
+  let tiktokAudioGate: { dropId: string; generation: number } | null = null
   let isRendererSessionConfigured = false
   let rendererSessionPreparation: Promise<void> | null = null
 
@@ -201,6 +205,47 @@ export const createMemeDropWindows = ({
     overlayKeepAliveTimer = null
   }
 
+  const unavailableTikTokVolume = (): TikTokVolumeApplicationResult => ({
+    applied: false,
+    effectiveVolume: null,
+    usedFallback: false,
+  })
+
+  const beginTikTokAudio = (dropId: string) => {
+    const generation = ++tiktokAudioGeneration
+    tiktokAudioGate = { dropId, generation }
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.setAudioMuted(true)
+    }
+    return generation
+  }
+
+  const releaseTikTokAudio = (dropId?: string) => {
+    if (!tiktokAudioGate || (dropId && tiktokAudioGate.dropId !== dropId)) {
+      return false
+    }
+
+    tiktokAudioGeneration += 1
+    tiktokAudioGate = null
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.setAudioMuted(false)
+    }
+    return true
+  }
+
+  const suspendTikTokAudio = (dropId?: string) => {
+    if (!tiktokAudioGate || (dropId && tiktokAudioGate.dropId !== dropId)) {
+      return false
+    }
+
+    const generation = ++tiktokAudioGeneration
+    tiktokAudioGate = { dropId: tiktokAudioGate.dropId, generation }
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.setAudioMuted(true)
+    }
+    return true
+  }
+
   const saveControlWindowBounds = () => {
     if (!controlWindow || controlWindow.isDestroyed() || controlWindow.isMinimized()) {
       return
@@ -287,11 +332,22 @@ export const createMemeDropWindows = ({
     hardenLocalRenderer(overlayWindow)
     keepOverlayAboveFullscreen()
     startOverlayKeepAlive()
+    overlayWindow.webContents.on(
+      'did-start-navigation',
+      (_event, _url, _isInPlace, isMainFrame) => {
+        if (isMainFrame && tiktokAudioGate) {
+          overlayWindow?.webContents.setAudioMuted(true)
+        }
+      },
+    )
     overlayWindow.webContents.on('did-finish-load', () => {
+      overlayWindow?.webContents.setAudioMuted(Boolean(tiktokAudioGate))
       onOverlayLoaded()
       keepOverlayAboveFullscreen()
     })
     overlayWindow.on('closed', () => {
+      tiktokAudioGeneration += 1
+      tiktokAudioGate = null
       overlayWindow = null
       stopOverlayKeepAlive()
     })
@@ -406,6 +462,47 @@ export const createMemeDropWindows = ({
     controlWindow?.webContents.send(channel, payload)
   }
 
+  const applyTikTokVolume = async (
+    dropId: string,
+    videoId: string,
+    volume: number,
+  ): Promise<TikTokVolumeApplicationResult> => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) {
+      return unavailableTikTokVolume()
+    }
+
+    const targetWindow = overlayWindow
+    const generation = beginTikTokAudio(dropId)
+    const result = await applyTikTokPlayerVolume(
+      () => {
+        if (
+          targetWindow.isDestroyed() ||
+          tiktokAudioGate?.dropId !== dropId ||
+          tiktokAudioGate.generation !== generation
+        ) {
+          return []
+        }
+        return targetWindow.webContents.mainFrame.framesInSubtree
+      },
+      videoId,
+      volume,
+      generation,
+    )
+
+    if (
+      targetWindow.isDestroyed() ||
+      tiktokAudioGate?.dropId !== dropId ||
+      tiktokAudioGate.generation !== generation
+    ) {
+      return unavailableTikTokVolume()
+    }
+
+    targetWindow.webContents.setAudioMuted(
+      !result.applied || result.effectiveVolume === null || result.effectiveVolume === 0,
+    )
+    return result
+  }
+
   const isOverlaySender = (sender: WebContents) => overlayWindow?.webContents === sender
 
   const isControlSender = (sender: WebContents) => controlWindow?.webContents === sender
@@ -413,12 +510,15 @@ export const createMemeDropWindows = ({
   const hasAnyWindow = () => BrowserWindow.getAllWindows().length > 0
 
   const clearWindowReferences = () => {
+    tiktokAudioGeneration += 1
+    tiktokAudioGate = null
     overlayWindow = null
     controlWindow = null
   }
 
   const dispose = () => {
     stopOverlayKeepAlive()
+    releaseTikTokAudio()
     if (controlWindowBoundsSaveTimer) {
       clearTimeout(controlWindowBoundsSaveTimer)
       controlWindowBoundsSaveTimer = null
@@ -435,6 +535,10 @@ export const createMemeDropWindows = ({
     sendToWindows,
     sendToOverlay,
     sendToControl,
+    beginTikTokAudio,
+    applyTikTokVolume,
+    suspendTikTokAudio,
+    releaseTikTokAudio,
     isOverlaySender,
     isControlSender,
     hasAnyWindow,

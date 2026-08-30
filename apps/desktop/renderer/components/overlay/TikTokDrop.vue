@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
+import { TIKTOK_FALLBACK_VOLUME } from '../../../shared/media'
 import type { Drop } from '../../../shared/types'
+import {
+  getTikTokPlaybackStateAction,
+  getTikTokVolumeRetryDelay,
+  shouldRequestTikTokPlayback,
+  TIKTOK_AUTOPLAY_VALUE,
+  TIKTOK_START_COMMANDS,
+} from './tiktokPlayerPolicy'
 
 type TikTokPlayerMessage = {
   'x-tiktok-player': true
@@ -11,7 +19,6 @@ type TikTokPlayerMessage = {
 
 const TIKTOK_PLAYER_ORIGIN = 'https://www.tiktok.com'
 const TIKTOK_PLAYER_ERROR_INVALID_VIDEO = 1001
-const TIKTOK_PLAYER_STATE_ENDED = 0
 const TIKTOK_PROGRESS_EPSILON_SECONDS = 0.05
 const TIKTOK_STARTUP_TIMEOUT_MS = 30_000
 const TIKTOK_STALL_TIMEOUT_MS = 20_000
@@ -39,9 +46,12 @@ let playbackStartedDropId: string | null = null
 let lastCurrentTime: number | null = null
 let lastImageIndex: number | null = null
 let retryCount = 0
+let volumeApplicationRevision = 0
+let volumeApplicationStartedKey: string | null = null
+let volumeRetryAttempt = 0
+let volumeRetryTimer: number | undefined
 
 type TikTokFailureReason =
-  | 'ended-before-playback'
   | 'iframe-error'
   | 'player-error'
   | 'stall-timeout'
@@ -49,7 +59,13 @@ type TikTokFailureReason =
 
 type TikTokWatchdogPhase = 'stall' | 'startup'
 
-const normalizedDropVolume = computed(() => Math.min(Math.max(props.volume, 0), 100) / 100)
+const requestedDropVolume = computed(() => {
+  if (!Number.isFinite(props.volume)) {
+    return TIKTOK_FALLBACK_VOLUME
+  }
+
+  return Math.round(Math.min(Math.max(props.volume, 0), 100))
+})
 
 const portraitFrameStyle = computed<CSSProperties>(() => {
   const configuredMaxWidth = props.frameStyle.maxWidth
@@ -68,7 +84,7 @@ const tiktokEmbedUrl = computed(() => {
   }
 
   const params = new URLSearchParams({
-    autoplay: '1',
+    autoplay: TIKTOK_AUTOPLAY_VALUE,
     closed_caption: '0',
     controls: '0',
     description: '0',
@@ -96,6 +112,7 @@ const advanceDrop = (expectedDropId: string) => {
 
   completedDropId = expectedDropId
   clearTikTokWatchdog()
+  clearTikTokVolumeRetry()
   emit('advance', expectedDropId)
 }
 
@@ -141,6 +158,9 @@ function retryTikTokPlayer(expectedDropId: string) {
   emit('loading', expectedDropId)
   lastCurrentTime = null
   lastImageIndex = null
+  volumeApplicationRevision += 1
+  volumeApplicationStartedKey = null
+  clearTikTokVolumeRetry()
   iframeRevision.value += 1
   armTikTokWatchdog(expectedDropId, 'startup')
   return true
@@ -181,13 +201,126 @@ const sendTikTokCommand = (type: 'play' | 'pause' | 'mute' | 'unMute') => {
   )
 }
 
-const applyDropVolume = () => {
-  sendTikTokCommand(normalizedDropVolume.value <= 0 ? 'mute' : 'unMute')
+const getPlayerKey = (dropId: string, attempt: number) => `${dropId}:${attempt}`
+
+const isCurrentPlayer = (dropId: string, attempt: number) =>
+  props.drop.id === dropId &&
+  iframeRevision.value === attempt &&
+  completedDropId !== dropId
+
+function clearTikTokVolumeRetry(resetAttempt = true) {
+  if (volumeRetryTimer !== undefined) {
+    window.clearTimeout(volumeRetryTimer)
+    volumeRetryTimer = undefined
+  }
+  if (resetAttempt) {
+    volumeRetryAttempt = 0
+  }
 }
 
-const configureTikTokPlayer = () => {
-  applyDropVolume()
-  sendTikTokCommand('play')
+function scheduleTikTokVolumeRetry(expectedDropId: string, expectedAttempt: number) {
+  if (
+    requestedDropVolume.value === 0 ||
+    playbackStartedDropId !== expectedDropId ||
+    !isCurrentPlayer(expectedDropId, expectedAttempt) ||
+    volumeRetryTimer !== undefined
+  ) {
+    return
+  }
+
+  const delay = getTikTokVolumeRetryDelay(volumeRetryAttempt)
+  volumeRetryAttempt += 1
+  volumeRetryTimer = window.setTimeout(() => {
+    volumeRetryTimer = undefined
+    void applyDropVolume(expectedDropId, expectedAttempt)
+  }, delay)
+}
+
+const applyDropVolume = async (expectedDropId: string, expectedAttempt: number) => {
+  const applicationRevision = ++volumeApplicationRevision
+  const requestedVolume = requestedDropVolume.value
+
+  // TikTok ne sait officiellement que couper ou rétablir le son. Le lecteur
+  // reste donc muet tant que le volume continu n'a pas été confirmé côté main.
+  sendTikTokCommand('mute')
+
+  const videoId = props.drop.tiktokVideoId
+  const bridge = window.memedropOverlay
+  if (
+    !videoId ||
+    !bridge ||
+    playbackStartedDropId !== expectedDropId ||
+    !isCurrentPlayer(expectedDropId, expectedAttempt)
+  ) {
+    return false
+  }
+
+  try {
+    const result = await bridge.applyTikTokVolume(
+      expectedDropId,
+      videoId,
+      requestedVolume,
+    )
+    if (
+      applicationRevision !== volumeApplicationRevision ||
+      !isCurrentPlayer(expectedDropId, expectedAttempt)
+    ) {
+      return false
+    }
+
+    if (!result.applied || result.effectiveVolume === null) {
+      sendTikTokCommand('mute')
+      scheduleTikTokVolumeRetry(expectedDropId, expectedAttempt)
+      return false
+    }
+
+    clearTikTokVolumeRetry()
+    if (result.usedFallback) {
+      console.warn('Volume TikTok utilisateur indisponible ; fallback appliqué.', {
+        effectiveVolume: result.effectiveVolume,
+        requestedVolume,
+      })
+    }
+    return true
+  } catch (error) {
+    if (
+      applicationRevision === volumeApplicationRevision &&
+      isCurrentPlayer(expectedDropId, expectedAttempt)
+    ) {
+      sendTikTokCommand('mute')
+      scheduleTikTokVolumeRetry(expectedDropId, expectedAttempt)
+      console.warn('Contrôle du volume TikTok indisponible ; lecteur maintenu muet.', error)
+    }
+    return false
+  }
+}
+
+const startTikTokPlayer = (expectedDropId: string, expectedAttempt: number) => {
+  if (
+    !isCurrentPlayer(expectedDropId, expectedAttempt) ||
+    !shouldRequestTikTokPlayback(playbackStartedDropId === expectedDropId)
+  ) {
+    return
+  }
+
+  // Le démarrage ne doit jamais dépendre du shim de volume. La sortie audio
+  // globale est déjà coupée dans le processus principal avant l'affichage.
+  for (const command of TIKTOK_START_COMMANDS) {
+    sendTikTokCommand(command)
+  }
+}
+
+const applyInitialTikTokVolume = (expectedDropId: string, expectedAttempt: number) => {
+  const playerKey = getPlayerKey(expectedDropId, expectedAttempt)
+  if (
+    playbackStartedDropId !== expectedDropId ||
+    volumeApplicationStartedKey === playerKey
+  ) {
+    return
+  }
+
+  volumeApplicationStartedKey = playerKey
+  void applyDropVolume(expectedDropId, expectedAttempt)
 }
 
 const isTikTokPlayerMessage = (value: unknown): value is TikTokPlayerMessage => {
@@ -265,13 +398,28 @@ const getTikTokImageIndex = (message: TikTokPlayerMessage) => {
   return null
 }
 
-const markTikTokPlaybackStarted = (expectedDropId: string) => {
-  if (props.drop.id !== expectedDropId || completedDropId === expectedDropId) {
+const markTikTokPlayerReady = (expectedDropId: string, expectedAttempt: number) => {
+  if (
+    playerReadyDropId === expectedDropId ||
+    !isCurrentPlayer(expectedDropId, expectedAttempt)
+  ) {
+    return
+  }
+
+  playerReadyDropId = expectedDropId
+  isPlayerReady.value = true
+  emit('ready', expectedDropId)
+}
+
+const markTikTokPlaybackStarted = (expectedDropId: string, expectedAttempt: number) => {
+  if (!isCurrentPlayer(expectedDropId, expectedAttempt)) {
     return
   }
 
   playbackStartedDropId = expectedDropId
+  markTikTokPlayerReady(expectedDropId, expectedAttempt)
   armTikTokWatchdog(expectedDropId, 'stall')
+  applyInitialTikTokVolume(expectedDropId, expectedAttempt)
 }
 
 const handleTikTokMessage = (event: MessageEvent) => {
@@ -300,23 +448,22 @@ const handleTikTokMessage = (event: MessageEvent) => {
   }
 
   if (message.type === 'onStateChange') {
-    if (message.value === TIKTOK_PLAYER_STATE_ENDED) {
-      if (playbackStartedDropId === expectedDropId) {
-        advanceDrop(expectedDropId)
-      } else {
-        handleTikTokFailure(expectedDropId, 'ended-before-playback')
-      }
+    const action = getTikTokPlaybackStateAction(
+      message.value,
+      playbackStartedDropId === expectedDropId,
+    )
+    if (action === 'ended') {
+      advanceDrop(expectedDropId)
+    }
+    if (action === 'started') {
+      markTikTokPlaybackStarted(expectedDropId, iframeRevision.value)
     }
     return
   }
 
   if (message.type === 'onPlayerReady') {
-    if (playerReadyDropId !== expectedDropId) {
-      playerReadyDropId = expectedDropId
-      configureTikTokPlayer()
-      isPlayerReady.value = true
-      emit('ready', expectedDropId)
-    }
+    markTikTokPlayerReady(expectedDropId, iframeRevision.value)
+    startTikTokPlayer(expectedDropId, iframeRevision.value)
     return
   }
 
@@ -326,14 +473,14 @@ const handleTikTokMessage = (event: MessageEvent) => {
     if (previousTime === null) {
       lastCurrentTime = currentTime
       if (currentTime > TIKTOK_PROGRESS_EPSILON_SECONDS) {
-        markTikTokPlaybackStarted(expectedDropId)
+        markTikTokPlaybackStarted(expectedDropId, iframeRevision.value)
       }
     } else if (
       currentTime > previousTime + TIKTOK_PROGRESS_EPSILON_SECONDS ||
       currentTime < previousTime - 0.5
     ) {
       lastCurrentTime = currentTime
-      markTikTokPlaybackStarted(expectedDropId)
+      markTikTokPlaybackStarted(expectedDropId, iframeRevision.value)
     }
     return
   }
@@ -343,7 +490,7 @@ const handleTikTokMessage = (event: MessageEvent) => {
     lastImageIndex = imageIndex
   } else if (imageIndex !== null && imageIndex !== lastImageIndex) {
     lastImageIndex = imageIndex
-    markTikTokPlaybackStarted(expectedDropId)
+    markTikTokPlaybackStarted(expectedDropId, iframeRevision.value)
   }
 }
 
@@ -359,8 +506,7 @@ const handleTikTokLoad = (event: Event) => {
     return
   }
 
-  applyDropVolume()
-  sendTikTokCommand('play')
+  startTikTokPlayer(expectedDropId, iframeRevision.value)
 }
 
 const handleTikTokError = (event: Event) => {
@@ -386,6 +532,9 @@ const resetTikTokDrop = (dropId: string) => {
   lastImageIndex = null
   retryCount = 0
   iframeRevision.value = 0
+  volumeApplicationRevision += 1
+  volumeApplicationStartedKey = null
+  clearTikTokVolumeRetry()
 
   if (!tiktokEmbedUrl.value) {
     window.queueMicrotask(() => advanceDrop(dropId))
@@ -399,14 +548,28 @@ watch(
   () => props.volume,
   () => {
     if (completedDropId !== props.drop.id) {
-      applyDropVolume()
+      sendTikTokCommand('mute')
+      clearTikTokVolumeRetry()
+      if (playbackStartedDropId !== props.drop.id) {
+        return
+      }
+
+      volumeApplicationStartedKey = getPlayerKey(props.drop.id, iframeRevision.value)
+      void applyDropVolume(props.drop.id, iframeRevision.value)
     }
   },
 )
 
 watch(
   () => props.drop.id,
-  (dropId) => resetTikTokDrop(dropId),
+  (dropId, previousDropId) => {
+    if (previousDropId) {
+      void window.memedropOverlay?.releaseTikTokAudio(previousDropId).catch((error) => {
+        console.warn('Libération du contrôle audio TikTok impossible.', error)
+      })
+    }
+    resetTikTokDrop(dropId)
+  },
 )
 
 onMounted(() => {
@@ -415,8 +578,16 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  volumeApplicationRevision += 1
+  clearTikTokVolumeRetry()
   window.removeEventListener('message', handleTikTokMessage)
   clearTikTokWatchdog()
+})
+
+onUnmounted(() => {
+  void window.memedropOverlay?.releaseTikTokAudio(props.drop.id).catch((error) => {
+    console.warn('Libération du contrôle audio TikTok impossible.', error)
+  })
 })
 </script>
 

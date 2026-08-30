@@ -325,6 +325,9 @@ const desktopClient = createDesktopClient({
   },
   onIncomingDrop: clearCurrentTestDrop,
   onDrop: (drop) => {
+    if (drop.tiktokVideoId) {
+      windows.beginTikTokAudio(drop.id)
+    }
     windows.keepOverlayAboveFullscreen()
     sendToWindows('drop-received', drop)
   },
@@ -332,6 +335,7 @@ const desktopClient = createDesktopClient({
     windows.sendToControl('drop-received', drop)
   },
   onClearDrop: () => {
+    windows.suspendTikTokAudio()
     sendToWindows('clear-drop', null)
   },
   onStatus: setConnectionStatus,
@@ -425,6 +429,7 @@ const skipCurrentDrop = (expectedDropId?: string): boolean => {
 
   const serverDropId = desktopClient.getCurrentDropId()
   if (serverDropId && (!expectedDropId || serverDropId === expectedDropId)) {
+    windows.suspendTikTokAudio(serverDropId)
     const accepted = desktopClient.completeDrop(serverDropId)
     if (accepted) {
       windows.sendToOverlay('clear-drop', null)
@@ -439,6 +444,7 @@ const skipCurrentDrop = (expectedDropId?: string): boolean => {
 }
 
 const completeCurrentDrop = (dropId: string): boolean => {
+  windows.suspendTikTokAudio(dropId)
   const accepted = desktopClient.completeDrop(dropId)
   if (accepted) {
     windows.sendToControl('skip-current-drop', dropId)
@@ -504,6 +510,12 @@ const windows = createMemeDropWindows({
   shouldHideControlOnClose: () => appPreferences.minimizeToTray,
   onQuitRequest: quitApp,
   onOverlayLoaded: () => {
+    const presentedDrop = desktopClient.getPresentedDrop()
+    if (presentedDrop?.tiktokVideoId) {
+      windows.beginTikTokAudio(presentedDrop.id)
+    } else {
+      windows.releaseTikTokAudio()
+    }
     syncOverlayState()
     syncOverlayDisplayPreferences()
     syncOverlayDisplays()
@@ -686,6 +698,22 @@ if (hasInstanceLock) app.whenReady().then(async () => {
 
       return clearCurrentTestDrop()
     },
+    applyTikTokVolume: async (dropId, videoId, volume) => {
+      const presentedDrop = desktopClient.getPresentedDrop()
+      if (
+        presentedDrop?.id !== dropId ||
+        presentedDrop.tiktokVideoId !== videoId
+      ) {
+        return {
+          applied: false,
+          effectiveVolume: null,
+          usedFallback: false,
+        }
+      }
+
+      return windows.applyTikTokVolume(dropId, videoId, volume)
+    },
+    releaseTikTokAudio: windows.releaseTikTokAudio,
   })
 
   windows.createWindows()

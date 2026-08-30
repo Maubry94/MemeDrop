@@ -19,6 +19,12 @@ import type {
 
 export type Unsubscribe = () => void
 
+export type TikTokVolumeApplicationResult = {
+  applied: boolean
+  effectiveVolume: number | null
+  usedFallback: boolean
+}
+
 export type MemeDropPreloadApi = {
   onDrop: (handler: (drop: Drop) => void) => Unsubscribe
   onTestDrop: (handler: (drop: Drop) => void) => Unsubscribe
@@ -98,4 +104,11 @@ export type MemeDropOverlayPreloadApi = Pick<
   | 'getActiveDropSnapshot'
   | 'getOverlayState'
   | 'getOverlayDisplayPreferences'
->
+> & {
+  applyTikTokVolume: (
+    dropId: string,
+    videoId: string,
+    volume: number,
+  ) => Promise<TikTokVolumeApplicationResult>
+  releaseTikTokAudio: (dropId: string) => Promise<boolean>
+}
