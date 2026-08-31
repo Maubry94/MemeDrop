@@ -213,4 +213,17 @@ Avant la première release avec mise à jour :
 npm run update:keygen
 ```
 
-La clé privée reste dans `.secrets/` et ne doit jamais être publiée. Pour déployer une mise à jour, crée au besoin `releases/win-signed-v1`, puis copie dedans le contenu de `release/update/` ou `release/signed/`; le serveur sert ce dossier sans reconstruction. Ce répertoire de déploiement est ignoré par Git.
+La clé privée reste dans `.secrets/` et ne doit jamais être publiée. Le fichier `latest.yml` de la release déployée devient automatiquement la version annoncée par le site, Discord et les applications connectées. La version embarquée lors du build du serveur sert uniquement de secours si ce fichier est absent ou invalide.
+
+Pour publier une mise à jour, publie d’abord la release GitHub correspondante, puis copie l’installateur, le blockmap et les manifestes dans `releases/win-signed-v1`. Remplace `latest.yml` en dernier. Par exemple, une fois les artefacts disponibles sur le serveur :
+
+```sh
+SOURCE=/chemin/vers/release/update
+TARGET=releases/win-signed-v1
+mkdir -p "$TARGET"
+cp "$SOURCE"/*.exe "$SOURCE"/*.blockmap "$SOURCE"/update-*.json "$SOURCE"/update-*.json.sig "$TARGET"/
+cp "$SOURCE"/latest.yml "$TARGET"/latest.yml.tmp
+mv -f "$TARGET"/latest.yml.tmp "$TARGET"/latest.yml
+```
+
+Le remplacement final est atomique lorsqu’il reste sur le même dataset. Le serveur détecte ensuite la nouvelle version sans reconstruction ni redémarrage, et le site l’affiche à son prochain rafraîchissement d’état. Ce répertoire de déploiement est ignoré par Git.

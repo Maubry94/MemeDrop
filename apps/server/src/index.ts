@@ -1,7 +1,10 @@
 import http from 'node:http'
-import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import {
+  createLatestAppVersionProvider,
+  readBundledAppVersion,
+} from './appVersion.js'
 import { config } from './config.js'
 import { createDiscordBot } from './discord/client.js'
 import { createDiscordOAuthHandlers } from './discord/oauth.js'
@@ -15,27 +18,22 @@ import { createMemeDropWebSocketServer } from './websocket.js'
 let discordStatus = 'starting'
 const MAX_REQUESTS_PER_SOCKET = 100
 
-const getLatestAppVersion = () => {
-  try {
-    const metadataPath = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      'app-version.json',
-    )
-    const metadata = JSON.parse(readFileSync(metadataPath, 'utf8')) as {
-      latestAppVersion?: unknown
-    }
-    if (typeof metadata.latestAppVersion !== 'string' || !metadata.latestAppVersion.trim()) {
-      throw new Error('latestAppVersion est absent ou invalide.')
-    }
-
-    return metadata.latestAppVersion.trim()
-  } catch (error) {
-    console.warn('Version de l’application MemeDrop introuvable:', error)
-    return '0.0.0'
-  }
+const bundledVersionMetadataPath = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  'app-version.json',
+)
+let bundledAppVersion = '0.0.0'
+try {
+  bundledAppVersion = await readBundledAppVersion(bundledVersionMetadataPath)
+} catch (error) {
+  console.warn('Version de l’application MemeDrop embarquée introuvable:', error)
 }
 
-const latestAppVersion = getLatestAppVersion()
+const appVersionProvider = await createLatestAppVersionProvider({
+  updatesDirectory: config.memedropUpdatesDir,
+  fallbackVersion: bundledAppVersion,
+})
+const { getLatestAppVersion } = appVersionProvider
 
 const identityTokens = createIdentityTokenService({
   signingSecret: config.memedropIdentitySigningSecret,
@@ -67,13 +65,6 @@ const server = http.createServer((request, response) => {
     return
   }
 
-  const healthStatus = {
-    ok: true,
-    discordStatus,
-    clients: clients.size,
-    latestAppVersion,
-  }
-
   const signedUpdateRequestPath = getSignedWindowsUpdateRequestPath(
     request.method,
     requestUrl.pathname,
@@ -101,7 +92,12 @@ const server = http.createServer((request, response) => {
   }
 
   if (requestUrl.pathname === '/health.json') {
-    sendJsonResponse(response, 200, healthStatus)
+    sendJsonResponse(response, 200, {
+      ok: true,
+      discordStatus,
+      clients: clients.size,
+      latestAppVersion: getLatestAppVersion(),
+    })
     return
   }
 
@@ -133,7 +129,7 @@ const server = http.createServer((request, response) => {
 const { broadcastDrop, clients, getConnectedUsers, stopDropByOwner } = createMemeDropWebSocketServer({
   server,
   serverKey: config.memedropServerKey,
-  latestAppVersion,
+  getLatestAppVersion,
   identityTokens,
 })
 
@@ -154,13 +150,16 @@ server.on('error', (error) => {
   console.error('Erreur serveur HTTP MemeDrop:', error)
   process.exit(1)
 })
+server.on('close', () => {
+  appVersionProvider.dispose()
+})
 
 createDiscordBot({
   token: config.discordBotToken,
   clientId: config.discordClientId,
   guildId: config.discordGuildId,
   publicBaseUrl: config.publicBaseUrl,
-  latestAppVersion,
+  getLatestAppVersion,
   allowedRoleIds: config.memedropAllowedRoleIds,
   allowedChannelIds: config.memedropAllowedChannelIds,
   dropCooldownSeconds: config.memedropDropCooldownSeconds,
