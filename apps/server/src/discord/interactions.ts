@@ -1,5 +1,10 @@
 import { MessageFlags, type Interaction } from 'discord.js'
-import type { BroadcastDrop, GetConnectedUsers, StopDropByOwner } from '../types.js'
+import type {
+  BroadcastDrop,
+  GetConnectedUsers,
+  GetLatestAppVersion,
+  StopDropByOwner,
+} from '../types.js'
 import { discordCommandsByName } from './commands/index.js'
 import {
   createInfoEmbed,
@@ -86,7 +91,7 @@ const handleTargetAutocomplete = async (
 
 export const createInteractionHandler =
   ({
-    latestAppVersion,
+    getLatestAppVersion,
     publicBaseUrl,
     allowedRoleIds,
     allowedChannelIds,
@@ -95,7 +100,7 @@ export const createInteractionHandler =
     getConnectedUsers,
     stopDropByOwner,
   }: {
-    latestAppVersion: string
+    getLatestAppVersion: GetLatestAppVersion
     publicBaseUrl?: string
     allowedRoleIds: string[]
     allowedChannelIds: string[]
@@ -107,8 +112,8 @@ export const createInteractionHandler =
   const cooldowns = new Map<string, number>()
   const recentDrops: RecentDrop[] = []
 
-  const context: DiscordCommandContext = {
-    latestAppVersion,
+  const createContext = (): DiscordCommandContext => ({
+    latestAppVersion: getLatestAppVersion(),
     publicBaseUrl,
     allowedRoleIds,
     dropCooldownSeconds,
@@ -117,12 +122,14 @@ export const createInteractionHandler =
     broadcastDrop,
     getConnectedUsers,
     stopDropByOwner,
-  }
+  })
 
   return async (interaction: Interaction) => {
     if (await handleStopButton(interaction, stopDropByOwner)) {
       return
     }
+
+    const context = createContext()
 
     if (await handleTargetAutocomplete(interaction, context)) {
       return

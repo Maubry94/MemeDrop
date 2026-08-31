@@ -9,7 +9,7 @@ export const createDiscordBot = ({
   clientId,
   guildId,
   publicBaseUrl,
-  latestAppVersion,
+  getLatestAppVersion,
   allowedRoleIds,
   allowedChannelIds,
   dropCooldownSeconds,
@@ -33,7 +33,7 @@ export const createDiscordBot = ({
     await discord.destroy()
   }
   const interactionHandler = createInteractionHandler({
-    latestAppVersion,
+    getLatestAppVersion,
     publicBaseUrl,
     allowedRoleIds,
     allowedChannelIds,

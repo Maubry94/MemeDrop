@@ -43,6 +43,7 @@ const waitForMessageType = (socket: WebSocket, expectedType: string) =>
 
 const withWebSocketServer = async (
   run: (context: { wsUrl: string }) => Promise<void>,
+  getLatestAppVersion: () => string = () => '3.0.8',
 ) => {
   const server = http.createServer((_request, response) => {
     response.writeHead(404).end()
@@ -50,7 +51,7 @@ const withWebSocketServer = async (
   const { wss } = createMemeDropWebSocketServer({
     server,
     serverKey,
-    latestAppVersion: '3.0.8',
+    getLatestAppVersion,
     identityTokens,
   })
 
@@ -164,4 +165,34 @@ test('WebSocket connections are capped per signed identity', { timeout: 5000 }, 
       await close
     }))
   })
+})
+
+test('WebSocket snapshots use the current published app version', { timeout: 5000 }, async (context) => {
+  silenceExpectedLogs(context)
+  let latestAppVersion = '3.0.8'
+
+  await withWebSocketServer(async ({ wsUrl }) => {
+    const firstClient = createClient(wsUrl, validHeaders())
+    const initialUsersMessage = waitForMessageType(firstClient, 'connected-users')
+    await once(firstClient, 'open')
+    const initialSnapshot = await initialUsersMessage
+    assert.equal(initialSnapshot.latestAppVersion, '3.0.8')
+
+    latestAppVersion = '3.0.9'
+    const refreshedUsersMessage = waitForMessageType(firstClient, 'connected-users')
+    const secondClient = createClient(wsUrl, validHeaders())
+    await once(secondClient, 'open')
+
+    const refreshedSnapshot = await refreshedUsersMessage
+    assert.equal(refreshedSnapshot.latestAppVersion, '3.0.9')
+    const users = refreshedSnapshot.users as Array<Record<string, unknown>>
+    assert.equal(users[0]?.latestAppVersion, '3.0.9')
+    assert.equal(users[0]?.updateAvailable, true)
+
+    await Promise.all([firstClient, secondClient].map(async (client) => {
+      const close = waitForClose(client)
+      client.close(1000)
+      await close
+    }))
+  }, () => latestAppVersion)
 })

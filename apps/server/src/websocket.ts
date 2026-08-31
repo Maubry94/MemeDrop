@@ -51,7 +51,7 @@ const sendJson = (socket: WebSocket, payload: MemeDropServerMessage) => {
 export const createMemeDropWebSocketServer = ({
   server,
   serverKey,
-  latestAppVersion,
+  getLatestAppVersion,
   identityTokens,
 }: MemeDropWebSocketServerOptions) => {
   const clients = new Map<WebSocket, MemeDropClient>()
@@ -93,10 +93,10 @@ export const createMemeDropWebSocketServer = ({
     return 0
   }
 
-  const isVersionOutdated = (appVersion: string) =>
+  const isVersionOutdated = (appVersion: string, latestAppVersion: string) =>
     Boolean(appVersion) && compareAppVersions(appVersion, latestAppVersion) < 0
 
-  const getConnectedUsers = (): ConnectedUser[] => {
+  const buildConnectedUsers = (latestAppVersion: string): ConnectedUser[] => {
     const users = new Map<string, ConnectedUser>()
 
     for (const client of clients.values()) {
@@ -118,15 +118,24 @@ export const createMemeDropWebSocketServer = ({
         appVersion: appVersions[0] ?? null,
         appVersions,
         latestAppVersion,
-        updateAvailable: appVersions.some(isVersionOutdated),
+        updateAvailable: appVersions.some((version) => (
+          isVersionOutdated(version, latestAppVersion)
+        )),
       })
     }
 
     return [...users.values()].sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  const broadcastConnectedUsers = () => {
-    const connectedUsers = getConnectedUsers()
+  const getConnectedUsers = (): ConnectedUser[] => (
+    buildConnectedUsers(getLatestAppVersion())
+  )
+
+  let lastBroadcastAppVersion = getLatestAppVersion()
+  const broadcastConnectedUsers = (
+    latestAppVersion = getLatestAppVersion(),
+  ) => {
+    const connectedUsers = buildConnectedUsers(latestAppVersion)
 
     for (const socket of clients.keys()) {
       sendJson(socket, {
@@ -135,6 +144,8 @@ export const createMemeDropWebSocketServer = ({
         latestAppVersion,
       })
     }
+
+    lastBroadcastAppVersion = latestAppVersion
   }
 
   const getClientsByUserId = (userId: string) =>
@@ -300,6 +311,11 @@ export const createMemeDropWebSocketServer = ({
   })
 
   const heartbeatTimer = setInterval(() => {
+    const latestAppVersion = getLatestAppVersion()
+    if (latestAppVersion !== lastBroadcastAppVersion) {
+      broadcastConnectedUsers(latestAppVersion)
+    }
+
     for (const socket of wss.clients) {
       if (socket.readyState !== WebSocket.OPEN) {
         continue

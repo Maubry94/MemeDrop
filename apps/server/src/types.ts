@@ -16,6 +16,8 @@ export type BroadcastDrop = (drop: Drop) => number
 
 export type GetConnectedUsers = () => ConnectedUser[]
 
+export type GetLatestAppVersion = () => string
+
 export type StopDropByOwner = (
   dropId: string,
   ownerId: string,
@@ -27,7 +29,7 @@ export type StopDropByOwner = (
 export type MemeDropWebSocketServerOptions = {
   server: http.Server
   serverKey: string
-  latestAppVersion: string
+  getLatestAppVersion: GetLatestAppVersion
   identityTokens: Pick<IdentityTokenService, 'verify'>
 }
 
@@ -36,7 +38,7 @@ export type DiscordBotOptions = {
   clientId?: string
   guildId?: string
   publicBaseUrl?: string
-  latestAppVersion: string
+  getLatestAppVersion: GetLatestAppVersion
   allowedRoleIds: string[]
   allowedChannelIds: string[]
   dropCooldownSeconds: number
