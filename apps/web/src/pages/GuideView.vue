@@ -24,7 +24,7 @@ const commandGroups = [
     commands: [
       { name: '/drop', description: 'Envoie une image, une vidéo ou un son à tout le monde, ou à une cible.' },
       { name: '/dropme', description: 'Envoie un fichier uniquement sur ton propre overlay, idéal pour tester.' },
-      { name: '/dropyt', description: 'Diffuse une vidéo YouTube à partir de son lien public.' },
+      { name: '/dropyt', description: 'Diffuse une vidéo ou un clip YouTube à partir de son lien public.' },
       { name: '/droptt', description: 'Diffuse une vidéo TikTok à partir du lien complet de la vidéo.' },
       { name: '/redrop', description: 'Renvoie l’un de tes drops récents, avec une nouvelle cible ou légende si besoin.' },
     ],
@@ -56,7 +56,7 @@ const troubleshooting = [
   },
   {
     title: 'Le média ne s’affiche pas',
-    answer: 'Essaie un fichier image, vidéo ou audio courant. Pour YouTube et TikTok, utilise le lien public complet de la vidéo.',
+    answer: 'Essaie un fichier image, vidéo ou audio courant. Pour YouTube, utilise le lien public complet de la vidéo ou du clip ; pour TikTok, celui de la vidéo.',
   },
   {
     title: 'Le serveur semble indisponible',

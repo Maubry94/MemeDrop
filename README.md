@@ -4,7 +4,7 @@ MemeDrop est une application Windows reliée à Discord pour envoyer et recevoir
 
 ## Fonctionnalités
 
-- Drops d’images, de vidéos, de sons, de vidéos YouTube et TikTok.
+- Drops d’images, de vidéos, de sons, de contenus YouTube (vidéos et clips) et TikTok.
 - Envoi global, ciblé vers une personne ou uniquement à soi-même.
 - Légendes, envoi anonyme et renvoi d’un drop récent.
 - Files d’attente et arrêt d’un drop en cours.

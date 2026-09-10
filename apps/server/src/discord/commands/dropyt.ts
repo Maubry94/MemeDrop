@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from 'discord.js'
-import { getYouTubeVideoId, isValidYouTubeVideoId } from '../../utils/youtube.js'
+import { resolveYouTubeVideo } from '../../utils/youtube.js'
 import {
   createBaseDrop,
   editDropReplyAndRemember,
@@ -12,11 +12,11 @@ import type { MemeDropCommand } from './types.js'
 export const dropYouTubeCommand: MemeDropCommand = {
   data: new SlashCommandBuilder()
     .setName('dropyt')
-    .setDescription('Envoyer une vidéo YouTube via MemeDrop')
+    .setDescription('Envoyer une vidéo ou un clip YouTube via MemeDrop')
     .addStringOption((option) =>
       option
         .setName('lien')
-        .setDescription('Lien YouTube')
+        .setDescription('Lien d’une vidéo ou d’un clip YouTube')
         .setRequired(true),
     )
     .addStringOption((option) =>
@@ -41,7 +41,6 @@ export const dropYouTubeCommand: MemeDropCommand = {
   isDropCommand: true,
   execute: async (interaction, { broadcastDrop, getConnectedUsers, recentDrops }) => {
     const link = interaction.options.getString('lien', true)
-    const youtubeVideoId = getYouTubeVideoId(link)
     const caption = interaction.options.getString('legende')
     const isAnonymous = interaction.options.getBoolean('anonyme') ?? false
     const hasTarget = Boolean(interaction.options.getString('cible'))
@@ -56,27 +55,32 @@ export const dropYouTubeCommand: MemeDropCommand = {
       return false
     }
 
-    if (!youtubeVideoId || !isValidYouTubeVideoId(youtubeVideoId)) {
+    const youtubeVideo = await resolveYouTubeVideo(link)
+
+    if (!youtubeVideo) {
       await editErrorReply(
         interaction,
-        'Lien YouTube invalide',
-        'Vérifie que le lien pointe vers une vidéo YouTube publique.',
+        'Lien YouTube indisponible',
+        'Vérifie que le lien pointe vers une vidéo ou un clip YouTube public.',
       )
       return false
     }
 
-    const dropId = `youtube-${youtubeVideoId}-${Date.now()}`
+    const dropId = `youtube-${youtubeVideo.id}-${Date.now()}`
     const drop = withTarget({
       id: dropId,
-      url: link,
+      url: youtubeVideo.url,
       contentType: 'video/youtube',
       fileName: null,
-      youtubeVideoId,
+      youtubeVideoId: youtubeVideo.clip ? null : youtubeVideo.id,
+      youtubeClip: youtubeVideo.clip,
       ...createBaseDrop(interaction, caption, isAnonymous),
     }, targetUser)
     const sentCount = broadcastDrop(drop)
 
-    console.log(`Drop YouTube diffusé à ${sentCount} client(s): ${youtubeVideoId}.`)
+    console.log(
+      `Drop YouTube diffusé à ${sentCount} client(s): ${youtubeVideo.clip?.id ?? youtubeVideo.id}.`,
+    )
     return editDropReplyAndRemember(
       interaction,
       drop,

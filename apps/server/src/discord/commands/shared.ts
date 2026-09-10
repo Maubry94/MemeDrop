@@ -20,6 +20,7 @@ type BaseDrop = Omit<
   | 'contentType'
   | 'fileName'
   | 'youtubeVideoId'
+  | 'youtubeClip'
   | 'tiktokVideoId'
   | 'targetUserId'
   | 'targetUserName'

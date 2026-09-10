@@ -6,6 +6,7 @@ export type {
   Drop,
   MemeDropClientMessage,
   MemeDropServerMessage,
+  YouTubeClip,
 } from '@memedrop/protocol'
 
 export type ConnectionState =

@@ -1,9 +1,18 @@
+export type YouTubeClip = {
+  id: string
+  token: string
+  videoId: string
+  startTimeMs: number
+  endTimeMs: number
+}
+
 export type Drop = {
   id: string
   url: string
   contentType: string | null
   fileName: string | null
   youtubeVideoId?: string | null
+  youtubeClip?: YouTubeClip | null
   tiktokVideoId?: string | null
   caption: string | null
   authorId: string | null

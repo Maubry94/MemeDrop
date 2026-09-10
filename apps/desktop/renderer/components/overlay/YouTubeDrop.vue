@@ -2,6 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import type { Drop } from '../../../shared/types'
+import {
+  createYouTubeEmbedUrl,
+  getValidYouTubeClip,
+  hasYouTubeClipEnded,
+} from './youtubePlayerPolicy'
 
 type YouTubeMessage = Record<string, unknown>
 type YouTubeIdentity = {
@@ -43,30 +48,16 @@ let playbackStartedGeneration: number | null = null
 let lastCurrentTime: number | null = null
 
 const normalizedDropVolume = computed(() => Math.min(Math.max(props.volume, 0), 100) / 100)
+const youtubeClip = computed(() => getValidYouTubeClip(props.drop.youtubeClip))
 const youtubeIframeId = computed(
   () => `youtube-player-${props.drop.id}-${iframeGeneration.value}`,
 )
 
-const youtubeEmbedUrl = computed(() => {
-  if (!props.drop.youtubeVideoId) {
-    return ''
-  }
-
-  const params = new URLSearchParams({
-    autoplay: '1',
-    controls: '0',
-    disablekb: '1',
-    enablejsapi: '1',
-    fs: '0',
-    iv_load_policy: '3',
-    modestbranding: '1',
-    origin: window.location.origin,
-    playsinline: '1',
-    rel: '0',
-  })
-
-  return `${YOUTUBE_ORIGIN}/embed/${encodeURIComponent(props.drop.youtubeVideoId)}?${params.toString()}`
-})
+const youtubeEmbedUrl = computed(() => createYouTubeEmbedUrl({
+  videoId: props.drop.youtubeVideoId,
+  clip: youtubeClip.value,
+  origin: window.location.origin,
+}))
 
 const clearYouTubeHandshakeTimer = () => {
   youtubeHandshakeRevision += 1
@@ -247,6 +238,15 @@ const getYouTubeCurrentTime = (message: YouTubeMessage) => {
 
 const handleYouTubeProgress = (identity: YouTubeIdentity, currentTime: number) => {
   const previousTime = lastCurrentTime
+  if (hasYouTubeClipEnded({
+    clip: youtubeClip.value,
+    previousTimeSeconds: previousTime,
+    currentTimeSeconds: currentTime,
+  })) {
+    advanceDrop(identity)
+    return
+  }
+
   if (previousTime === null) {
     lastCurrentTime = currentTime
     if (currentTime > YOUTUBE_PROGRESS_EPSILON_SECONDS) {
@@ -361,7 +361,15 @@ const resetYouTubeDrop = () => {
 }
 
 watch(
-  () => [props.drop.id, props.drop.youtubeVideoId] as const,
+  () => [
+    props.drop.id,
+    props.drop.youtubeVideoId,
+    props.drop.youtubeClip?.id,
+    props.drop.youtubeClip?.token,
+    props.drop.youtubeClip?.videoId,
+    props.drop.youtubeClip?.startTimeMs,
+    props.drop.youtubeClip?.endTimeMs,
+  ] as const,
   () => resetYouTubeDrop(),
   { immediate: true },
 )
