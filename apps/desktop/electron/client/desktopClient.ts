@@ -1,4 +1,4 @@
-import type { ConnectedUser, Drop } from '@memedrop/protocol'
+import type { ConnectedUser, Drop, DropCompletionReason } from '@memedrop/protocol'
 import type { AppVersionInfo, ConnectionStatus, ServerConnectionConfig } from '../../shared/types'
 import { startMemeDropClient, type MemeDropClientController } from './memedropClient.ts'
 import { compareAppVersions, getReleaseUrl } from '../core/versionInfo.ts'
@@ -8,6 +8,7 @@ type StartMemeDropClient = typeof startMemeDropClient
 type DesktopClientOptions = {
   getServerConfig: () => ServerConnectionConfig
   getAppVersion: () => string
+  getClientInstanceId: () => string
   getDropsEnabled: () => boolean
   getHideOwnDrops: () => boolean
   onConnectedUsers: (users: ConnectedUser[]) => void
@@ -24,6 +25,7 @@ type DesktopClientOptions = {
 export const createDesktopClient = ({
   getServerConfig,
   getAppVersion,
+  getClientInstanceId,
   getDropsEnabled,
   getHideOwnDrops,
   onConnectedUsers,
@@ -63,12 +65,12 @@ export const createDesktopClient = ({
     onAppVersionInfo(appVersionInfo)
   }
 
-  const completeDrop = (dropId: string): boolean => {
+  const completeDrop = (dropId: string, reason?: DropCompletionReason): boolean => {
     if (!currentServerDrop || currentServerDrop.id !== dropId) {
       return false
     }
 
-    if (!client?.completeDrop(dropId)) {
+    if (!client?.completeDrop(dropId, reason)) {
       return false
     }
     if (currentPresentedDrop?.id === dropId) {
@@ -107,6 +109,7 @@ export const createDesktopClient = ({
       accessKey,
       authToken: serverConfig.authToken,
       appVersion: getAppVersion(),
+      clientInstanceId: getClientInstanceId(),
       dropsEnabled: getDropsEnabled(),
       onConnectedUsers: (users: ConnectedUser[], latestAppVersion: string) => {
         if (disposed || generation !== clientGeneration) {
@@ -124,16 +127,16 @@ export const createDesktopClient = ({
         currentServerDrop = drop
         currentPresentedDrop = null
         if (!getDropsEnabled()) {
-          completeDrop(drop.id)
+          completeDrop(drop.id, 'skipped')
           return
         }
         if (!discordUserId) {
-          completeDrop(drop.id)
+          completeDrop(drop.id, 'skipped')
           return
         }
         if (getHideOwnDrops() && (drop.ownerId ?? drop.authorId) === discordUserId) {
           onControlOnlyDrop(drop)
-          completeDrop(drop.id)
+          completeDrop(drop.id, 'skipped')
           return
         }
         currentPresentedDrop = drop

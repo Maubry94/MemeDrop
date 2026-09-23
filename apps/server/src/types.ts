@@ -9,6 +9,8 @@ export type MemeDropClient = {
   userName: string
   userAvatarUrl: string
   appVersion: string
+  clientInstanceId: string
+  ready: boolean
   dropsEnabled: boolean
 }
 
@@ -31,6 +33,8 @@ export type MemeDropWebSocketServerOptions = {
   serverKey: string
   getLatestAppVersion: GetLatestAppVersion
   identityTokens: Pick<IdentityTokenService, 'verify'>
+  clientStateTimeoutMs?: number
+  completionGraceMs?: number
 }
 
 export type DiscordBotOptions = {

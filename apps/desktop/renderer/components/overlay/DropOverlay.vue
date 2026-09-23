@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import type { MediaKind } from '../../../shared/media'
-import type { Drop } from '../../../shared/types'
+import type { Drop, DropCompletionReason } from '../../../shared/types'
 import DropAuthor from './DropAuthor.vue'
 import NativeMediaDrop from './NativeMediaDrop.vue'
 import TikTokDrop from './TikTokDrop.vue'
@@ -22,8 +22,11 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  advance: [dropId?: string]
+  advance: [dropId: string, reason: DropCompletionReason]
 }>()
+
+const forwardAdvance = (dropId: string, reason: DropCompletionReason) =>
+  emit('advance', dropId, reason)
 
 const isActiveDropReady = ref(false)
 
@@ -149,7 +152,7 @@ const isNativeMediaKind = (
           :volume="volume"
           :frame-style="mediaFrameStyle"
           :keep-image-visible="keepTestImageVisible"
-          @advance="emit('advance', $event)"
+          @advance="forwardAdvance"
           @loading="handleDropLoading"
           @ready="handleDropReady"
         />
@@ -158,7 +161,7 @@ const isNativeMediaKind = (
           :drop="activeDrop"
           :volume="volume"
           :frame-style="mediaFrameStyle"
-          @advance="emit('advance', $event)"
+          @advance="forwardAdvance"
           @loading="handleDropLoading"
           @ready="handleDropReady"
         />
@@ -167,7 +170,7 @@ const isNativeMediaKind = (
           :drop="activeDrop"
           :volume="volume"
           :frame-style="mediaFrameStyle"
-          @advance="emit('advance', $event)"
+          @advance="forwardAdvance"
           @loading="handleDropLoading"
           @ready="handleDropReady"
         />

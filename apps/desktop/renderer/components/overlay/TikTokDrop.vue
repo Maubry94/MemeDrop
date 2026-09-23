@@ -2,14 +2,16 @@
 import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import { TIKTOK_FALLBACK_VOLUME } from '../../../shared/media'
-import type { Drop } from '../../../shared/types'
+import type { Drop, DropCompletionReason } from '../../../shared/types'
 import {
+  getTikTokImageProgressAction,
   getTikTokPlaybackStateAction,
   getTikTokVolumeRetryDelay,
   shouldRequestTikTokPlayback,
   TIKTOK_AUTOPLAY_VALUE,
   TIKTOK_START_COMMANDS,
 } from './tiktokPlayerPolicy'
+import { getPlaybackProgressAction } from './playbackProgressPolicy'
 
 type TikTokPlayerMessage = {
   'x-tiktok-player': true
@@ -19,7 +21,6 @@ type TikTokPlayerMessage = {
 
 const TIKTOK_PLAYER_ORIGIN = 'https://www.tiktok.com'
 const TIKTOK_PLAYER_ERROR_INVALID_VIDEO = 1001
-const TIKTOK_PROGRESS_EPSILON_SECONDS = 0.05
 const TIKTOK_STARTUP_TIMEOUT_MS = 30_000
 const TIKTOK_STALL_TIMEOUT_MS = 20_000
 
@@ -30,7 +31,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  advance: [dropId?: string]
+  advance: [dropId: string, reason: DropCompletionReason]
   loading: [dropId: string]
   ready: [dropId: string]
 }>()
@@ -105,7 +106,7 @@ const clearTikTokWatchdog = () => {
   }
 }
 
-const advanceDrop = (expectedDropId: string) => {
+const advanceDrop = (expectedDropId: string, reason: DropCompletionReason) => {
   if (props.drop.id !== expectedDropId || completedDropId === expectedDropId) {
     return
   }
@@ -113,7 +114,7 @@ const advanceDrop = (expectedDropId: string) => {
   completedDropId = expectedDropId
   clearTikTokWatchdog()
   clearTikTokVolumeRetry()
-  emit('advance', expectedDropId)
+  emit('advance', expectedDropId, reason)
 }
 
 function armTikTokWatchdog(expectedDropId: string, phase: TikTokWatchdogPhase) {
@@ -187,7 +188,10 @@ function handleTikTokFailure(
   })
 
   if (!retrying) {
-    advanceDrop(expectedDropId)
+    advanceDrop(
+      expectedDropId,
+      reason === 'startup-timeout' || reason === 'stall-timeout' ? 'timeout' : 'error',
+    )
   }
 }
 
@@ -332,7 +336,7 @@ const isTikTokPlayerMessage = (value: unknown): value is TikTokPlayerMessage => 
   )
 }
 
-const getTikTokCurrentTime = (message: TikTokPlayerMessage) => {
+const getTikTokProgress = (message: TikTokPlayerMessage) => {
   if (
     message.type !== 'onCurrentTime' ||
     !message.value ||
@@ -353,7 +357,10 @@ const getTikTokCurrentTime = (message: TikTokPlayerMessage) => {
     return null
   }
 
-  return value.currentTime
+  return {
+    currentTime: value.currentTime,
+    duration: value.duration > 0 ? value.duration : null,
+  }
 }
 
 const getTikTokPlayerErrorCode = (message: TikTokPlayerMessage) => {
@@ -453,7 +460,7 @@ const handleTikTokMessage = (event: MessageEvent) => {
       playbackStartedDropId === expectedDropId,
     )
     if (action === 'ended') {
-      advanceDrop(expectedDropId)
+      advanceDrop(expectedDropId, 'ended')
     }
     if (action === 'started') {
       markTikTokPlaybackStarted(expectedDropId, iframeRevision.value)
@@ -467,30 +474,42 @@ const handleTikTokMessage = (event: MessageEvent) => {
     return
   }
 
-  const currentTime = getTikTokCurrentTime(message)
-  if (currentTime !== null) {
-    const previousTime = lastCurrentTime
-    if (previousTime === null) {
-      lastCurrentTime = currentTime
-      if (currentTime > TIKTOK_PROGRESS_EPSILON_SECONDS) {
-        markTikTokPlaybackStarted(expectedDropId, iframeRevision.value)
-      }
-    } else if (
-      currentTime > previousTime + TIKTOK_PROGRESS_EPSILON_SECONDS ||
-      currentTime < previousTime - 0.5
-    ) {
-      lastCurrentTime = currentTime
+  const progress = getTikTokProgress(message)
+  if (progress !== null) {
+    const action = getPlaybackProgressAction({
+      currentTimeSeconds: progress.currentTime,
+      durationSeconds: progress.duration,
+      previousTimeSeconds: lastCurrentTime,
+    })
+
+    if (action === 'ended') {
+      lastCurrentTime = progress.currentTime
+      advanceDrop(expectedDropId, 'ended')
+    } else if (action === 'restarted') {
+      lastCurrentTime = progress.currentTime
+      advanceDrop(expectedDropId, 'error')
+    } else if (action === 'progressed') {
+      lastCurrentTime = progress.currentTime
       markTikTokPlaybackStarted(expectedDropId, iframeRevision.value)
+    } else if (action === 'rewound') {
+      lastCurrentTime = progress.currentTime
     }
     return
   }
 
   const imageIndex = getTikTokImageIndex(message)
-  if (imageIndex !== null && lastImageIndex === null) {
+  if (imageIndex !== null) {
+    const action = getTikTokImageProgressAction({
+      currentIndex: imageIndex,
+      playbackStarted: playbackStartedDropId === expectedDropId,
+      previousIndex: lastImageIndex,
+    })
     lastImageIndex = imageIndex
-  } else if (imageIndex !== null && imageIndex !== lastImageIndex) {
-    lastImageIndex = imageIndex
-    markTikTokPlaybackStarted(expectedDropId, iframeRevision.value)
+    if (action === 'ended') {
+      advanceDrop(expectedDropId, 'ended')
+    } else if (action === 'progressed') {
+      markTikTokPlaybackStarted(expectedDropId, iframeRevision.value)
+    }
   }
 }
 
@@ -537,7 +556,7 @@ const resetTikTokDrop = (dropId: string) => {
   clearTikTokVolumeRetry()
 
   if (!tiktokEmbedUrl.value) {
-    window.queueMicrotask(() => advanceDrop(dropId))
+    window.queueMicrotask(() => advanceDrop(dropId, 'error'))
     return
   }
 

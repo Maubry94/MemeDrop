@@ -1,6 +1,9 @@
-import type { MemeDropClientMessage } from '@memedrop/protocol'
+import type { DropCompletionReason, MemeDropClientMessage } from '@memedrop/protocol'
 
 const DROP_ID_PATTERN = /^[A-Za-z0-9_-]{1,512}$/
+
+const isCompletionReason = (value: unknown): value is DropCompletionReason =>
+  value === 'ended' || value === 'skipped' || value === 'error' || value === 'timeout'
 
 const hasExactKeys = (value: Record<string, unknown>, expectedKeys: string[]) => {
   const keys = Object.keys(value).sort()
@@ -21,12 +24,18 @@ export const parseClientMessage = (text: string): MemeDropClientMessage | null =
 
   const message = parsed as Record<string, unknown>
   if (message.type === 'drop-completed' || message.type === 'drop-stop') {
+    const hasReason = message.type === 'drop-completed' && 'reason' in message
     if (
-      !hasExactKeys(message, ['dropId', 'type']) ||
+      !hasExactKeys(message, hasReason ? ['dropId', 'reason', 'type'] : ['dropId', 'type']) ||
       typeof message.dropId !== 'string' ||
-      !DROP_ID_PATTERN.test(message.dropId)
+      !DROP_ID_PATTERN.test(message.dropId) ||
+      (hasReason && !isCompletionReason(message.reason))
     ) {
       return null
+    }
+
+    if (message.type === 'drop-completed' && isCompletionReason(message.reason)) {
+      return { type: 'drop-completed', dropId: message.dropId, reason: message.reason }
     }
 
     return {

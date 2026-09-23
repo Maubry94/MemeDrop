@@ -22,6 +22,11 @@ const RATE_LIMIT_CLOSE_REASON = 'MemeDrop message rate exceeded'
 const DISCORD_AUTH_REQUIRED_CLOSE_CODE = 4001
 const DISCORD_AUTH_REQUIRED_CLOSE_REASON = 'Discord authentication required'
 const AUTH_EXPIRATION_TIMER_SLICE_MS = 24 * 60 * 60 * 1000
+const DEFAULT_CLIENT_STATE_TIMEOUT_MS = 15000
+const CLIENT_STATE_REQUIRED_CLOSE_REASON = 'MemeDrop client state required'
+const REPLACED_CONNECTION_CLOSE_CODE = 4002
+const REPLACED_CONNECTION_CLOSE_REASON = 'MemeDrop connection replaced'
+const CLIENT_INSTANCE_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/
 
 const getSingleHeaderValue = (value: string | string[] | undefined): string =>
   typeof value === 'string' ? value : ''
@@ -29,6 +34,11 @@ const getSingleHeaderValue = (value: string | string[] | undefined): string =>
 const getBearerToken = (authorizationHeader: string): string | null => {
   const match = /^Bearer ([A-Za-z0-9._-]+)$/i.exec(authorizationHeader)
   return match?.[1] ?? null
+}
+
+const getClientInstanceId = (value: string | string[] | undefined): string => {
+  const instanceId = getSingleHeaderValue(value).trim()
+  return CLIENT_INSTANCE_ID_PATTERN.test(instanceId) ? instanceId : ''
 }
 
 const sendJson = (socket: WebSocket, payload: MemeDropServerMessage) => {
@@ -53,6 +63,8 @@ export const createMemeDropWebSocketServer = ({
   serverKey,
   getLatestAppVersion,
   identityTokens,
+  clientStateTimeoutMs = DEFAULT_CLIENT_STATE_TIMEOUT_MS,
+  completionGraceMs,
 }: MemeDropWebSocketServerOptions) => {
   const clients = new Map<WebSocket, MemeDropClient>()
   const socketAlive = new WeakMap<WebSocket, boolean>()
@@ -65,13 +77,22 @@ export const createMemeDropWebSocketServer = ({
     console.error('Erreur serveur WebSocket MemeDrop:', error)
   })
 
-  const getEligibleClients = () =>
+  const getReadyClientEntries = () =>
     [...clients.entries()]
-      .filter(([, client]) => client.userId)
+      .filter(([socket, client]) => (
+        socket.readyState === WebSocket.OPEN && client.ready
+      ))
+
+  const getEligibleClients = () =>
+    getReadyClientEntries()
+      .filter(([, client]) => client.dropsEnabled)
       .map(([socket]) => socket)
 
-  const getClientLogSummary = () =>
-    `${clients.size} connexion(s), ${getEligibleClients().length} client(s) identifié(s)`
+  const getClientLogSummary = () => {
+    const readyClients = getReadyClientEntries()
+    const users = new Set(readyClients.map(([, client]) => client.userId))
+    return `${clients.size} socket(s), ${readyClients.length} connexion(s) prête(s), ${users.size} utilisateur(s), ${getEligibleClients().length} réception(s) active(s)`
+  }
 
   const compareAppVersions = (currentVersion: string, expectedVersion: string) => {
     const currentParts = currentVersion.split(/[.-]/).map((part) => Number(part))
@@ -99,10 +120,7 @@ export const createMemeDropWebSocketServer = ({
   const buildConnectedUsers = (latestAppVersion: string): ConnectedUser[] => {
     const users = new Map<string, ConnectedUser>()
 
-    for (const client of clients.values()) {
-      if (!client.userId) {
-        continue
-      }
+    for (const [, client] of getReadyClientEntries()) {
 
       const existing = users.get(client.userId)
       const appVersions = Array.from(
@@ -149,11 +167,12 @@ export const createMemeDropWebSocketServer = ({
   }
 
   const getClientsByUserId = (userId: string) =>
-    [...clients.entries()]
-      .filter(([, client]) => client.userId === userId)
+    getReadyClientEntries()
+      .filter(([, client]) => client.userId === userId && client.dropsEnabled)
       .map(([socket]) => socket)
 
   const dropScheduler = createDropScheduler<WebSocket>({
+    completionGraceMs,
     getEligibleTargets: getEligibleClients,
     getTargetsByUserId: getClientsByUserId,
     sendDrop: (socket, drop) => {
@@ -166,6 +185,14 @@ export const createMemeDropWebSocketServer = ({
       sendJson(socket, { type: 'clear-drop' })
     },
     getLogSummary: getClientLogSummary,
+    getTargetLogLabel: (socket) => {
+      const client = clients.get(socket)
+      if (!client) {
+        return 'une connexion inconnue'
+      }
+
+      return `user=${client.userId}, instance=${client.clientInstanceId || 'legacy'}, version=${JSON.stringify(client.appVersion || 'unknown')}`
+    },
   })
 
   const stopDropForEveryone = (socket: WebSocket, dropId: string) => {
@@ -184,6 +211,9 @@ export const createMemeDropWebSocketServer = ({
 
     const appVersionHeader = getSingleHeaderValue(request.headers['x-memedrop-app-version'])
     const appVersion = appVersionHeader.length <= 100 ? appVersionHeader.trim() : ''
+    const clientInstanceId = getClientInstanceId(
+      request.headers['x-memedrop-client-instance-id'],
+    )
 
     if (wss.clients.size > MAX_WEBSOCKET_CLIENTS) {
       console.warn('Client MemeDrop refusé: capacité WebSocket atteinte.')
@@ -212,10 +242,27 @@ export const createMemeDropWebSocketServer = ({
       return
     }
 
-    const identityConnectionCount = [...clients.values()].filter(
+    const identityConnections = [...clients.values()].filter(
       (client) => client.userId === verification.claims.sub,
-    ).length
-    if (identityConnectionCount >= MAX_CONNECTIONS_PER_IDENTITY) {
+    )
+    const replacesExistingInstance = Boolean(
+      clientInstanceId && identityConnections.some(
+        (client) => client.clientInstanceId === clientInstanceId,
+      ),
+    )
+    const replacementAlreadyPending = Boolean(
+      clientInstanceId && identityConnections.some(
+        (client) => client.clientInstanceId === clientInstanceId && !client.ready,
+      ),
+    )
+    const canUseTemporaryReplacementSlot =
+      replacesExistingInstance &&
+      !replacementAlreadyPending &&
+      identityConnections.length === MAX_CONNECTIONS_PER_IDENTITY
+    if (
+      identityConnections.length >= MAX_CONNECTIONS_PER_IDENTITY &&
+      !canUseTemporaryReplacementSlot
+    ) {
       console.warn('Client MemeDrop refusé: trop de connexions pour cette identité.')
       socket.close(TEMPORARY_OVERLOAD_CLOSE_CODE, 'Too many MemeDrop connections')
       return
@@ -227,6 +274,7 @@ export const createMemeDropWebSocketServer = ({
     })
 
     let authExpirationTimer: NodeJS.Timeout | null = null
+    let clientStateTimer: NodeJS.Timeout | null = null
     const scheduleAuthExpiration = () => {
       authExpirationTimer = null
       const remainingMs = verification.claims.exp * 1000 - Date.now()
@@ -251,14 +299,24 @@ export const createMemeDropWebSocketServer = ({
       userName: verification.claims.name,
       userAvatarUrl: verification.claims.avatarUrl ?? '',
       appVersion,
-      dropsEnabled: true,
+      clientInstanceId,
+      ready: false,
+      dropsEnabled: false,
     })
     socketAlive.set(socket, true)
     scheduleAuthExpiration()
+    clientStateTimer = setTimeout(() => {
+      clientStateTimer = null
+      const client = clients.get(socket)
+      if (client && !client.ready && socket.readyState === WebSocket.OPEN) {
+        console.warn('Client MemeDrop déconnecté: état initial non reçu.')
+        socket.close(POLICY_VIOLATION_CLOSE_CODE, CLIENT_STATE_REQUIRED_CLOSE_REASON)
+      }
+    }, clientStateTimeoutMs)
+    clientStateTimer.unref()
     console.log(`Client MemeDrop connecté (${getClientLogSummary()}).`)
-    sendJson(socket, { type: 'hello' })
+    sendJson(socket, { type: 'hello', capabilities: { dropCompletionReason: true } })
     broadcastConnectedUsers()
-    dropScheduler.scheduleDrops()
 
     socket.on('message', (data, isBinary) => {
       if (isBinary || !messageBucket.consume()) {
@@ -274,7 +332,7 @@ export const createMemeDropWebSocketServer = ({
         }
 
         if (message.type === 'drop-completed') {
-          dropScheduler.completeDropForTarget(socket, message.dropId)
+          dropScheduler.completeDropForTarget(socket, message.dropId, message.reason)
         }
         if (message.type === 'drop-stop') {
           stopDropForEveryone(socket, message.dropId)
@@ -282,10 +340,56 @@ export const createMemeDropWebSocketServer = ({
         if (message.type === 'client-state') {
           const client = clients.get(socket)
           const dropsEnabled = message.dropsEnabled === true
-          if (client && client.dropsEnabled !== dropsEnabled) {
-            client.dropsEnabled = dropsEnabled
+          if (!client) {
+            return
+          }
+
+          const becameReady = !client.ready
+          const stateChanged = client.dropsEnabled !== dropsEnabled
+          client.ready = true
+          client.dropsEnabled = dropsEnabled
+
+          if (becameReady && clientStateTimer) {
+            clearTimeout(clientStateTimer)
+            clientStateTimer = null
+          }
+
+          if (becameReady && client.clientInstanceId) {
+            for (const [otherSocket, otherClient] of clients.entries()) {
+              if (
+                otherSocket === socket ||
+                otherClient.userId !== client.userId ||
+                otherClient.clientInstanceId !== client.clientInstanceId
+              ) {
+                continue
+              }
+
+              otherClient.ready = false
+              otherClient.dropsEnabled = false
+              if (dropsEnabled) {
+                dropScheduler.replaceTarget(otherSocket, socket)
+              } else {
+                dropScheduler.removeTarget(otherSocket)
+              }
+              console.warn('Ancienne connexion MemeDrop remplacée après reconnexion.')
+              otherSocket.close(
+                REPLACED_CONNECTION_CLOSE_CODE,
+                REPLACED_CONNECTION_CLOSE_REASON,
+              )
+            }
+          }
+
+          if (becameReady || stateChanged) {
             broadcastConnectedUsers()
           }
+          if (!dropsEnabled) {
+            dropScheduler.removeTarget(socket)
+            // The socket stays connected while reception is paused. Clear the
+            // desktop snapshot as well as the scheduler state so re-enabling
+            // drops cannot make the previous media reappear locally.
+            sendJson(socket, { type: 'clear-drop' })
+          }
+          dropScheduler.scheduleDrops()
         }
       } catch (error) {
         console.error('Message client MemeDrop invalide:', error)
@@ -300,6 +404,10 @@ export const createMemeDropWebSocketServer = ({
       if (authExpirationTimer) {
         clearTimeout(authExpirationTimer)
         authExpirationTimer = null
+      }
+      if (clientStateTimer) {
+        clearTimeout(clientStateTimer)
+        clientStateTimer = null
       }
       clients.delete(socket)
       socketAlive.delete(socket)

@@ -62,11 +62,13 @@ class FakeSocket extends EventEmitter {
 
 class FakeRuntime implements MemeDropClientRuntime {
   sockets: FakeSocket[] = []
+  socketOptions: WebSocket.ClientOptions[] = []
   timers: FakeTimer[] = []
 
-  createSocket = () => {
+  createSocket = (_url: string, options: WebSocket.ClientOptions) => {
     const socket = new FakeSocket()
     this.sockets.push(socket)
+    this.socketOptions.push(options)
     return socket as unknown as WebSocket
   }
 
@@ -119,6 +121,7 @@ const createHarness = ({
       accessKey: 'test-key',
       authToken,
       appVersion: '3.0.7',
+      clientInstanceId: '025d3399-a3a2-4f12-b543-2e1568da1e47',
       dropsEnabled: true,
       onDrop: (drop) => drops.push(drop),
       onClearDrop: () => {
@@ -176,6 +179,24 @@ test('missing server or Discord configuration is an offline state, not an error'
   })
 })
 
+test('identifies every reconnect as the same installed client instance', () => {
+  const harness = createHarness()
+  const firstSocket = harness.runtime.sockets[0]
+  assert.ok(firstSocket)
+  assert.equal(
+    harness.runtime.socketOptions[0]?.headers?.['x-memedrop-client-instance-id'],
+    '025d3399-a3a2-4f12-b543-2e1568da1e47',
+  )
+
+  firstSocket.remoteClose(1006)
+  harness.runtime.run(harness.runtime.latestTimer(3_000))
+
+  assert.equal(
+    harness.runtime.socketOptions[1]?.headers?.['x-memedrop-client-instance-id'],
+    '025d3399-a3a2-4f12-b543-2e1568da1e47',
+  )
+})
+
 test('a stale heartbeat cannot terminate or reconnect a newer socket', () => {
   const harness = createHarness()
   const firstSocket = harness.runtime.sockets[0]
@@ -222,13 +243,60 @@ test('an acknowledgement attempted while disconnected returns false', () => {
 
   socket.open()
   socket.receive({ type: 'hello' })
-  assert.equal(harness.controller.completeDrop('drop-connected'), true)
+  assert.equal(harness.controller.completeDrop('drop-connected', 'ended'), true)
 
   socket.remoteClose(1006)
   assert.equal(harness.controller.completeDrop('drop-disconnected'), false)
   assert.deepEqual(parseSentMessages(socket), [
     { type: 'client-state', dropsEnabled: true },
     { type: 'drop-completed', dropId: 'drop-connected' },
+  ])
+})
+
+test('sends completion reasons only when the server advertises support', () => {
+  const harness = createHarness()
+  const socket = harness.runtime.sockets[0]
+  assert.ok(socket)
+
+  socket.open()
+  socket.receive({
+    type: 'hello',
+    capabilities: { dropCompletionReason: true },
+  })
+  assert.equal(harness.controller.completeDrop('drop-ended', 'ended'), true)
+  assert.equal(harness.controller.completeDrop('drop-skipped', 'skipped'), true)
+
+  assert.deepEqual(parseSentMessages(socket), [
+    { type: 'client-state', dropsEnabled: true },
+    { type: 'drop-completed', dropId: 'drop-ended', reason: 'ended' },
+    { type: 'drop-completed', dropId: 'drop-skipped', reason: 'skipped' },
+  ])
+})
+
+test('completion-reason capability resets to the conservative default after reconnect', () => {
+  const harness = createHarness()
+  const firstSocket = harness.runtime.sockets[0]
+  assert.ok(firstSocket)
+
+  firstSocket.open()
+  firstSocket.receive({
+    type: 'hello',
+    capabilities: { dropCompletionReason: true },
+  })
+  assert.equal(harness.controller.completeDrop('drop-before-reconnect', 'ended'), true)
+
+  firstSocket.remoteClose(1006)
+  harness.runtime.run(harness.runtime.latestTimer(3_000))
+
+  const secondSocket = harness.runtime.sockets[1]
+  assert.ok(secondSocket)
+  secondSocket.open()
+  secondSocket.receive({ type: 'hello' })
+  assert.equal(harness.controller.completeDrop('drop-after-reconnect', 'ended'), true)
+
+  assert.deepEqual(parseSentMessages(secondSocket), [
+    { type: 'client-state', dropsEnabled: true },
+    { type: 'drop-completed', dropId: 'drop-after-reconnect' },
   ])
 })
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { CSSProperties } from 'vue'
-import type { Drop } from '../../shared/types'
+import type { Drop, DropCompletionReason } from '../../shared/types'
 import type { MediaKind } from '../../shared/media'
 import DropOverlay from './overlay/DropOverlay.vue'
 
@@ -16,9 +16,12 @@ defineProps<{
   keepTestImageVisible: boolean
 }>()
 
-defineEmits<{
-  advance: [dropId?: string]
+const emit = defineEmits<{
+  advance: [dropId: string, reason: DropCompletionReason]
 }>()
+
+const forwardAdvance = (dropId: string, reason: DropCompletionReason) =>
+  emit('advance', dropId, reason)
 </script>
 
 <template>
@@ -33,7 +36,7 @@ defineEmits<{
       :size="dropSize"
       :is-custom-position="isCustomPosition"
       :keep-test-image-visible="keepTestImageVisible"
-      @advance="$emit('advance', $event)"
+      @advance="forwardAdvance"
     />
   </div>
 </template>

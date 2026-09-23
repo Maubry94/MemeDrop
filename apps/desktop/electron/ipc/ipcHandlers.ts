@@ -12,6 +12,7 @@ import type {
   ControlPanelSectionId,
   ControlPanelSectionState,
   Drop,
+  DropCompletionReason,
   OverlayDisplayInfo,
   OverlayDisplayPreferences,
   OverlayState,
@@ -63,7 +64,7 @@ export type MemeDropIpcHandlers = {
   toggleDrops: () => OverlayState
   toggleHideOwnDrops: () => OverlayState
   skipCurrentDrop: (dropId: string) => boolean
-  completeCurrentDrop: (dropId: string) => boolean
+  completeCurrentDrop: (dropId: string, reason?: DropCompletionReason) => boolean
   stopCurrentDropForEveryone: (dropId: string) => boolean
   emitTestDrop: (drop: Drop) => boolean
   clearTestDrop: (dropId: string) => boolean
@@ -120,6 +121,21 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
       throw new Error('État de section du panneau de contrôle invalide.')
     }
 
+    return value
+  }
+
+  const requireDropCompletionReason = (value: unknown): DropCompletionReason | undefined => {
+    if (value === undefined) {
+      return undefined
+    }
+    if (
+      value !== 'ended' &&
+      value !== 'skipped' &&
+      value !== 'error' &&
+      value !== 'timeout'
+    ) {
+      throw new Error('Motif de fin de drop invalide.')
+    }
     return value
   }
 
@@ -222,7 +238,10 @@ export const registerMemeDropIpcHandlers = (handlers: MemeDropIpcHandlers) => {
   )
   handle(
     'complete-current-drop',
-    (_event, dropId: string) => handlers.completeCurrentDrop(requireDropId(dropId)),
+    (_event, dropId: unknown, reason: unknown) => handlers.completeCurrentDrop(
+      requireDropId(dropId),
+      requireDropCompletionReason(reason),
+    ),
     true,
   )
   handle('stop-current-drop-for-everyone', (_event, dropId: string) =>

@@ -43,10 +43,13 @@ export type ConnectedUser = {
   updateAvailable: boolean
 }
 
+export type DropCompletionReason = 'ended' | 'skipped' | 'error' | 'timeout'
+
 export type MemeDropClientMessage =
   | {
       type: 'drop-completed'
       dropId: string
+      reason?: DropCompletionReason
     }
   | {
       type: 'drop-stop'
@@ -64,6 +67,9 @@ export type MemeDropServerMessage =
     }
   | {
       type: 'hello'
+      capabilities?: {
+        dropCompletionReason?: boolean
+      }
     }
   | {
       type: 'clear-drop'

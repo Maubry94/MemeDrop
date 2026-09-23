@@ -2,6 +2,7 @@ import WebSocket from 'ws'
 import type {
   ConnectedUser,
   Drop,
+  DropCompletionReason,
   MemeDropClientMessage,
   MemeDropServerMessage,
 } from '@memedrop/protocol'
@@ -20,6 +21,7 @@ type MemeDropClientOptions = {
   accessKey: string | undefined
   authToken: string | undefined
   appVersion: string
+  clientInstanceId: string
   dropsEnabled: boolean
   onDrop: (drop: Drop) => void
   onClearDrop: () => void
@@ -39,6 +41,7 @@ type ActiveConnection = {
   generation: number
   socket: WebSocket
   serverReady: boolean
+  supportsDropCompletionReason: boolean
   heartbeatTimer: NodeJS.Timeout | null
 }
 
@@ -49,7 +52,7 @@ const defaultRuntime: MemeDropClientRuntime = {
 }
 
 export type MemeDropClientController = {
-  completeDrop: (dropId: string) => boolean
+  completeDrop: (dropId: string, reason?: DropCompletionReason) => boolean
   stopDrop: (dropId: string) => boolean
   updateDropsEnabled: (enabled: boolean) => boolean
   stop: () => void
@@ -70,10 +73,14 @@ const getWebSocketHeaders = (
   accessKey: string | undefined,
   authToken: string,
   appVersion: string,
+  clientInstanceId: string,
 ): Record<string, string> => ({
   authorization: `Bearer ${authToken}`,
   ...(accessKey?.trim() ? { 'x-memedrop-key': accessKey.trim() } : {}),
   ...(appVersion.trim() ? { 'x-memedrop-app-version': appVersion.trim() } : {}),
+  ...(clientInstanceId.trim()
+    ? { 'x-memedrop-client-instance-id': clientInstanceId.trim() }
+    : {}),
 })
 
 const isDrop = (value: unknown): value is Drop => {
@@ -94,6 +101,7 @@ export function startMemeDropClient(
     accessKey,
     authToken,
     appVersion,
+    clientInstanceId,
     dropsEnabled,
     onDrop,
     onClearDrop,
@@ -313,7 +321,12 @@ export function startMemeDropClient(
 
     try {
       nextSocket = runtime.createSocket(wsUrl, {
-        headers: getWebSocketHeaders(accessKey, normalizedAuthToken, appVersion),
+        headers: getWebSocketHeaders(
+          accessKey,
+          normalizedAuthToken,
+          appVersion,
+          clientInstanceId,
+        ),
         followRedirects: false,
         handshakeTimeout: SERVER_HANDSHAKE_TIMEOUT_MS,
       })
@@ -331,6 +344,7 @@ export function startMemeDropClient(
       generation: ++nextGeneration,
       socket: nextSocket,
       serverReady: false,
+      supportsDropCompletionReason: false,
       heartbeatTimer: null,
     }
     activeConnection = connection
@@ -365,6 +379,8 @@ export function startMemeDropClient(
         const message = JSON.parse(data.toString()) as MemeDropServerMessage
 
         if (message.type === 'hello') {
+          connection.supportsDropCompletionReason =
+            message.capabilities?.dropCompletionReason === true
           if (!connection.serverReady) {
             connection.serverReady = true
             isReconnectAttempt = false
@@ -482,11 +498,14 @@ export function startMemeDropClient(
   connect()
 
   return {
-    completeDrop: (dropId: string) =>
-      sendMessage({
+    completeDrop: (dropId: string, reason?: DropCompletionReason) => {
+      const payload: MemeDropClientMessage = {
         type: 'drop-completed',
         dropId,
-      }),
+        ...(activeConnection?.supportsDropCompletionReason && reason ? { reason } : {}),
+      }
+      return sendMessage(payload)
+    },
     stopDrop: (dropId: string) =>
       sendMessage({
         type: 'drop-stop',

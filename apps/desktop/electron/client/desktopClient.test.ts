@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { ConnectedUser, ConnectionStatus, Drop, ServerConnectionConfig } from '../../shared/types.ts'
+import type {
+  ConnectedUser,
+  ConnectionStatus,
+  Drop,
+  DropCompletionReason,
+  ServerConnectionConfig,
+} from '../../shared/types.ts'
 import { createDesktopClient } from './desktopClient.ts'
 import type {
   MemeDropClientController,
@@ -32,6 +38,7 @@ const createHarness = () => {
   const connectedUsersSnapshots: ConnectedUser[][] = []
   const statuses: ConnectionStatus[] = []
   const stoppedDropIds: string[] = []
+  const completedDrops: Array<{ dropId: string; reason?: DropCompletionReason }> = []
   let clears = 0
   let incoming = 0
   let rejected = 0
@@ -56,7 +63,10 @@ const createHarness = () => {
     } = {
       completeAccepted: true,
       stopAccepted: true,
-      completeDrop: () => controller.completeAccepted,
+      completeDrop: (dropId, reason) => {
+        completedDrops.push({ dropId, ...(reason ? { reason } : {}) })
+        return controller.completeAccepted
+      },
       stopDrop: (dropId) => {
         stoppedDropIds.push(dropId)
         return controller.stopAccepted
@@ -71,6 +81,7 @@ const createHarness = () => {
   const desktop = createDesktopClient({
     getServerConfig: () => serverConfig,
     getAppVersion: () => '3.0.7',
+    getClientInstanceId: () => '025d3399-a3a2-4f12-b543-2e1568da1e47',
     getDropsEnabled: () => dropsEnabled,
     getHideOwnDrops: () => hideOwnDrops,
     onConnectedUsers: (users) => connectedUsersSnapshots.push(users),
@@ -99,6 +110,7 @@ const createHarness = () => {
     connectedUsersSnapshots,
     statuses,
     stoppedDropIds,
+    completedDrops,
     setHideOwnDrops: (value: boolean) => {
       hideOwnDrops = value
     },
@@ -133,17 +145,21 @@ test('desktop snapshots separate presented and server drops across acknowledgeme
 
   controller.completeAccepted = false
   const clearsBeforeAck = harness.clears
-  assert.equal(harness.desktop.completeDrop('drop-a'), false)
+  assert.equal(harness.desktop.completeDrop('drop-a', 'ended'), false)
   assert.deepEqual(harness.desktop.getPresentedDrop(), drop)
   assert.deepEqual(harness.desktop.getCurrentDrop(), drop)
   assert.equal(harness.clears, clearsBeforeAck)
 
   controller.completeAccepted = true
-  assert.equal(harness.desktop.completeDrop('drop-a'), true)
+  assert.equal(harness.desktop.completeDrop('drop-a', 'ended'), true)
   assert.equal(harness.desktop.getPresentedDrop(), null)
   assert.deepEqual(harness.desktop.getCurrentDrop(), drop)
   assert.equal(harness.desktop.getCurrentDropId(), 'drop-a')
   assert.equal(harness.clears, clearsBeforeAck)
+  assert.deepEqual(harness.completedDrops, [
+    { dropId: 'drop-a', reason: 'ended' },
+    { dropId: 'drop-a', reason: 'ended' },
+  ])
 
   callbacks.onClearDrop()
   assert.equal(harness.desktop.getPresentedDrop(), null)
@@ -162,6 +178,9 @@ test('hidden own drops remain stoppable until the authoritative server clear', (
   callbacks.onDrop(ownDrop)
 
   assert.deepEqual(harness.controlOnly, [ownDrop])
+  assert.deepEqual(harness.completedDrops, [
+    { dropId: 'own-drop', reason: 'skipped' },
+  ])
   assert.equal(harness.desktop.getPresentedDrop(), null)
   assert.deepEqual(harness.desktop.getCurrentDrop(), ownDrop)
   assert.equal(harness.desktop.completeDrop('own-drop'), true)
@@ -241,4 +260,7 @@ test('disabled drops are acknowledged without becoming presented snapshots', () 
   assert.equal(harness.desktop.getPresentedDrop(), null)
   assert.deepEqual(harness.desktop.getCurrentDrop()?.id, 'disabled')
   assert.equal(harness.presented.length, 0)
+  assert.deepEqual(harness.completedDrops, [
+    { dropId: 'disabled', reason: 'skipped' },
+  ])
 })

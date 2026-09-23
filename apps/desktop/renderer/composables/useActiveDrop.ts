@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref, type ComputedRef } from 'vue'
-import { getMediaKind } from '../../shared/media'
-import type { Drop, ServerConfig } from '../../shared/types'
+import { getMediaKind } from '../../shared/media.ts'
+import type { Drop, DropCompletionReason, ServerConfig } from '../../shared/types'
 
 const TEST_DROP_ID_PREFIX = 'memedrop-test-preview-'
 const COMPLETION_RETRY_DELAY_MS = 2_000
@@ -31,6 +31,9 @@ export const useActiveDrop = ({
   let completionInFlightKey: string | null = null
   let completionRetryTimer: ReturnType<typeof setTimeout> | null = null
   let completionRetryKey: string | null = null
+  // Preserve the original cause across IPC retries. A later skip or timer must
+  // not turn a playback failure into a natural ending for the whole group.
+  const completionReasons = new Map<string, DropCompletionReason | undefined>()
 
   const activeKind = computed(() => getMediaKind(activeDrop.value))
   const hasDrop = computed(() => Boolean(activeDrop.value) && dropsEnabled.value)
@@ -114,6 +117,7 @@ export const useActiveDrop = ({
     }
 
     clearCompletionRetry(`${source}:${dropId}`)
+    completionReasons.delete(`${source}:${dropId}`)
   }
 
   const scheduleCompletionRetry = (source: DropSource, dropId: string) => {
@@ -136,7 +140,11 @@ export const useActiveDrop = ({
     }, COMPLETION_RETRY_DELAY_MS)
   }
 
-  const invokeDropCompletion = async (source: DropSource, dropId: string) => {
+  const invokeDropCompletion = async (
+    source: DropSource,
+    dropId: string,
+    reason: DropCompletionReason | undefined,
+  ) => {
     if (source === 'test') {
       const bridge = isOverlayView.value ? window.memedropOverlay : window.memedrop
       if (!bridge) {
@@ -149,7 +157,7 @@ export const useActiveDrop = ({
     if (!bridge) {
       throw new Error('Bridge MemeDrop indisponible pour acquitter le drop.')
     }
-    return bridge.completeCurrentDrop(dropId)
+    return bridge.completeCurrentDrop(dropId, reason)
   }
 
   const reconcileRejectedServerCompletion = async (dropId: string) => {
@@ -177,10 +185,18 @@ export const useActiveDrop = ({
     }
   }
 
-  const completeDrop = async (source: DropSource, dropId: string): Promise<boolean> => {
+  const completeDrop = async (
+    source: DropSource,
+    dropId: string,
+    reason?: DropCompletionReason,
+  ): Promise<boolean> => {
     const key = `${source}:${dropId}`
     if (getCurrentDrop(source)?.id !== dropId) {
       return false
+    }
+
+    if (!completionReasons.has(key)) {
+      completionReasons.set(key, reason)
     }
 
     if (completionInFlight && completionInFlightKey === key) {
@@ -189,7 +205,7 @@ export const useActiveDrop = ({
 
     const operation = (async () => {
       try {
-        const accepted = await invokeDropCompletion(source, dropId)
+        const accepted = await invokeDropCompletion(source, dropId, completionReasons.get(key))
         if (accepted) {
           clearDropIfCurrent(source, dropId)
         } else if (source === 'server') {
@@ -218,14 +234,14 @@ export const useActiveDrop = ({
     return operation
   }
 
-  const completeActiveDrop = async (expectedDropId?: string) => {
+  const completeActiveDrop = async (expectedDropId?: string, reason?: DropCompletionReason) => {
     const drop = activeDrop.value
     if (!drop || (expectedDropId && drop.id !== expectedDropId)) {
       return false
     }
 
     const source: DropSource = serverDrop.value?.id === drop.id ? 'server' : 'test'
-    return completeDrop(source, drop.id)
+    return completeDrop(source, drop.id, reason)
   }
 
   const receiveDrop = (
@@ -245,12 +261,14 @@ export const useActiveDrop = ({
         return
       }
       clearCompletionRetry()
+      completionReasons.clear()
       testDrop.value = drop
     } else {
       if (serverDrop.value?.id === drop.id) {
         return
       }
       clearCompletionRetry()
+      completionReasons.clear()
       testDrop.value = null
       serverDrop.value = drop
       const isHiddenOwnDrop =
@@ -265,7 +283,7 @@ export const useActiveDrop = ({
     }
 
     if (!dropsEnabled.value || getMediaKind(drop) === 'file') {
-      void completeDrop(source, drop.id)
+      void completeDrop(source, drop.id, 'skipped')
     }
   }
 
@@ -276,6 +294,7 @@ export const useActiveDrop = ({
     dropActionError.value = null
     if (dropId) {
       clearCompletionRetry(`server:${dropId}`)
+      completionReasons.delete(`server:${dropId}`)
     }
   }
 
@@ -289,6 +308,7 @@ export const useActiveDrop = ({
     dropActionError.value = null
     if (dropId) {
       clearCompletionRetry(`test:${dropId}`)
+      completionReasons.delete(`test:${dropId}`)
     }
   }
 
@@ -314,7 +334,7 @@ export const useActiveDrop = ({
   const retryServerDropCompletion = (expectedDropId?: string) => {
     const dropId = serverDrop.value?.id
     if (isOverlayView.value && dropId && (!expectedDropId || dropId === expectedDropId)) {
-      void completeDrop('server', dropId)
+      void completeDrop('server', dropId, 'skipped')
     }
   }
 
@@ -379,6 +399,7 @@ export const useActiveDrop = ({
   onBeforeUnmount(() => {
     disposed.value = true
     clearCompletionRetry()
+    completionReasons.clear()
   })
 
   return {

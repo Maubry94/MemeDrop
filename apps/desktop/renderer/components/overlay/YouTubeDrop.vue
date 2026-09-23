@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
-import type { Drop } from '../../../shared/types'
+import type { Drop, DropCompletionReason } from '../../../shared/types'
 import {
   createYouTubeEmbedUrl,
   getValidYouTubeClip,
   hasYouTubeClipEnded,
 } from './youtubePlayerPolicy'
+import { getPlaybackProgressAction } from './playbackProgressPolicy'
 
 type YouTubeMessage = Record<string, unknown>
 type YouTubeIdentity = {
@@ -16,10 +17,10 @@ type YouTubeIdentity = {
 
 const YOUTUBE_ORIGIN = 'https://www.youtube.com'
 const YOUTUBE_PLAYER_STATE_ENDED = 0
+const YOUTUBE_PLAYER_STATE_PLAYING = 1
 const YOUTUBE_HANDSHAKE_INTERVAL_MS = 500
 const YOUTUBE_LOAD_TIMEOUT_MS = 45_000
 const YOUTUBE_STALL_TIMEOUT_MS = 30_000
-const YOUTUBE_PROGRESS_EPSILON_SECONDS = 0.05
 const YOUTUBE_EVENTS = ['onStateChange', 'onError', 'onAutoplayBlocked'] as const
 
 const props = defineProps<{
@@ -29,7 +30,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  advance: [dropId?: string]
+  advance: [dropId: string, reason: DropCompletionReason]
   loading: [dropId: string]
   ready: [dropId: string]
 }>()
@@ -46,6 +47,7 @@ let completedGeneration: number | null = null
 let playerReadyGeneration: number | null = null
 let playbackStartedGeneration: number | null = null
 let lastCurrentTime: number | null = null
+let lastDuration: number | null = null
 
 const normalizedDropVolume = computed(() => Math.min(Math.max(props.volume, 0), 100) / 100)
 const youtubeClip = computed(() => getValidYouTubeClip(props.drop.youtubeClip))
@@ -145,7 +147,7 @@ const startYouTubeHandshake = (identity: YouTubeIdentity) => {
   }, YOUTUBE_HANDSHAKE_INTERVAL_MS)
 }
 
-const advanceDrop = (identity: YouTubeIdentity) => {
+const advanceDrop = (identity: YouTubeIdentity, reason: DropCompletionReason) => {
   if (!isCurrentIdentity(identity)) {
     return
   }
@@ -153,7 +155,7 @@ const advanceDrop = (identity: YouTubeIdentity) => {
   completedGeneration = identity.generation
   clearYouTubeHandshakeTimer()
   clearYouTubeWatchdog()
-  emit('advance', identity.dropId)
+  emit('advance', identity.dropId, reason)
 }
 
 const armYouTubeWatchdog = (
@@ -181,7 +183,7 @@ const armYouTubeWatchdog = (
       ...identity,
       reason: `${phase}-timeout`,
     })
-    advanceDrop(identity)
+    advanceDrop(identity, 'timeout')
   }, delay)
 }
 
@@ -222,7 +224,7 @@ const getYouTubePlayerState = (message: YouTubeMessage) => {
   return null
 }
 
-const getYouTubeCurrentTime = (message: YouTubeMessage) => {
+const getYouTubeProgress = (message: YouTubeMessage) => {
   if (
     (message.event !== 'infoDelivery' && message.event !== 'initialDelivery') ||
     !isRecord(message.info)
@@ -231,36 +233,53 @@ const getYouTubeCurrentTime = (message: YouTubeMessage) => {
   }
 
   const currentTime = message.info.currentTime
-  return typeof currentTime === 'number' && Number.isFinite(currentTime) && currentTime >= 0
-    ? currentTime
-    : null
+  const duration = message.info.duration
+  return {
+    currentTime: typeof currentTime === 'number' && Number.isFinite(currentTime) && currentTime >= 0
+      ? currentTime
+      : null,
+    duration: typeof duration === 'number' && Number.isFinite(duration) && duration > 0
+      ? duration
+      : null,
+  }
 }
 
-const handleYouTubeProgress = (identity: YouTubeIdentity, currentTime: number) => {
+const handleYouTubeProgress = (
+  identity: YouTubeIdentity,
+  currentTime: number,
+  duration: number | null,
+) => {
   const previousTime = lastCurrentTime
   if (hasYouTubeClipEnded({
     clip: youtubeClip.value,
     previousTimeSeconds: previousTime,
     currentTimeSeconds: currentTime,
   })) {
-    advanceDrop(identity)
+    advanceDrop(identity, 'ended')
     return
   }
 
-  if (previousTime === null) {
+  const action = getPlaybackProgressAction({
+    // YouTube reports an ever-growing duration for live streams, so reaching
+    // that value alone cannot be treated as the end. Its ended state or a
+    // genuine rewind from the end still completes the drop.
+    completeAtDuration: false,
+    currentTimeSeconds: currentTime,
+    durationSeconds: duration,
+    previousTimeSeconds: previousTime,
+  })
+
+  if (action === 'ended') {
     lastCurrentTime = currentTime
-    if (currentTime > YOUTUBE_PROGRESS_EPSILON_SECONDS) {
-      markYouTubeProgress(identity)
-    }
-    return
-  }
-
-  if (
-    currentTime > previousTime + YOUTUBE_PROGRESS_EPSILON_SECONDS ||
-    currentTime < previousTime - 0.5
-  ) {
+    advanceDrop(identity, 'ended')
+  } else if (action === 'restarted') {
+    lastCurrentTime = currentTime
+    advanceDrop(identity, 'error')
+  } else if (action === 'progressed') {
     lastCurrentTime = currentTime
     markYouTubeProgress(identity)
+  } else if (action === 'rewound') {
+    lastCurrentTime = currentTime
   }
 }
 
@@ -297,16 +316,24 @@ const handleYouTubeMessage = (event: MessageEvent) => {
   }
 
   if (message.event === 'onError' || message.event === 'onAutoplayBlocked') {
-    advanceDrop(identity)
+    advanceDrop(identity, 'error')
+    return
+  }
+
+  const playerState = getYouTubePlayerState(message)
+  if (
+    playerState === YOUTUBE_PLAYER_STATE_ENDED &&
+    playbackStartedGeneration === identity.generation
+  ) {
+    advanceDrop(identity, 'ended')
     return
   }
 
   if (
-    getYouTubePlayerState(message) === YOUTUBE_PLAYER_STATE_ENDED &&
-    playbackStartedGeneration === identity.generation
+    playerState === YOUTUBE_PLAYER_STATE_PLAYING &&
+    playbackStartedGeneration !== identity.generation
   ) {
-    advanceDrop(identity)
-    return
+    markYouTubeProgress(identity)
   }
 
   if (message.event === 'onReady' || message.event === 'initialDelivery') {
@@ -319,9 +346,14 @@ const handleYouTubeMessage = (event: MessageEvent) => {
     }
   }
 
-  const currentTime = getYouTubeCurrentTime(message)
-  if (currentTime !== null) {
-    handleYouTubeProgress(identity, currentTime)
+  const progress = getYouTubeProgress(message)
+  if (progress !== null) {
+    if (progress.duration !== null) {
+      lastDuration = progress.duration
+    }
+    if (progress.currentTime !== null) {
+      handleYouTubeProgress(identity, progress.currentTime, lastDuration)
+    }
   }
 }
 
@@ -333,7 +365,7 @@ const handleYouTubeError = (event: Event) => {
 
   const identity = getIframeIdentity(iframe)
   if (identity) {
-    advanceDrop(identity)
+    advanceDrop(identity, 'error')
   }
 }
 
@@ -347,13 +379,14 @@ const resetYouTubeDrop = () => {
   playerReadyGeneration = null
   playbackStartedGeneration = null
   lastCurrentTime = null
+  lastDuration = null
 
   const identity = {
     dropId: props.drop.id,
     generation: iframeGeneration.value,
   }
   if (!youtubeEmbedUrl.value) {
-    window.queueMicrotask(() => advanceDrop(identity))
+    window.queueMicrotask(() => advanceDrop(identity, 'error'))
     return
   }
 

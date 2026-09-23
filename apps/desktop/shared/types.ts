@@ -4,6 +4,7 @@ export type {
   ConnectedUser,
   DiscordUser,
   Drop,
+  DropCompletionReason,
   MemeDropClientMessage,
   MemeDropServerMessage,
   YouTubeClip,

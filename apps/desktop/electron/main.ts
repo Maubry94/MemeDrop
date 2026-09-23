@@ -33,6 +33,7 @@ import type {
   ConnectionStatus,
   AppPreferences,
   Drop,
+  DropCompletionReason,
   OverlayDisplayPreferences,
   OverlayState,
   ServerConnectionConfig,
@@ -315,6 +316,7 @@ const setConnectionStatus = (status: ConnectionStatus) => {
 const desktopClient = createDesktopClient({
   getServerConfig: getServerConnectionConfig,
   getAppVersion: () => app.getVersion(),
+  getClientInstanceId: () => getConfigStore().getClientInstanceId(),
   getDropsEnabled: () => dropsEnabled,
   getHideOwnDrops: () => hideOwnDrops,
   onConnectedUsers: (users) => {
@@ -430,7 +432,7 @@ const skipCurrentDrop = (expectedDropId?: string): boolean => {
   const serverDropId = desktopClient.getCurrentDropId()
   if (serverDropId && (!expectedDropId || serverDropId === expectedDropId)) {
     windows.suspendTikTokAudio(serverDropId)
-    const accepted = desktopClient.completeDrop(serverDropId)
+    const accepted = desktopClient.completeDrop(serverDropId, 'skipped')
     if (accepted) {
       windows.sendToOverlay('clear-drop', null)
       windows.sendToControl('skip-current-drop', serverDropId)
@@ -443,9 +445,12 @@ const skipCurrentDrop = (expectedDropId?: string): boolean => {
   return skipped
 }
 
-const completeCurrentDrop = (dropId: string): boolean => {
+const completeCurrentDrop = (
+  dropId: string,
+  reason?: DropCompletionReason,
+): boolean => {
   windows.suspendTikTokAudio(dropId)
-  const accepted = desktopClient.completeDrop(dropId)
+  const accepted = desktopClient.completeDrop(dropId, reason)
   if (accepted) {
     windows.sendToControl('skip-current-drop', dropId)
   }

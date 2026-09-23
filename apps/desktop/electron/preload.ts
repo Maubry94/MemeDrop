@@ -14,6 +14,7 @@ import type {
   OverlayDisplayInfo,
   OverlayDisplayPreferences,
   OverlayState,
+  DropCompletionReason,
   ServerConfig,
   ShortcutConfig,
   ShortcutStatus,
@@ -62,7 +63,8 @@ const memedropApi = {
   toggleDrops: () => ipcRenderer.invoke('toggle-drops'),
   toggleHideOwnDrops: () => ipcRenderer.invoke('toggle-hide-own-drops'),
   skipCurrentDrop: (dropId: string) => ipcRenderer.invoke('skip-current-drop', dropId),
-  completeCurrentDrop: (dropId: string) => ipcRenderer.invoke('complete-current-drop', dropId),
+  completeCurrentDrop: (dropId: string, reason?: DropCompletionReason) =>
+    ipcRenderer.invoke('complete-current-drop', dropId, reason),
   stopCurrentDropForEveryone: (dropId: string): Promise<boolean> =>
     ipcRenderer.invoke('stop-current-drop-for-everyone', dropId),
   getOverlayState: () => ipcRenderer.invoke('get-overlay-state'),

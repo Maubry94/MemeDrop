@@ -2,8 +2,9 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import type { MediaKind } from '../../../shared/media'
-import type { Drop } from '../../../shared/types'
+import type { Drop, DropCompletionReason } from '../../../shared/types'
 import { getImageDisplayTimeout } from './nativeMediaPolicy'
+import { getPlaybackProgressAction } from './playbackProgressPolicy'
 
 type NativeMediaKind = Extract<MediaKind, 'image' | 'video' | 'audio'>
 type NativeMediaIdentity = {
@@ -13,7 +14,6 @@ type NativeMediaIdentity = {
 
 const NATIVE_MEDIA_LOAD_TIMEOUT_MS = 30_000
 const NATIVE_MEDIA_STALL_TIMEOUT_MS = 30_000
-const NATIVE_MEDIA_PROGRESS_EPSILON_SECONDS = 0.05
 
 const props = defineProps<{
   drop: Drop
@@ -24,7 +24,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  advance: [dropId: string]
+  advance: [dropId: string, reason: DropCompletionReason]
   loading: [dropId: string]
   ready: [dropId: string]
 }>()
@@ -57,14 +57,17 @@ const isCurrentIdentity = ({ dropId, generation }: NativeMediaIdentity) =>
   mediaGeneration.value === generation &&
   completedGeneration !== generation
 
-const advanceDrop = ({ dropId, generation }: NativeMediaIdentity) => {
+const advanceDrop = (
+  { dropId, generation }: NativeMediaIdentity,
+  reason: DropCompletionReason,
+) => {
   if (!isCurrentIdentity({ dropId, generation })) {
     return
   }
 
   completedGeneration = generation
   clearNativeMediaWatchdog()
-  emit('advance', dropId)
+  emit('advance', dropId, reason)
 }
 
 const armNativeMediaWatchdog = (
@@ -91,7 +94,7 @@ const armNativeMediaWatchdog = (
     if (reason !== 'display-complete') {
       console.warn('Média natif indisponible.', { ...identity, reason })
     }
-    advanceDrop(identity)
+    advanceDrop(identity, reason === 'display-complete' ? 'ended' : 'timeout')
   }, delay)
 }
 
@@ -155,7 +158,7 @@ const handleImageLoad = (event: Event) => {
 const handleImageError = (event: Event) => {
   const identity = getImageIdentity(event)
   if (identity) {
-    advanceDrop(identity)
+    advanceDrop(identity, 'error')
   }
 }
 
@@ -213,21 +216,23 @@ const handleMediaTimeUpdate = (event: Event) => {
     return
   }
 
-  const previousTime = lastCurrentTime
-  if (previousTime === null) {
-    lastCurrentTime = media.currentTime
-    if (media.currentTime > NATIVE_MEDIA_PROGRESS_EPSILON_SECONDS) {
-      markMediaProgress(identity)
-    }
-    return
-  }
+  const action = getPlaybackProgressAction({
+    currentTimeSeconds: media.currentTime,
+    durationSeconds: media.duration,
+    previousTimeSeconds: lastCurrentTime,
+  })
 
-  if (
-    media.currentTime > previousTime + NATIVE_MEDIA_PROGRESS_EPSILON_SECONDS ||
-    media.currentTime < previousTime - 0.5
-  ) {
+  if (action === 'ended') {
+    lastCurrentTime = media.currentTime
+    advanceDrop(identity, 'ended')
+  } else if (action === 'restarted') {
+    lastCurrentTime = media.currentTime
+    advanceDrop(identity, 'error')
+  } else if (action === 'progressed') {
     lastCurrentTime = media.currentTime
     markMediaProgress(identity)
+  } else if (action === 'rewound') {
+    lastCurrentTime = media.currentTime
   }
 }
 
@@ -245,14 +250,14 @@ const handleMediaStall = (event: Event) => {
 const handleMediaEnded = (event: Event) => {
   const identity = getMediaIdentity(event)
   if (identity) {
-    advanceDrop(identity)
+    advanceDrop(identity, 'ended')
   }
 }
 
 const handleMediaError = (event: Event) => {
   const identity = getMediaIdentity(event)
   if (identity) {
-    advanceDrop(identity)
+    advanceDrop(identity, 'error')
   }
 }
 
@@ -271,7 +276,7 @@ const resetNativeMedia = () => {
     generation: mediaGeneration.value,
   }
   if (!props.drop.url) {
-    window.queueMicrotask(() => advanceDrop(identity))
+    window.queueMicrotask(() => advanceDrop(identity, 'error'))
     return
   }
 

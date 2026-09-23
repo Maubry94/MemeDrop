@@ -99,6 +99,26 @@ test('rejects unknown section identifiers and non-boolean values', (context) => 
   )
 })
 
+test('creates one stable client instance id and replaces an invalid stored value', (context) => {
+  const userDataPath = createTemporaryUserData(context)
+  const configPath = getAppConfigPath(userDataPath)
+  const store = createConfigStore(userDataPath)
+
+  const generatedId = store.getClientInstanceId()
+  assert.match(generatedId, /^[0-9a-f-]{36}$/)
+  assert.equal(store.getClientInstanceId(), generatedId)
+  assert.equal(createConfigStore(userDataPath).getClientInstanceId(), generatedId)
+
+  writeAppConfigFile(configPath, {
+    ...readAppConfigFile(configPath),
+    clientInstanceId: '../invalid',
+  })
+
+  const replacementId = store.getClientInstanceId()
+  assert.notEqual(replacementId, generatedId)
+  assert.match(replacementId, /^[0-9a-f-]{36}$/)
+})
+
 test('normalizes overlay display preferences at the IPC and storage boundary', () => {
   assert.deepEqual(
     normalizeOverlayDisplayPreferences({

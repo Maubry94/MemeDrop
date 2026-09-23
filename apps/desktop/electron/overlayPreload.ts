@@ -4,6 +4,7 @@ import type { MemeDropOverlayPreloadApi, Unsubscribe } from '../shared/preloadAp
 import type {
   ActiveDropSnapshot,
   Drop,
+  DropCompletionReason,
   OverlayDisplayPreferences,
   OverlayState,
 } from '../shared/types'
@@ -27,7 +28,8 @@ const overlayApi = {
   onOverlayDisplayPreferences: (
     handler: (preferences: OverlayDisplayPreferences) => void,
   ) => onChannel('overlay-display-preferences', handler),
-  completeCurrentDrop: (dropId: string) => ipcRenderer.invoke('complete-current-drop', dropId),
+  completeCurrentDrop: (dropId: string, reason?: DropCompletionReason) =>
+    ipcRenderer.invoke('complete-current-drop', dropId, reason),
   clearTestDrop: (dropId: string) => ipcRenderer.invoke('clear-test-drop', dropId),
   getOverlayState: () => ipcRenderer.invoke('get-overlay-state'),
   getActiveDropSnapshot: (): Promise<ActiveDropSnapshot> =>

@@ -17,6 +17,7 @@ export type ControlWindowBounds = {
 }
 
 export type AppConfigFile = {
+  clientInstanceId?: string
   discord?: Record<string, unknown>
   server?: Partial<ServerConnectionConfig>
   overlay?: Partial<Pick<OverlayState, 'hideOwnDrops'> & OverlayDisplayPreferences>

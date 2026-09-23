@@ -199,7 +199,7 @@ watch(
 
 watch(dropsEnabled, (value) => {
   if (!value && isOverlayView.value) {
-    void completeActiveDrop()
+    void completeActiveDrop(undefined, 'skipped')
   }
 })
 </script>

@@ -8,6 +8,7 @@ import type {
   ControlPanelSectionId,
   ControlPanelSectionState,
   Drop,
+  DropCompletionReason,
   OverlayDisplayInfo,
   OverlayDisplayPreferences,
   OverlayState,
@@ -50,7 +51,7 @@ export type MemeDropPreloadApi = {
   toggleDrops: () => Promise<OverlayState>
   toggleHideOwnDrops: () => Promise<OverlayState>
   skipCurrentDrop: (dropId: string) => Promise<boolean>
-  completeCurrentDrop: (dropId: string) => Promise<boolean>
+  completeCurrentDrop: (dropId: string, reason?: DropCompletionReason) => Promise<boolean>
   stopCurrentDropForEveryone: (dropId: string) => Promise<boolean>
   getOverlayState: () => Promise<OverlayState>
   getActiveDropSnapshot: () => Promise<ActiveDropSnapshot>

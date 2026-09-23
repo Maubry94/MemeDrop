@@ -1,19 +1,22 @@
-import type { Drop } from '@memedrop/protocol'
+import type { Drop, DropCompletionReason } from '@memedrop/protocol'
 
 const DEFAULT_IMAGE_SAFETY_TIMEOUT_MS = 60 * 1000
-// Filet de sécurité absolu, volontairement très supérieur aux watchdogs
-// d'inactivité du renderer afin de ne pas couper une lecture normale longue.
+// This absolute ceiling remains a last resort when no client reports a normal
+// end. A normal completion starts the much shorter collective catch-up window.
 const DEFAULT_MEDIA_SAFETY_TIMEOUT_MS = 6 * 60 * 60 * 1000
+const DEFAULT_COMPLETION_GRACE_MS = 3 * 1000
 
 type DropScope = 'global' | 'targeted'
 
 type DropJob<TTarget> = {
   drop: Drop
   targets: Set<TTarget>
-  done: Set<TTarget>
+  pending: Set<TTarget>
   scope: DropScope
   targetUserId: string | null
-  timer: ReturnType<typeof setTimeout> | null
+  safetyTimer: ReturnType<typeof setTimeout> | null
+  completionTimer: ReturnType<typeof setTimeout> | null
+  starting: boolean
 }
 
 type DropSchedulerLogger = Pick<Console, 'log' | 'warn'>
@@ -24,8 +27,10 @@ type DropSchedulerOptions<TTarget> = {
   sendDrop: (target: TTarget, drop: Drop) => void
   sendClear: (target: TTarget) => void
   getLogSummary?: () => string
+  getTargetLogLabel?: (target: TTarget) => string
   imageSafetyTimeoutMs?: number
   mediaSafetyTimeoutMs?: number
+  completionGraceMs?: number
   logger?: DropSchedulerLogger
 }
 
@@ -38,243 +43,299 @@ export const createDropScheduler = <TTarget>({
   sendDrop,
   sendClear,
   getLogSummary = () => '',
+  getTargetLogLabel = () => 'un client',
   imageSafetyTimeoutMs = DEFAULT_IMAGE_SAFETY_TIMEOUT_MS,
   mediaSafetyTimeoutMs = DEFAULT_MEDIA_SAFETY_TIMEOUT_MS,
+  completionGraceMs = DEFAULT_COMPLETION_GRACE_MS,
   logger = console,
 }: DropSchedulerOptions<TTarget>) => {
-  const globalQueue: Drop[] = []
-  const targetedQueues = new Map<string, Drop[]>()
+  const queuedJobs: DropJob<TTarget>[] = []
+  const jobs = new Set<DropJob<TTarget>>()
+  // Completed recipients remain reserved until the whole group advances. They
+  // must never start the next drop while another recipient still watches this one.
   const activeJobByTarget = new Map<TTarget, DropJob<TTarget>>()
-  const activeTargetJobs = new Map<string, DropJob<TTarget>>()
   let activeGlobalJob: DropJob<TTarget> | null = null
+  let scheduling = false
+  let scheduleAgain = false
 
-  const clearJobTimer = (job: DropJob<TTarget>) => {
-    if (job.timer) {
-      clearTimeout(job.timer)
-      job.timer = null
+  const safelySendClear = (target: TTarget, dropId: string) => {
+    try {
+      sendClear(target)
+    } catch (error) {
+      logger.warn(
+        `Nettoyage du drop ${dropId} impossible pour ${getTargetLogLabel(target)}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
     }
   }
 
   const getDeliveryTargetsForDrop = (drop: Drop) => {
     if (!drop.targetUserId) {
-      return getEligibleTargets()
+      return Array.from(new Set(getEligibleTargets()))
     }
 
     const targets = getTargetsByUserId(drop.targetUserId)
+    // Do not play a targeted drop only to its author's mirror after the actual
+    // recipient has disconnected or disabled reception.
+    if (!targets.length) {
+      return []
+    }
     const ownerId = drop.ownerId ?? drop.authorId
-
-    if (!ownerId || ownerId === drop.targetUserId) {
-      return targets
-    }
-
-    return Array.from(new Set([...targets, ...getTargetsByUserId(ownerId)]))
+    return Array.from(
+      new Set(
+        ownerId && ownerId !== drop.targetUserId
+          ? [...targets, ...getTargetsByUserId(ownerId)]
+          : targets,
+      ),
+    )
   }
 
-  const hasBusyTarget = (targets: TTarget[]) =>
-    targets.some((target) => activeJobByTarget.has(target))
-
-  const sendClearToTargets = (job: DropJob<TTarget>) => {
-    for (const target of job.targets) {
-      sendClear(target)
+  const clearJobTimers = (job: DropJob<TTarget>) => {
+    if (job.safetyTimer) {
+      clearTimeout(job.safetyTimer)
+      job.safetyTimer = null
+    }
+    if (job.completionTimer) {
+      clearTimeout(job.completionTimer)
+      job.completionTimer = null
     }
   }
 
-  const finishJob = (job: DropJob<TTarget>, options: { sendClear?: boolean } = {}) => {
-    clearJobTimer(job)
-
-    if (options.sendClear) {
-      sendClearToTargets(job)
+  const finishJob = (job: DropJob<TTarget>, clearTargets = true) => {
+    if (!jobs.delete(job)) {
+      return
+    }
+    if (activeGlobalJob === job) {
+      activeGlobalJob = null
+    }
+    clearJobTimers(job)
+    const queueIndex = queuedJobs.indexOf(job)
+    if (queueIndex !== -1) {
+      queuedJobs.splice(queueIndex, 1)
     }
 
     for (const target of job.targets) {
+      if (activeJobByTarget.get(target) !== job) {
+        continue
+      }
+      if (clearTargets) {
+        safelySendClear(target, job.drop.id)
+      }
       activeJobByTarget.delete(target)
     }
+    job.pending.clear()
 
-    if (job.scope === 'global') {
-      activeGlobalJob = null
-    } else if (job.targetUserId) {
-      activeTargetJobs.delete(job.targetUserId)
-    }
-
-    scheduleDrops()
+    logger.log(
+      job.scope === 'targeted'
+        ? `Drop ciblé terminé pour ${job.drop.targetUserName ?? job.targetUserId}: ${job.drop.id}.`
+        : `Drop global terminé chez tous les clients actifs: ${job.drop.id}.`,
+    )
   }
 
-  const startJob = (drop: Drop, targets: TTarget[], scope: DropScope) => {
-    const job: DropJob<TTarget> = {
-      drop,
-      targets: new Set(targets),
-      done: new Set(),
-      scope,
-      targetUserId: drop.targetUserId ?? null,
-      timer: null,
-    }
+  const getSafetyTimeoutMs = (drop: Drop) => {
+    const contentType = drop.contentType?.toLowerCase() ?? ''
+    return contentType.startsWith('image/')
+      ? imageSafetyTimeoutMs
+      : mediaSafetyTimeoutMs
+  }
 
-    if (scope === 'global') {
+  const startJob = (job: DropJob<TTarget>, targets: TTarget[]) => {
+    job.targets = new Set(targets)
+    job.pending = new Set(targets)
+    job.starting = true
+    if (job.scope === 'global') {
       activeGlobalJob = job
-    } else if (job.targetUserId) {
-      activeTargetJobs.set(job.targetUserId, job)
     }
-
     for (const target of targets) {
       activeJobByTarget.set(target, job)
-      sendDrop(target, drop)
     }
 
-    const logSummary = getLogSummary()
-    logger.log(
-      `Drop actif: ${drop.id} (${targets.length} client(s) ciblé(s)${
-        logSummary ? `, ${logSummary}` : ''
-      }).`,
-    )
-
-    const contentType = drop.contentType?.toLowerCase() ?? ''
-    const isImage = contentType.startsWith('image/')
-    const timeoutMs = isImage ? imageSafetyTimeoutMs : mediaSafetyTimeoutMs
-    job.timer = setTimeout(() => {
+    job.safetyTimer = setTimeout(() => {
+      if (!jobs.has(job)) {
+        return
+      }
       logger.warn(
-        `${isImage ? 'Drop image' : 'Drop média'} libéré par timeout de sécurité: ${drop.id}.`,
+        `Drop ${job.drop.id} libéré par timeout collectif (${job.pending.size} cible(s) encore en attente).`,
       )
-      finishJob(job, { sendClear: true })
-    }, timeoutMs)
-    job.timer.unref()
+      finishJob(job, true)
+      scheduleDrops()
+    }, getSafetyTimeoutMs(job.drop))
+    job.safetyTimer.unref()
 
-    return job
+    for (const target of targets) {
+      // A synchronous callback can remove a recipient or cancel this job.
+      if (!jobs.has(job) || !job.pending.has(target)) {
+        continue
+      }
+      try {
+        sendDrop(target, job.drop)
+      } catch (error) {
+        logger.warn(
+          `Envoi du drop ${job.drop.id} impossible pour ${getTargetLogLabel(target)}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        )
+        job.pending.delete(target)
+      }
+    }
+    job.starting = false
+    if (!job.pending.size) {
+      finishJob(job)
+      scheduleAgain = true
+    }
   }
 
-  function scheduleDrops() {
-    if (activeGlobalJob) {
+  const scheduleDrops = () => {
+    if (scheduling) {
+      scheduleAgain = true
       return
     }
-
-    const eligibleTargets = getEligibleTargets()
-    const busyTargetExists = eligibleTargets.some((target) => activeJobByTarget.has(target))
-
-    if (globalQueue.length && !eligibleTargets.length) {
-      globalQueue.length = 0
-      return
-    }
-
-    if (globalQueue.length && eligibleTargets.length && !busyTargetExists) {
-      const nextDrop = globalQueue.shift()
-      if (nextDrop) {
-        startJob(nextDrop, eligibleTargets, 'global')
-      }
-      return
-    }
-
-    if (globalQueue.length) {
-      return
-    }
-
-    for (const [targetUserId, queue] of targetedQueues.entries()) {
-      if (!queue.length || activeTargetJobs.has(targetUserId)) {
-        continue
-      }
-
-      const primaryTargets = getTargetsByUserId(targetUserId)
-      if (!primaryTargets.length) {
-        queue.shift()
-        if (!queue.length) {
-          targetedQueues.delete(targetUserId)
+    scheduling = true
+    try {
+      do {
+        scheduleAgain = false
+        const blockedTargets = new Set<TTarget>()
+        for (const job of [...queuedJobs]) {
+          // A global drop also reserves the collective timeline for newcomers
+          // who were not ready when it started. They join only the next drop.
+          if (activeGlobalJob) {
+            break
+          }
+          if (!jobs.has(job)) {
+            continue
+          }
+          // Resolve at launch so ready newcomers and replacement connections
+          // join the next collective drop rather than replaying the active one.
+          const targets = getDeliveryTargetsForDrop(job.drop)
+          if (!targets.length) {
+            finishJob(job)
+            continue
+          }
+          if (
+            targets.some(
+              (target) => activeJobByTarget.has(target) || blockedTargets.has(target),
+            )
+          ) {
+            for (const target of targets) {
+              blockedTargets.add(target)
+            }
+            continue
+          }
+          queuedJobs.splice(queuedJobs.indexOf(job), 1)
+          startJob(job, targets)
         }
-        continue
-      }
-
-      const nextDrop = queue[0]
-      if (!nextDrop) {
-        targetedQueues.delete(targetUserId)
-        continue
-      }
-
-      const deliveryTargets = getDeliveryTargetsForDrop(nextDrop)
-
-      if (hasBusyTarget(deliveryTargets)) {
-        continue
-      }
-
-      queue.shift()
-      startJob(nextDrop, deliveryTargets, 'targeted')
-      if (!queue.length) {
-        targetedQueues.delete(targetUserId)
-      }
+      } while (scheduleAgain)
+    } finally {
+      scheduling = false
     }
   }
 
   const enqueueDrop = (drop: Drop) => {
-    if (drop.targetUserId) {
-      const sentCount = getTargetsByUserId(drop.targetUserId).length
-      if (!sentCount) {
-        return 0
-      }
-
-      const queue = targetedQueues.get(drop.targetUserId) ?? []
-      if (queue.length >= MAX_TARGETED_QUEUE_LENGTH) {
-        logger.warn(`Drop refusé: queue ciblée pleine pour ${drop.targetUserId}.`)
-        return 0
-      }
-      queue.push(drop)
-      targetedQueues.set(drop.targetUserId, queue)
-      scheduleDrops()
-      return sentCount
-    }
-
-    const sentCount = getEligibleTargets().length
-    if (!sentCount) {
-      return 0
-    }
-    if (globalQueue.length >= MAX_GLOBAL_QUEUE_LENGTH) {
-      logger.warn('Drop refusé: queue globale pleine.')
+    const scope: DropScope = drop.targetUserId ? 'targeted' : 'global'
+    const targetUserId = drop.targetUserId ?? null
+    const maximumQueueLength =
+      scope === 'global' ? MAX_GLOBAL_QUEUE_LENGTH : MAX_TARGETED_QUEUE_LENGTH
+    const queueLength = queuedJobs.filter(
+      (job) => job.scope === scope && job.targetUserId === targetUserId,
+    ).length
+    if (queueLength >= maximumQueueLength) {
+      logger.warn(
+        scope === 'global'
+          ? 'Drop refusé: queue globale pleine.'
+          : `Drop refusé: queue ciblée pleine pour ${targetUserId}.`,
+      )
       return 0
     }
 
-    globalQueue.push(drop)
+    const targets = getDeliveryTargetsForDrop(drop)
+    if (!targets.length) {
+      return 0
+    }
+    const primaryTargets = targetUserId
+      ? new Set(getTargetsByUserId(targetUserId))
+      : new Set(targets)
+    const recipientCount = targets.filter((target) => primaryTargets.has(target)).length
+    const job: DropJob<TTarget> = {
+      drop,
+      targets: new Set(),
+      pending: new Set(),
+      scope,
+      targetUserId,
+      safetyTimer: null,
+      completionTimer: null,
+      starting: false,
+    }
+    jobs.add(job)
+    queuedJobs.push(job)
+    const logSummary = getLogSummary()
+    logger.log(
+      `Drop planifié: ${drop.id} (${targets.length} client(s) ciblé(s)${
+        logSummary ? `, ${logSummary}` : ''
+      }).`,
+    )
     scheduleDrops()
-    return sentCount
+    return recipientCount
   }
 
-  const completeDropForTarget = (target: TTarget, dropId: string) => {
+  const completeDropForTarget = (
+    target: TTarget,
+    dropId: string,
+    reason?: DropCompletionReason,
+  ) => {
     const job = activeJobByTarget.get(target)
-    if (!job || job.drop.id !== dropId) {
+    if (!job || !jobs.has(job) || job.drop.id !== dropId || !job.pending.delete(target)) {
       return
     }
 
-    job.done.add(target)
-    if (job.done.size >= job.targets.size) {
-      if (job.scope === 'targeted') {
-        const targetLabel = job.drop.targetUserName ?? job.targetUserId ?? 'la cible'
-        logger.log(`Drop ciblé terminé pour ${targetLabel}: ${dropId}.`)
-      } else {
-        logger.log(`Drop global terminé chez tous les clients: ${dropId}.`)
-      }
-      // L'ACK d'une cible ne termine que sa lecture locale. Le clear diffusé
-      // ici sert de notification autoritative que le job est terminé partout,
-      // notamment pour que l'auteur puisse conserver l'action de stop jusque-là.
-      finishJob(job, { sendClear: true })
+    // Keep each recipient's server snapshot and reservation until the whole
+    // group finishes. The desktop hides its local presentation on completion,
+    // while its author can still stop the drop for viewers who are watching it.
+    logger.log(
+      `Drop acquitté par ${getTargetLogLabel(target)}: ${dropId} (${reason ?? 'legacy'}, ${job.pending.size} cible(s) encore en attente).`,
+    )
+    if (!job.pending.size && !job.starting) {
+      finishJob(job)
+      scheduleDrops()
+      return
+    }
+
+    // A skipped/error/timeout (or old client) acknowledgement says nothing about
+    // the media duration and must not cut off the other viewers.
+    if (reason === 'ended' && job.pending.size && !job.completionTimer) {
+      job.completionTimer = setTimeout(() => {
+        if (!jobs.has(job)) {
+          return
+        }
+        logger.warn(
+          `Drop ${dropId}: rattrapage collectif après fin normale (${job.pending.size} cible(s) retardataire(s)).`,
+        )
+        finishJob(job, true)
+        scheduleDrops()
+      }, completionGraceMs)
+      job.completionTimer.unref()
     }
   }
 
   const removeTarget = (target: TTarget) => {
     const job = activeJobByTarget.get(target)
-    if (!job) {
-      scheduleDrops()
+    if (job) {
+      activeJobByTarget.delete(target)
+      job.targets.delete(target)
+      job.pending.delete(target)
+      if (!job.pending.size && !job.starting) {
+        finishJob(job)
+      }
+    }
+    scheduleDrops()
+  }
+
+  const replaceTarget = (target: TTarget, replacement: TTarget) => {
+    if (target === replacement) {
       return
     }
-
-    activeJobByTarget.delete(target)
-    job.targets.delete(target)
-    job.done.delete(target)
-
-    if (!job.targets.size) {
-      logger.log(`Drop annulé: plus aucun client cible (${job.drop.id}).`)
-      finishJob(job, { sendClear: false })
-    } else if (job.done.size >= job.targets.size) {
-      // Une déconnexion peut rendre le job globalement terminé après que les
-      // autres cibles ont déjà acquitté leur lecture : elles doivent également
-      // recevoir la notification de fin.
-      finishJob(job, { sendClear: true })
-    } else {
-      scheduleDrops()
-    }
+    logger.log('Connexion remplacée: le nouvel appareil rejoindra le prochain drop collectif.')
+    removeTarget(target)
   }
 
   const stopDropByOwner = (
@@ -282,64 +343,26 @@ export const createDropScheduler = <TTarget>({
     ownerId: string,
     options: { sendClear?: boolean } = {},
   ) => {
-    const jobs = [activeGlobalJob, ...activeTargetJobs.values()].filter(
-      (job): job is DropJob<TTarget> => Boolean(job),
-    )
-    const job = jobs.find((activeJob) => activeJob.drop.id === dropId)
-
-    if (job) {
-      const expectedOwnerId = job.drop.ownerId ?? job.drop.authorId
-      if (expectedOwnerId !== ownerId) {
-        logger.warn(`Stop global refusé pour ${ownerId}: auteur attendu ${expectedOwnerId}.`)
-        return false
-      }
-
-      logger.log(`Drop stoppé globalement par l'auteur: ${dropId}.`)
-      finishJob(job, { sendClear: options.sendClear ?? true })
-      return true
+    const job = [...jobs].find((candidate) => candidate.drop.id === dropId)
+    if (!job) {
+      return false
     }
-
-    const removeFromQueue = (queue: Drop[]) => {
-      const index = queue.findIndex((drop) => drop.id === dropId)
-      if (index === -1) {
-        return false
-      }
-
-      const drop = queue[index]
-      if (!drop) {
-        return false
-      }
-
-      const expectedOwnerId = drop.ownerId ?? drop.authorId
-      if (expectedOwnerId !== ownerId) {
-        logger.warn(`Stop global refusé pour ${ownerId}: auteur attendu ${expectedOwnerId}.`)
-        return false
-      }
-
-      queue.splice(index, 1)
-      return true
+    const expectedOwnerId = job.drop.ownerId ?? job.drop.authorId
+    if (expectedOwnerId !== ownerId) {
+      logger.warn(`Stop global refusé pour ${ownerId}: auteur attendu ${expectedOwnerId}.`)
+      return false
     }
-
-    if (removeFromQueue(globalQueue)) {
-      return true
-    }
-
-    for (const [targetUserId, queue] of targetedQueues.entries()) {
-      if (removeFromQueue(queue)) {
-        if (!queue.length) {
-          targetedQueues.delete(targetUserId)
-        }
-        return true
-      }
-    }
-
-    return false
+    finishJob(job, options.sendClear ?? true)
+    logger.log(`Drop stoppé globalement par l'auteur: ${dropId}.`)
+    scheduleDrops()
+    return true
   }
 
   return {
     completeDropForTarget,
     enqueueDrop,
     removeTarget,
+    replaceTarget,
     scheduleDrops,
     stopDropByOwner,
   }

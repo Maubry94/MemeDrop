@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   getAppConfigPath,
   readAppConfigFile,
@@ -24,6 +25,8 @@ const MAX_AUTH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const AUTH_CLOCK_SKEW_MS = 60 * 1000
 const AUTH_TOKEN_PATTERN = /^[A-Za-z0-9._-]+$/
 const DISPLAY_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+const CLIENT_INSTANCE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const OVERLAY_ANCHORS = new Set<OverlayAnchor>([
   'full',
   'top-left',
@@ -171,6 +174,21 @@ export const createConfigStore = (userDataPath: string) => {
   const readConfig = () => readAppConfigFile(configPath)
   const writeConfig = (config: ReturnType<typeof readConfig>) => {
     writeAppConfigFile(configPath, config)
+  }
+
+  const getClientInstanceId = () => {
+    const stored = readConfig()
+    const currentId = normalizeString(stored.clientInstanceId)
+    if (CLIENT_INSTANCE_ID_PATTERN.test(currentId)) {
+      return currentId.toLowerCase()
+    }
+
+    const clientInstanceId = randomUUID()
+    writeConfig({
+      ...stored,
+      clientInstanceId,
+    })
+    return clientInstanceId
   }
 
   const getServerConnectionConfig = (): ServerConnectionConfig => {
@@ -369,6 +387,7 @@ export const createConfigStore = (userDataPath: string) => {
   }
 
   return {
+    getClientInstanceId,
     getServerConfig,
     getServerConnectionConfig,
     saveServerConfig,
