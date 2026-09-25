@@ -178,6 +178,18 @@ Le troisième champ est son GID, généralement `568`. Renseigne cette valeur da
 
 Crée enfin les deux Custom Apps à partir de leurs fichiers Compose. Le site est publié sur le port `3010` de TrueNAS. Pour un accès public, place ce port derrière le reverse proxy HTTPS ou le tunnel de ton choix et conserve la même origine dans `PUBLIC_BASE_URL`.
 
+## Diagnostiquer une commande Discord lente
+
+Ajoute `MEMEDROP_DISCORD_DIAGNOSTICS=true` dans `apps/server/.env` (désactivé par défaut). Après mise à jour du dépôt, reconstruis uniquement le backend (commande ci-dessus ou reconstruction de la Custom App serveur TrueNAS avec son contexte existant). Aucun nouvel installateur desktop ni rebuild du site n’est nécessaire.
+
+Note l’heure du clic sur « Envoyer » et conserve les lignes JSON préfixées `[discord-diag]` des logs serveur, regroupées par `interactionId` :
+
+- `received` : `ageMs` mesure l’âge de l’interaction à sa réception. `attachmentAgeMs` est l’âge de l’identifiant de pièce jointe, **pas** la durée de l’upload ni le temps depuis le clic.
+- `phase-start`, `phase-end` et `phase-error` : étapes `ack` (accusé Discord), `execute` (traitement) et `reply` (confirmation), avec leurs durées. `rest-response`, `error` et `completed` complètent le suivi.
+- `drop-enqueued` : drop ajouté à la file, **pas** début de lecture sur les appareils. `elapsedMs` situe les événements depuis la réception par le serveur.
+
+Ces diagnostics n’enregistrent ni jetons, ni URL, ni corps ou en-têtes des réponses. Après capture de l’incident, remets la variable à `false` et recrée le conteneur serveur pour désactiver ces logs. Ils servent à localiser l’attente, sans prétendre en corriger la cause.
+
 ## Vérifier le projet
 
 Les commandes racine contrôlent tous les workspaces :

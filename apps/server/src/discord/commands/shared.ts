@@ -10,6 +10,7 @@ import {
 import type { ConnectedUser, Drop } from '@memedrop/protocol'
 import type { GetConnectedUsers } from '../../types.js'
 import type { RecentDrop } from './types.js'
+import { measureDiscordPhase } from '../diagnostics.js'
 
 const RECENT_DROP_LIMIT = 25
 
@@ -81,7 +82,7 @@ export const editErrorReply = (
   title: string,
   description: string,
 ) =>
-  interaction.editReply({
+  measureDiscordPhase('reply', () => interaction.editReply({
     embeds: [
       createInfoEmbed({
         title,
@@ -89,7 +90,7 @@ export const editErrorReply = (
         color: 0xf43f5e,
       }),
     ],
-  })
+  }))
 
 export const getReleaseUrl = (version: string) =>
   `https://github.com/Maubry94/MemeDrop/releases/tag/${version}`
@@ -320,10 +321,10 @@ const editDropReply = async (
     return
   }
 
-  await interaction.editReply({
+  await measureDiscordPhase('reply', () => interaction.editReply({
     embeds: [createDropSentEmbed(drop, sentCount, targetUser, fallbackMessage)],
     components: createStopButtonComponents(drop.id),
-  })
+  }))
 }
 
 export const editDropReplyAndRemember = async (

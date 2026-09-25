@@ -3,7 +3,7 @@
   "private": true,
   "description": "Application desktop MemeDrop pour recevoir et afficher les drops Discord.",
   "author": "Maubry94",
-  "version": "4.0.5",
+  "version": "4.0.6",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"

@@ -155,6 +155,7 @@ server.on('close', () => {
 })
 
 createDiscordBot({
+  diagnosticsEnabled: config.discordDiagnostics,
   token: config.discordBotToken,
   clientId: config.discordClientId,
   guildId: config.discordGuildId,

@@ -79,6 +79,7 @@ export const config: {
   discordGuildId: string | undefined
   discordClientId: string | undefined
   discordClientSecret: string | undefined
+  discordDiagnostics: boolean
   memedropAllowedRoleIds: string[]
   memedropAllowedChannelIds: string[]
   memedropDropCooldownSeconds: number
@@ -95,6 +96,7 @@ export const config: {
   discordGuildId: process.env.DISCORD_GUILD_ID,
   discordClientId: process.env.DISCORD_CLIENT_ID,
   discordClientSecret: process.env.DISCORD_CLIENT_SECRET,
+  discordDiagnostics: getBooleanEnvironmentValue('MEMEDROP_DISCORD_DIAGNOSTICS', false),
   memedropAllowedRoleIds: (process.env.MEMEDROP_ALLOWED_ROLE_IDS ?? '')
     .split(',')
     .map((roleId) => roleId.trim())

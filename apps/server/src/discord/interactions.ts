@@ -14,6 +14,13 @@ import {
   userHasAllowedRole,
 } from './commands/shared.js'
 import type { DiscordCommandContext, RecentDrop } from './commands/types.js'
+import {
+  getDiscordErrorDetails,
+  logDiscordFailure,
+  logDropEnqueued,
+  measureDiscordPhase,
+  runWithDiscordDiagnostics,
+} from './diagnostics.js'
 
 type DiscordApiErrorLike = {
   code?: number
@@ -99,6 +106,7 @@ export const createInteractionHandler =
     broadcastDrop,
     getConnectedUsers,
     stopDropByOwner,
+    diagnosticsEnabled = false,
   }: {
     getLatestAppVersion: GetLatestAppVersion
     publicBaseUrl?: string
@@ -108,6 +116,7 @@ export const createInteractionHandler =
     broadcastDrop: BroadcastDrop
     getConnectedUsers: GetConnectedUsers
     stopDropByOwner: StopDropByOwner
+    diagnosticsEnabled?: boolean
   }) => {
   const cooldowns = new Map<string, number>()
   const recentDrops: RecentDrop[] = []
@@ -119,12 +128,16 @@ export const createInteractionHandler =
     dropCooldownSeconds,
     cooldowns,
     recentDrops,
-    broadcastDrop,
+    broadcastDrop: (drop) => {
+      const recipients = broadcastDrop(drop)
+      logDropEnqueued(drop.id, recipients)
+      return recipients
+    },
     getConnectedUsers,
     stopDropByOwner,
   })
 
-  return async (interaction: Interaction) => {
+  const handleInteraction = async (interaction: Interaction) => {
     if (await handleStopButton(interaction, stopDropByOwner)) {
       return
     }
@@ -167,9 +180,9 @@ export const createInteractionHandler =
         return
       }
 
-      await interaction.deferReply({
+      await measureDiscordPhase('ack', () => interaction.deferReply({
         flags: MessageFlags.Ephemeral,
-      })
+      }))
 
       if (allowedChannelIds.length && !allowedChannelIds.includes(interaction.channelId)) {
         await editErrorReply(
@@ -210,7 +223,7 @@ export const createInteractionHandler =
       }
 
       try {
-        const wasSent = await command.execute(interaction, context)
+        const wasSent = await measureDiscordPhase('execute', () => command.execute(interaction, context))
         if (!wasSent && dropCooldownSeconds > 0) {
           if (previousCooldown === undefined) {
             cooldowns.delete(interaction.user.id)
@@ -229,14 +242,27 @@ export const createInteractionHandler =
         throw error
       }
     } catch (error) {
+      logDiscordFailure(error)
       if ((error as DiscordApiErrorLike)?.code === 10062) {
         console.error(
-          `Interaction Discord inconnue pour /${interaction.commandName}. Le drop n'a pas été ajouté à la queue. Vérifie qu'un seul serveur MemeDrop utilise ce bot et que le serveur répond en moins de 3 secondes.`,
+          `Interaction Discord inconnue pour /${interaction.commandName} (${interaction.id}). ${
+            interaction.deferred ? 'Erreur après acquittement initial ; le drop a pu être ajouté à la queue.'
+              : "Le drop n'a pas été ajouté à la queue. Vérifie qu'un seul serveur MemeDrop utilise ce bot et que le serveur répond en moins de 3 secondes."
+          }`,
         )
         return
       }
 
-      console.error(`Erreur lors du traitement de /${interaction.commandName}:`, error)
+      // DiscordAPIError may contain the interaction token in its URL/request.
+      console.error(`Erreur lors du traitement de /${interaction.commandName} (${interaction.id}):`, getDiscordErrorDetails(error))
     }
+  }
+
+  return (interaction: Interaction) => {
+    if (diagnosticsEnabled && interaction.isChatInputCommand()
+      && discordCommandsByName.get(interaction.commandName)?.isDropCommand) {
+      return runWithDiscordDiagnostics(interaction, () => handleInteraction(interaction))
+    }
+    return handleInteraction(interaction)
   }
 }

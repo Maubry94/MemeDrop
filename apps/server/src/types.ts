@@ -38,6 +38,7 @@ export type MemeDropWebSocketServerOptions = {
 }
 
 export type DiscordBotOptions = {
+  diagnosticsEnabled?: boolean
   token?: string
   clientId?: string
   guildId?: string

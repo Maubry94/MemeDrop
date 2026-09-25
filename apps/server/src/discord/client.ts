@@ -3,6 +3,7 @@ import { registerSlashCommands } from './commands.js'
 import { discordCommands } from './commands/index.js'
 import { createInteractionHandler } from './interactions.js'
 import type { DiscordBotOptions } from '../types.js'
+import { attachDiscordRestDiagnostics } from './restDiagnostics.js'
 
 export const createDiscordBot = ({
   token,
@@ -17,6 +18,7 @@ export const createDiscordBot = ({
   getConnectedUsers,
   stopDropByOwner,
   onStatusChange,
+  diagnosticsEnabled = false,
 }: DiscordBotOptions) => {
   if (!token || !clientId || !guildId) {
     console.error('DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID et DISCORD_GUILD_ID sont requis.')
@@ -27,6 +29,10 @@ export const createDiscordBot = ({
   const discord = new Client({
     intents: [GatewayIntentBits.Guilds],
   })
+  if (diagnosticsEnabled) {
+    attachDiscordRestDiagnostics(discord.rest)
+    console.log('Diagnostic des commandes Discord activé : logs [discord-diag].')
+  }
   const failInitialization = async (message: string, error?: unknown) => {
     onStatusChange('error')
     console.error(message, error ?? '')
@@ -41,6 +47,7 @@ export const createDiscordBot = ({
     broadcastDrop,
     getConnectedUsers,
     stopDropByOwner,
+    diagnosticsEnabled,
   })
 
   discord.once('clientReady', async () => {
