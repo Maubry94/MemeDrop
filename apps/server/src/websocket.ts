@@ -91,7 +91,20 @@ export const createMemeDropWebSocketServer = ({
   const getClientLogSummary = () => {
     const readyClients = getReadyClientEntries()
     const users = new Set(readyClients.map(([, client]) => client.userId))
-    return `${clients.size} socket(s), ${readyClients.length} connexion(s) prête(s), ${users.size} utilisateur(s), ${getEligibleClients().length} réception(s) active(s)`
+    const enabledReceptions = readyClients.filter(([, client]) => client.dropsEnabled).length
+    return `${clients.size} connexion${clients.size > 1 ? 's' : ''} (${readyClients.length} prête${readyClients.length > 1 ? 's' : ''})`
+      + ` | ${users.size} utilisateur${users.size > 1 ? 's' : ''}`
+      + ` | ${enabledReceptions} réception${enabledReceptions > 1 ? 's' : ''} activée${enabledReceptions > 1 ? 's' : ''}`
+  }
+
+  let lastLoggedClientSummary: string | null = null
+  const logClientSummaryIfChanged = () => {
+    const summary = getClientLogSummary()
+    if (summary === lastLoggedClientSummary) {
+      return
+    }
+    lastLoggedClientSummary = summary
+    console.log(`Clients MemeDrop : ${summary}`)
   }
 
   const compareAppVersions = (currentVersion: string, expectedVersion: string) => {
@@ -314,7 +327,7 @@ export const createMemeDropWebSocketServer = ({
       }
     }, clientStateTimeoutMs)
     clientStateTimer.unref()
-    console.log(`Client MemeDrop connecté (${getClientLogSummary()}).`)
+    logClientSummaryIfChanged()
     sendJson(socket, { type: 'hello', capabilities: { dropCompletionReason: true } })
     broadcastConnectedUsers()
 
@@ -380,6 +393,7 @@ export const createMemeDropWebSocketServer = ({
           }
 
           if (becameReady || stateChanged) {
+            logClientSummaryIfChanged()
             broadcastConnectedUsers()
           }
           if (!dropsEnabled) {
@@ -413,7 +427,7 @@ export const createMemeDropWebSocketServer = ({
       socketAlive.delete(socket)
       dropScheduler.removeTarget(socket)
 
-      console.log(`Client MemeDrop déconnecté (${getClientLogSummary()}).`)
+      logClientSummaryIfChanged()
       broadcastConnectedUsers()
     })
   })

@@ -21,9 +21,18 @@ const authToken = identityTokens.issue({
 const tamperedAuthToken = `${authToken.slice(0, -1)}${authToken.endsWith('x') ? 'y' : 'x'}`
 
 const silenceExpectedLogs = (context: TestContext) => {
-  context.mock.method(console, 'log', () => undefined)
+  const log = context.mock.method(console, 'log', () => undefined)
   context.mock.method(console, 'warn', () => undefined)
   context.mock.method(console, 'error', () => undefined)
+  return log
+}
+
+const captureClientSummaries = (context: TestContext) => {
+  const log = silenceExpectedLogs(context)
+  return () => log.mock.calls.flatMap(({ arguments: [message] }) => (
+    typeof message === 'string' && message.startsWith('Clients MemeDrop : ')
+      ? [message] : []
+  ))
 }
 
 const waitForClose = (socket: WebSocket) => new Promise<{ code: number; reason: string }>((resolve) => {
@@ -101,6 +110,15 @@ const validHeaders = (token = authToken) => ({
   'x-memedrop-key': serverKey,
   'x-memedrop-app-version': '3.0.8',
 })
+
+const sendClientStateAndWait = async (client: WebSocket, dropsEnabled: boolean) => {
+  const pong = once(client, 'pong')
+  client.send(JSON.stringify({ type: 'client-state', dropsEnabled }))
+  // Frames are processed in order: the pong confirms that the preceding state
+  // was handled, including an unchanged state that sends no users snapshot.
+  client.ping()
+  await pong
+}
 
 const createDrop = (id: string): Drop => ({
   id,
@@ -311,6 +329,119 @@ test('clients become eligible only after their initial enabled state', { timeout
     client.close(1000)
     await close
   })
+})
+
+test('client summary logs track readiness and reception without repeating unchanged states', { timeout: 5000 }, async (context) => {
+  const summaries = captureClientSummaries(context)
+  await withWebSocketServer(async ({ wsUrl }) => {
+    const firstClient = createClient(wsUrl, validHeaders())
+    const firstHello = waitForMessageType(firstClient, 'hello')
+    await once(firstClient, 'open')
+    await firstHello
+    assert.equal(summaries().at(-1), 'Clients MemeDrop : 1 connexion (0 prête) | 0 utilisateur | 0 réception activée')
+    await sendClientStateAndWait(firstClient, true)
+    assert.equal(summaries().at(-1), 'Clients MemeDrop : 1 connexion (1 prête) | 1 utilisateur | 1 réception activée')
+
+    const secondToken = identityTokens.issue({
+      id: '223456789012345678', username: 'Second log user', avatarUrl: null,
+    }).authToken
+    const secondClient = createClient(wsUrl, validHeaders(secondToken))
+    const secondHello = waitForMessageType(secondClient, 'hello')
+    await once(secondClient, 'open')
+    await secondHello
+    assert.equal(summaries().at(-1), 'Clients MemeDrop : 2 connexions (1 prête) | 1 utilisateur | 1 réception activée')
+    await sendClientStateAndWait(secondClient, true)
+    assert.equal(summaries().at(-1), 'Clients MemeDrop : 2 connexions (2 prêtes) | 2 utilisateurs | 2 réceptions activées')
+
+    await sendClientStateAndWait(secondClient, false)
+    assert.equal(summaries().at(-1), 'Clients MemeDrop : 2 connexions (2 prêtes) | 2 utilisateurs | 1 réception activée')
+    const afterPause = summaries()
+    await sendClientStateAndWait(secondClient, false)
+    assert.deepEqual(summaries(), afterPause)
+
+    await sendClientStateAndWait(secondClient, true)
+    const afterResume = summaries()
+    await sendClientStateAndWait(secondClient, true)
+    assert.deepEqual(summaries(), afterResume)
+
+    const firstPong = once(firstClient, 'pong')
+    firstClient.ping()
+    await firstPong
+    const remainingUsers = waitForMessageType(firstClient, 'connected-users')
+    const secondClose = waitForClose(secondClient)
+    secondClient.close(1000)
+    await Promise.all([secondClose, remainingUsers])
+    const firstClose = waitForClose(firstClient)
+    firstClient.close(1000)
+    await firstClose
+  })
+
+  assert.deepEqual(summaries(), [
+    'Clients MemeDrop : 1 connexion (0 prête) | 0 utilisateur | 0 réception activée',
+    'Clients MemeDrop : 1 connexion (1 prête) | 1 utilisateur | 1 réception activée',
+    'Clients MemeDrop : 2 connexions (1 prête) | 1 utilisateur | 1 réception activée',
+    'Clients MemeDrop : 2 connexions (2 prêtes) | 2 utilisateurs | 2 réceptions activées',
+    'Clients MemeDrop : 2 connexions (2 prêtes) | 2 utilisateurs | 1 réception activée',
+    'Clients MemeDrop : 2 connexions (2 prêtes) | 2 utilisateurs | 2 réceptions activées',
+    'Clients MemeDrop : 1 connexion (1 prête) | 1 utilisateur | 1 réception activée',
+    'Clients MemeDrop : 0 connexion (0 prête) | 0 utilisateur | 0 réception activée',
+  ])
+})
+
+test('client summary logs distinguish devices from users and do not double-count a replacement', { timeout: 5000 }, async (context) => {
+  const summaries = captureClientSummaries(context)
+  await withWebSocketServer(async ({ wsUrl, getConnectedUsers }) => {
+    const instanceHeaders = {
+      ...validHeaders(), 'x-memedrop-client-instance-id': 'summary-first-instance',
+    }
+    const firstClient = createClient(wsUrl, instanceHeaders)
+    const firstHello = waitForMessageType(firstClient, 'hello')
+    await once(firstClient, 'open')
+    await firstHello
+    await sendClientStateAndWait(firstClient, true)
+
+    const secondClient = createClient(wsUrl, {
+      ...validHeaders(), 'x-memedrop-client-instance-id': 'summary-second-instance',
+    })
+    const secondHello = waitForMessageType(secondClient, 'hello')
+    await once(secondClient, 'open')
+    await secondHello
+    await sendClientStateAndWait(secondClient, true)
+    assert.equal(summaries().at(-1), 'Clients MemeDrop : 2 connexions (2 prêtes) | 1 utilisateur | 2 réceptions activées')
+
+    const firstClose = waitForClose(firstClient)
+    const replacement = createClient(wsUrl, instanceHeaders)
+    const replacementHello = waitForMessageType(replacement, 'hello')
+    await once(replacement, 'open')
+    await replacementHello
+    assert.equal(summaries().at(-1), 'Clients MemeDrop : 3 connexions (2 prêtes) | 1 utilisateur | 2 réceptions activées')
+    await sendClientStateAndWait(replacement, true)
+    assert.equal((await firstClose).code, 4002)
+    assert.equal(getConnectedUsers().length, 1)
+    assert.equal(getConnectedUsers()[0]?.connections, 2)
+
+    const secondPong = once(secondClient, 'pong')
+    secondClient.ping()
+    await secondPong
+    const remainingUsers = waitForMessageType(secondClient, 'connected-users')
+    const replacementClose = waitForClose(replacement)
+    replacement.close(1000)
+    await Promise.all([replacementClose, remainingUsers])
+    const secondClose = waitForClose(secondClient)
+    secondClient.close(1000)
+    await secondClose
+  })
+
+  assert.deepEqual(summaries(), [
+    'Clients MemeDrop : 1 connexion (0 prête) | 0 utilisateur | 0 réception activée',
+    'Clients MemeDrop : 1 connexion (1 prête) | 1 utilisateur | 1 réception activée',
+    'Clients MemeDrop : 2 connexions (1 prête) | 1 utilisateur | 1 réception activée',
+    'Clients MemeDrop : 2 connexions (2 prêtes) | 1 utilisateur | 2 réceptions activées',
+    'Clients MemeDrop : 3 connexions (2 prêtes) | 1 utilisateur | 2 réceptions activées',
+    'Clients MemeDrop : 2 connexions (2 prêtes) | 1 utilisateur | 2 réceptions activées',
+    'Clients MemeDrop : 1 connexion (1 prête) | 1 utilisateur | 1 réception activée',
+    'Clients MemeDrop : 0 connexion (0 prête) | 0 utilisateur | 0 réception activée',
+  ])
 })
 
 test('seven WebSocket clients wait for the group, including legacy completion messages', { timeout: 5000 }, async (context) => {
